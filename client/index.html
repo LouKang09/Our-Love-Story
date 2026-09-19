@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-personal1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-rich1" />
 </head>
 <body>
   <div id="app">
@@ -132,7 +132,26 @@
           <label>Date<input id="entryDate" type="date" required /></label>
           <label>Title<input id="entryTitle" maxlength="120" placeholder="The little thing I never want to forget" required /></label>
         </div>
-        <label>What happened today?<textarea id="entryText" rows="12" maxlength="20000" placeholder="Write it the way you want to remember it..."></textarea></label>
+        <section class="rich-field">
+          <div class="rich-field-label">What happened today?</div>
+          <div id="richToolbar" class="rich-toolbar" role="toolbar" aria-label="Text formatting">
+            <button id="richBoldBtn" type="button" class="rich-tool rich-bold" title="Bold selected text" aria-label="Bold selected text">B</button>
+            <button id="richItalicBtn" type="button" class="rich-tool rich-italic" title="Italicize selected text" aria-label="Italicize selected text">I</button>
+            <span class="rich-divider"></span>
+            <button id="richSmallerBtn" type="button" class="rich-tool" title="Decrease selected text size" aria-label="Decrease selected text size">A−</button>
+            <button id="richLargerBtn" type="button" class="rich-tool" title="Increase selected text size" aria-label="Increase selected text size">A+</button>
+            <select id="richFontSelect" class="rich-font-select" aria-label="Change selected text font">
+              <option value="">Font</option>
+              <option value="Georgia">Journal Serif</option>
+              <option value="Arial">Clean Sans</option>
+              <option value="Segoe Print">Handwritten</option>
+              <option value="Courier New">Typewriter</option>
+            </select>
+            <button id="richClearBtn" type="button" class="rich-tool rich-clear" title="Clear selected text formatting">Clear</button>
+          </div>
+          <div id="entryText" class="rich-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Write it the way you want to remember it..."></div>
+          <p class="helper rich-help">Select text first, then use the formatting controls above.</p>
+        </section>
 
         <section class="photo-editor">
           <div class="photo-editor-head">
@@ -147,7 +166,7 @@
 
         <section class="live-preview">
           <div class="preview-label">Interactive page preview — free drag photos anywhere inside the page</div>
-          <article id="entryPreview" class="entry-body preview-paper"></article>
+          <article id="entryPreview" class="preview-paper"></article>
         </section>
 
         <div class="editor-actions">
@@ -206,6 +225,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-personal1" defer></script>
+  <script src="/app.js?v=20260919-rich1" defer></script>
 </body>
 </html>

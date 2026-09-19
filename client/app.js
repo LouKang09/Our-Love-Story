@@ -64,10 +64,14 @@ function formatDate(dateString) {
   const d = new Date(`${dateString}T12:00:00`);
   return new Intl.DateTimeFormat(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }).format(d);
 }
-function paragraphHtml(text) {
+function plainTextHtml(text) {
   const clean = escapeHtml(text || '').trim();
   if (!clean) return '<p><em class="soft-note">No words were needed for this memory.</em></p>';
   return clean.split(/\n\s*\n/).map(p => `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
+}
+function richTextHtml(entry) {
+  const rich = String(entry?.richText || '').trim();
+  return rich || plainTextHtml(entry?.text || '');
 }
 function avatarHtml(profile, className = '') {
   const p = profile || {};
@@ -84,19 +88,30 @@ function normalizedPhotoPosition(photo) {
   const rightGap = Math.max(0, 100 - xPct - width);
   return { width, xPct, yPx, side, rightGap };
 }
-function photoHtml(photo, interactive = false) {
+function smartPhotoLayout(photo) {
   const pos = normalizedPhotoPosition(photo);
-  const horizontal = pos.side === 'left'
-    ? `margin-left:${pos.xPct}%;margin-right:20px;`
-    : `margin-right:${pos.rightGap}%;margin-left:20px;`;
-  return `<figure class="memory-photo ${pos.side} ${interactive ? 'preview-draggable' : ''}" data-photo-id="${escapeHtml(photo.id)}" style="--photo-width:${pos.width}%;--photo-offset:${pos.yPx}px;${horizontal}">
+  const nearEdge = pos.xPct <= 8 || pos.rightGap <= 8;
+  const wraps = pos.width <= 38 && nearEdge;
+  return { ...pos, wraps };
+}
+function photoHtml(photo, interactive = false) {
+  const pos = smartPhotoLayout(photo);
+  let horizontal;
+  if (pos.wraps) {
+    horizontal = pos.side === 'left'
+      ? `margin-left:${pos.xPct}%;margin-right:20px;`
+      : `margin-right:${pos.rightGap}%;margin-left:20px;`;
+  } else {
+    horizontal = `margin-left:${pos.xPct}%;margin-right:0;`;
+  }
+  return `<figure class="memory-photo ${pos.side} ${pos.wraps ? 'wrap-photo' : 'block-photo'} ${interactive ? 'preview-draggable' : ''}" data-photo-id="${escapeHtml(photo.id)}" style="--photo-width:${pos.width}%;--photo-offset:${pos.yPx}px;${horizontal}">
     ${interactive ? '<span class="drag-badge">free drag</span>' : ''}
     <img src="${escapeHtml(photo.src)}" alt="Journal memory" loading="lazy" draggable="false" />
     ${photo.caption ? `<figcaption>${escapeHtml(photo.caption)}</figcaption>` : ''}
   </figure>`;
 }
 function bodyHtml(entry, interactive = false) {
-  return `${(entry.photos || []).map(p => photoHtml(p, interactive)).join('')}${paragraphHtml(entry.text)}`;
+  return `${(entry.photos || []).map(p => photoHtml(p, interactive)).join('')}<div class="rich-copy">${richTextHtml(entry)}</div>`;
 }
 function authorHtml(entry) {
   const p = authorProfiles[entry.author] || activeScrapbook?.profiles?.find(x => x.tag === entry.author) || { tag: entry.author, displayName: entry.author };
@@ -109,7 +124,7 @@ function pageHtml(entry) {
     <div class="entry-date">${formatDate(entry.date)}</div>
     <h2>${escapeHtml(entry.title)}</h2>
     <div class="entry-meta">${authorHtml(entry)}</div>
-    <div class="entry-body">${bodyHtml(entry)}</div>
+    <div class="entry-body journal-flow">${bodyHtml(entry)}</div>
     ${editable ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this page</button></div>` : ''}
   </div>`;
 }
@@ -146,7 +161,7 @@ function renderTimeline() {
       <div class="entry-date">${formatDate(entry.date)}</div>
       <h2>${escapeHtml(entry.title)}</h2>
       <div class="entry-meta">${authorHtml(entry)}</div>
-      <div class="entry-body">${bodyHtml(entry)}</div>
+      <div class="entry-body journal-flow">${bodyHtml(entry)}</div>
       ${me && entry.author === me.tag ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button></div>` : ''}
     </div>
   </article>`).join('');
@@ -420,7 +435,8 @@ function resetEditor(entry = null) {
   $('#editorHeading').textContent = entry ? 'Edit this memory' : 'Write today down';
   $('#entryDate').value = entry?.date || new Date().toISOString().slice(0,10);
   $('#entryTitle').value = entry?.title || '';
-  $('#entryText').value = entry?.text || '';
+  $('#entryText').innerHTML = entry?.richText ? entry.richText : (entry?.text ? plainTextHtml(entry.text) : '');
+  savedRichRange = null;
   $('#deleteEntryBtn').classList.toggle('hidden', !entry);
   $('#editorError').textContent = '';
   renderPhotoControls(); renderPreview();
@@ -436,34 +452,44 @@ function openEditor(id = null) {
 }
 function closeEditor() { if (editorDialog.open) editorDialog.close(); }
 function currentDraft() {
+  const editor = $('#entryText');
   return {
     id: editingId,
     scrapbookId: activeScrapbook?.id || '',
     date: $('#entryDate').value,
     title: $('#entryTitle').value || 'Untitled memory',
-    text: $('#entryText').value,
+    text: editor.innerText.slice(0, 20000),
+    richText: editor.innerHTML.slice(0, 50000),
     photos: editingPhotos,
     author: me?.tag
   };
 }
 function renderPreview() {
   const draft = currentDraft();
-  preview.innerHTML = `<div class="entry-date">${draft.date ? formatDate(draft.date) : 'Someday'}</div><h2>${escapeHtml(draft.title)}</h2><div class="entry-meta">${me ? avatarHtml(me,'tiny-avatar') + escapeHtml(me.displayName) : ''}</div><div class="preview-flow">${bodyHtml(draft, true)}</div>`;
+  preview.innerHTML = `<div class="entry-date">${draft.date ? formatDate(draft.date) : 'Someday'}</div><h2>${escapeHtml(draft.title)}</h2><div class="entry-meta">${me ? avatarHtml(me,'tiny-avatar') + escapeHtml(me.displayName) : ''}</div><div class="entry-body journal-flow preview-flow">${bodyHtml(draft, true)}</div>`;
   wirePreviewPhotoDrag();
 }
 function applyFigurePosition(figure, photo) {
-  const pos = normalizedPhotoPosition(photo);
+  const pos = smartPhotoLayout(photo);
   figure.classList.toggle('left', pos.side === 'left');
   figure.classList.toggle('right', pos.side === 'right');
+  figure.classList.toggle('wrap-photo', pos.wraps);
+  figure.classList.toggle('block-photo', !pos.wraps);
   figure.style.setProperty('--photo-width', `${pos.width}%`);
   figure.style.setProperty('--photo-offset', `${pos.yPx}px`);
-  figure.style.cssFloat = pos.side;
-  if (pos.side === 'left') {
-    figure.style.marginLeft = `${pos.xPct}%`;
-    figure.style.marginRight = '20px';
+  figure.style.clear = pos.wraps ? 'none' : 'both';
+  figure.style.cssFloat = pos.wraps ? pos.side : 'none';
+  if (pos.wraps) {
+    if (pos.side === 'left') {
+      figure.style.marginLeft = `${pos.xPct}%`;
+      figure.style.marginRight = '20px';
+    } else {
+      figure.style.marginRight = `${pos.rightGap}%`;
+      figure.style.marginLeft = '20px';
+    }
   } else {
-    figure.style.marginRight = `${pos.rightGap}%`;
-    figure.style.marginLeft = '20px';
+    figure.style.marginLeft = `${pos.xPct}%`;
+    figure.style.marginRight = '0';
   }
 }
 function renderPhotoControls() {
@@ -796,6 +822,67 @@ window.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') turn('next'); if (e.key === 'ArrowLeft') turn('prev');
 });
 window.addEventListener('resize', () => { if (currentMode === 'book') renderBook(); if (currentMode === 'connections' && activeScrapbook?.type === 'group') renderConnections(); });
+
+let savedRichRange = null;
+function rememberRichSelection() {
+  const editor = $('#entryText');
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) return;
+  savedRichRange = sel.getRangeAt(0).cloneRange();
+}
+function restoreRichSelection() {
+  if (!savedRichRange) return false;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(savedRichRange);
+  return true;
+}
+function applyRichCommand(command, value = null) {
+  const editor = $('#entryText');
+  if (!restoreRichSelection()) {
+    showToast('Select some journal text first.');
+    return;
+  }
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) {
+    showToast('Select some journal text first.');
+    return;
+  }
+  editor.focus({ preventScroll:true });
+  document.execCommand(command, false, value);
+  rememberRichSelection();
+  renderPreview();
+}
+function changeSelectedTextSize(delta) {
+  if (!restoreRichSelection()) return showToast('Select some journal text first.');
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) return showToast('Select some journal text first.');
+  let current = parseInt(document.queryCommandValue('fontSize'), 10);
+  if (!Number.isFinite(current) || current < 1 || current > 7) current = 3;
+  applyRichCommand('fontSize', String(Math.max(1, Math.min(7, current + delta))));
+}
+document.addEventListener('selectionchange', rememberRichSelection);
+['richBoldBtn','richItalicBtn','richSmallerBtn','richLargerBtn','richClearBtn'].forEach(id => {
+  $('#'+id).addEventListener('pointerdown', e => e.preventDefault());
+});
+$('#richBoldBtn').addEventListener('click', () => applyRichCommand('bold'));
+$('#richItalicBtn').addEventListener('click', () => applyRichCommand('italic'));
+$('#richSmallerBtn').addEventListener('click', () => changeSelectedTextSize(-1));
+$('#richLargerBtn').addEventListener('click', () => changeSelectedTextSize(1));
+$('#richClearBtn').addEventListener('click', () => applyRichCommand('removeFormat'));
+$('#richFontSelect').addEventListener('change', e => {
+  const face = e.target.value;
+  if (face) applyRichCommand('fontName', face);
+  e.target.value = '';
+});
+$('#entryText').addEventListener('paste', e => {
+  e.preventDefault();
+  const text = e.clipboardData?.getData('text/plain') || '';
+  document.execCommand('insertText', false, text);
+});
+$('#entryText').addEventListener('drop', e => {
+  if (e.dataTransfer?.types?.includes('text/html')) e.preventDefault();
+});
 
 ['entryDate','entryTitle','entryText'].forEach(id => $(`#${id}`).addEventListener('input', renderPreview));
 $('#photoInput').addEventListener('change', async e => {

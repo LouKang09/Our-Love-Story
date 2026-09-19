@@ -154,6 +154,20 @@ async function ensureStorage() {
   }
 }
 
+async function backupJsonDataOnce() {
+  const backupDir = path.join(STORAGE, 'backups', 'pre-richtext-smartwrap-mobile-20260919');
+  const marker = path.join(backupDir, '.complete');
+  try {
+    await fsp.access(marker);
+    return;
+  } catch {}
+  await fsp.mkdir(backupDir, { recursive: true });
+  for (const [source, name] of [[DATA_FILE,'journal.json'],[SOCIAL_FILE,'social.json'],[ACCOUNTS_FILE,'accounts.json']]) {
+    try { await fsp.copyFile(source, path.join(backupDir, name)); } catch {}
+  }
+  await fsp.writeFile(marker, new Date().toISOString(), 'utf8');
+}
+
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
   const key = await new Promise((resolve, reject) => crypto.scrypt(String(password), salt, 64, (err, derived) => err ? reject(err) : resolve(derived)));
   return `scrypt$${salt}$${key.toString('hex')}`;
@@ -264,14 +278,72 @@ function cleanPhoto(photo) {
     caption: String(photo.caption || '').slice(0, 240)
   };
 }
+function sanitizeRichText(input) {
+  let html = String(input || '').slice(0, 50000);
+  html = html.replace(/<!--[\s\S]*?-->/g, '');
+  html = html.replace(/<(script|style|iframe|object|embed|svg|math|link|meta)[^>]*>[\s\S]*?<\/\1\s*>/gi, '');
+  html = html.replace(/<(script|style|iframe|object|embed|svg|math|link|meta)\b[^>]*\/?>/gi, '');
+
+  html = html.replace(/<font\b([^>]*)>/gi, (match, attrs) => {
+    const classes = [];
+    const faceMatch = attrs.match(/\bface\s*=\s*["']([^"']+)["']/i);
+    const sizeMatch = attrs.match(/\bsize\s*=\s*["']?([1-7])["']?/i);
+    const face = String(faceMatch?.[1] || '').toLowerCase();
+    if (face.includes('georgia') || face.includes('times')) classes.push('fmt-font-serif');
+    else if (face.includes('arial') || face.includes('helvetica') || face.includes('sans')) classes.push('fmt-font-sans');
+    else if (face.includes('segoe print') || face.includes('comic sans') || face.includes('bradley')) classes.push('fmt-font-hand');
+    else if (face.includes('courier') || face.includes('mono')) classes.push('fmt-font-mono');
+    if (sizeMatch) classes.push(`fmt-size-${sizeMatch[1]}`);
+    return classes.length ? `<span class="${classes.join(' ')}">` : '<span>';
+  });
+  html = html.replace(/<\/font\s*>/gi, '</span>');
+
+  html = html.replace(/<(b|strong)\b[^>]*>/gi, '<strong>');
+  html = html.replace(/<\/(b|strong)\s*>/gi, '</strong>');
+  html = html.replace(/<(i|em)\b[^>]*>/gi, '<em>');
+  html = html.replace(/<\/(i|em)\s*>/gi, '</em>');
+  html = html.replace(/<br\b[^>]*\/?>/gi, '<br>');
+  html = html.replace(/<(div|p)\b[^>]*>/gi, '<$1>');
+  html = html.replace(/<\/(div|p)\s*>/gi, '</$1>');
+
+  html = html.replace(/<span\b([^>]*)>/gi, (match, attrs) => {
+    const classMatch = attrs.match(/\bclass\s*=\s*["']([^"']+)["']/i);
+    const allowed = String(classMatch?.[1] || '')
+      .split(/\s+/)
+      .filter(cls => /^fmt-font-(serif|sans|hand|mono)$/.test(cls) || /^fmt-size-[1-7]$/.test(cls));
+    return allowed.length ? `<span class="${[...new Set(allowed)].join(' ')}">` : '<span>';
+  });
+  html = html.replace(/<\/span\s*>/gi, '</span>');
+
+  html = html.replace(/<(?!\/?(?:strong|em|br|div|p|span)\b)[^>]*>/gi, '');
+  return html.slice(0, 50000);
+}
+function plainTextFromRichHtml(html) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 function cleanEntry(input, author, existing = {}) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(input.date || '')) ? input.date : new Date().toISOString().slice(0, 10);
+  const hasRichText = input.richText !== undefined;
+  const richText = hasRichText ? sanitizeRichText(input.richText) : String(existing.richText || '');
+  const plain = String(input.text ?? (richText ? plainTextFromRichHtml(richText) : existing.text || '')).slice(0, 20000);
   return {
     id: existing.id || crypto.randomUUID(),
     scrapbookId: existing.scrapbookId || String(input.scrapbookId || ''),
     date,
     title: String(input.title || 'Untitled memory').trim().slice(0, 120),
-    text: String(input.text || '').slice(0, 20000),
+    text: plain,
+    richText,
     photos: Array.isArray(input.photos) ? input.photos.map(cleanPhoto).filter(Boolean).slice(0, 12) : [],
     author: existing.author || author,
     createdAt: existing.createdAt || new Date().toISOString(),
@@ -836,7 +908,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-ensureStorage().then(() => {
+ensureStorage().then(async () => {
+  await backupJsonDataOnce();
   if (PROD && !process.env.SESSION_SECRET) console.warn('WARNING: SESSION_SECRET is not set.');
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Private journal running at http://localhost:${PORT}`);
