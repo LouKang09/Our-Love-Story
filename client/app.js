@@ -139,7 +139,7 @@ function savedCanvasHtml(entry) {
     const weight = item.bold ? 'font-weight:700;' : '';
     const style = item.italic ? 'font-style:italic;' : '';
     const size = Math.max(12, Math.min(42, Number(item.size) || 18));
-    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size};${weight}${style}"><div class="saved-text-content">${String(item.html || '')}</div></div>`;
+    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${(size/5.6).toFixed(3)}cqw;${weight}${style}"><div class="saved-text-content">${String(item.html || '')}</div></div>`;
   }).join('')}</div>`;
 }
 function entryContentHtml(entry) {
@@ -806,6 +806,27 @@ function renderPreview() {
 function renderPhotoControls() {
   // Legacy control retained only for backwards-compatible hidden markup.
 }
+async function imageAspectRatio(file) {
+  try {
+    if ('createImageBitmap' in window) {
+      const bitmap = await createImageBitmap(file);
+      const ratio = bitmap.width / Math.max(1, bitmap.height);
+      bitmap.close?.();
+      return ratio || 1;
+    }
+  } catch {}
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const ratio = img.naturalWidth / Math.max(1, img.naturalHeight);
+      URL.revokeObjectURL(url);
+      resolve(ratio || 1);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(1); };
+    img.src = url;
+  });
+}
 async function fileToDataUrl(file) {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 }
@@ -1055,13 +1076,15 @@ $('#canvasPhotoInput').addEventListener('change', async e => {
   $('#editorError').textContent='';
   try{
     for(const [idx,file] of files.entries()){
-      const uploaded=await uploadImage(file);
+      const [uploaded,aspect]=await Promise.all([uploadImage(file),imageAspectRatio(file)]);
+      const w=36;
+      const h=Math.max(12,Math.min(55,w*(4/5.4)/Math.max(.25,aspect)));
       editingCanvasItems.push(clampCanvasItem({
         id:crypto.randomUUID?.() || `photo-${Date.now()}-${idx}`,
         type:'photo',src:uploaded.src,caption:'',
         x:Math.min(58,6+(editingCanvasItems.length%4)*8),
         y:Math.min(62,7+(editingCanvasItems.length%5)*8),
-        w:36,h:27,z:maxCanvasZ()+1
+        w,h,z:maxCanvasZ()+1
       }));
     }
     renderCanvasEditor();
