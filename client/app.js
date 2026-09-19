@@ -72,9 +72,22 @@ function avatarHtml(profile, className = '') {
   const initial = String(p.displayName || p.tag || '♡').trim().charAt(0).toUpperCase() || '♡';
   return `<span class="avatar ${className}">${escapeHtml(initial)}</span>`;
 }
+function normalizedPhotoPosition(photo) {
+  const width = Math.max(18, Math.min(90, Number(photo.width) || 42));
+  const legacyX = (photo.side || 'left') === 'right' ? Math.max(0, 100 - width) : 0;
+  const xPct = Math.max(0, Math.min(100 - width, Number.isFinite(Number(photo.xPct)) ? Number(photo.xPct) : legacyX));
+  const yPx = Math.max(0, Math.min(900, Number.isFinite(Number(photo.yPx)) ? Number(photo.yPx) : (Number(photo.offsetY) || 0)));
+  const side = xPct + width / 2 >= 50 ? 'right' : 'left';
+  const rightGap = Math.max(0, 100 - xPct - width);
+  return { width, xPct, yPx, side, rightGap };
+}
 function photoHtml(photo, interactive = false) {
-  return `<figure class="memory-photo ${photo.side || 'left'} ${interactive ? 'preview-draggable' : ''}" data-photo-id="${escapeHtml(photo.id)}" style="--photo-width:${Number(photo.width) || 42}%;--photo-offset:${Number(photo.offsetY) || 0}px">
-    ${interactive ? '<span class="drag-badge">drag</span>' : ''}
+  const pos = normalizedPhotoPosition(photo);
+  const horizontal = pos.side === 'left'
+    ? `margin-left:${pos.xPct}%;margin-right:20px;`
+    : `margin-right:${pos.rightGap}%;margin-left:20px;`;
+  return `<figure class="memory-photo ${pos.side} ${interactive ? 'preview-draggable' : ''}" data-photo-id="${escapeHtml(photo.id)}" style="--photo-width:${pos.width}%;--photo-offset:${pos.yPx}px;${horizontal}">
+    ${interactive ? '<span class="drag-badge">free drag</span>' : ''}
     <img src="${escapeHtml(photo.src)}" alt="Journal memory" loading="lazy" draggable="false" />
     ${photo.caption ? `<figcaption>${escapeHtml(photo.caption)}</figcaption>` : ''}
   </figure>`;
@@ -149,8 +162,9 @@ function updateCover() {
   $('#coverTitle').textContent = activeBookLabel();
   $('#brandTitle').textContent = activeBookLabel();
   if (activeScrapbook?.type === 'couple') {
-    $('#coverKind').textContent = 'LOVERS SCRAPBOOK';
-    $('#coverSubtitle').textContent = activeScrapbook.members.length === 2 ? 'two lives, one little archive' : 'waiting for your person to join';
+    const archived = activeScrapbook.bindingStatus === 'unbound';
+    $('#coverKind').textContent = archived ? 'LOVERS ARCHIVE' : 'LOVERS SCRAPBOOK';
+    $('#coverSubtitle').textContent = archived ? 'the bond ended, but the memories stay' : (activeScrapbook.members.length === 2 ? 'two lives, one little archive' : 'waiting for your person to join');
   } else if (activeScrapbook?.type === 'group') {
     $('#coverKind').textContent = 'SHARED SCRAPBOOK';
     $('#coverSubtitle').textContent = 'friends, moments, and stories kept together';
@@ -177,37 +191,87 @@ function renderInviteBanner() {
   banner.querySelectorAll('.decline-invite').forEach(btn => btn.addEventListener('click', () => respondInvite(btn.closest('.invite-card').dataset.invite, false)));
 }
 
+function renderUnbindPanel() {
+  const panel = $('#unbindPanel');
+  if (!activeScrapbook || activeScrapbook.type !== 'couple' || activeScrapbook.members.length !== 2) {
+    panel.classList.add('hidden'); panel.innerHTML = ''; return;
+  }
+  panel.classList.remove('hidden');
+  if (activeScrapbook.bindingStatus === 'unbound') {
+    panel.innerHTML = '<div class="unbind-card archived"><strong>Unbound archive</strong><p>The relationship binding was ended with both approvals. Every memory and photo remains preserved here.</p></div>';
+    return;
+  }
+  const request = activeScrapbook.unbindRequest;
+  if (!request) {
+    panel.innerHTML = '<div class="unbind-card"><div><strong>Couple binding</strong><p>Unbinding never deletes this scrapbook. Both partners must approve before the bond is released.</p></div><button id="requestUnbindBtn" class="ghost warning-action" type="button">Request unbind</button></div>';
+    $('#requestUnbindBtn')?.addEventListener('click', requestUnbind);
+    return;
+  }
+  const mine = request.requestedBy === me.tag;
+  panel.innerHTML = mine
+    ? '<div class="unbind-card pending"><div><strong>Waiting for your partner</strong><p>Your approval is recorded. Your partner must also approve before the bond changes.</p></div><button id="cancelUnbindBtn" class="ghost" type="button">Cancel request</button></div>'
+    : '<div class="unbind-card pending"><div><strong>Your partner requested an unbind</strong><p>The scrapbook and all memories will remain as an archive. The bond changes only if you approve.</p></div><div class="unbind-actions"><button id="declineUnbindBtn" class="ghost" type="button">Keep bound</button><button id="approveUnbindBtn" class="danger" type="button">Approve unbind</button></div></div>';
+  $('#cancelUnbindBtn')?.addEventListener('click', () => respondUnbind(false));
+  $('#declineUnbindBtn')?.addEventListener('click', () => respondUnbind(false));
+  $('#approveUnbindBtn')?.addEventListener('click', () => respondUnbind(true));
+}
+async function requestUnbind() {
+  if (!activeScrapbook || !confirm('Request to unbind? Your partner must approve. No memories or photos will be deleted.')) return;
+  try {
+    await api(`/api/scrapbooks/${activeScrapbook.id}/unbind/request`, { method:'POST', body:'{}' });
+    await loadSession(activeScrapbook.id); renderConnections(); showToast('Unbind request sent to your partner.');
+  } catch (err) { showToast(err.message); }
+}
+async function respondUnbind(approve) {
+  if (!activeScrapbook) return;
+  if (approve && !confirm('Approve unbinding? The scrapbook will remain as a shared archive and no memories will be deleted.')) return;
+  try {
+    const data = await api(`/api/scrapbooks/${activeScrapbook.id}/unbind/respond`, { method:'POST', body:JSON.stringify({ approve }) });
+    await loadSession(activeScrapbook.id); renderConnections(); updateCover();
+    showToast(data.unbound ? 'The couple bond is now unbound. Your memories are preserved.' : (approve ? 'Your approval was recorded.' : 'Unbind request closed.'));
+  } catch (err) { showToast(err.message); }
+}
 function renderConnections() {
   if (!activeScrapbook) {
     $('#connectionsTitle').textContent = 'Create your first scrapbook';
     $('#connectionsSubtitle').textContent = 'Choose Lovers for a private two-person book, or Group for friends and family.';
     $('#inviteForm').classList.add('hidden');
+    $('#unbindPanel').classList.add('hidden');
     $('#peopleMap').innerHTML = '<div class="onboarding-card"><div class="big-heart">♡</div><h3>Your journal can be just two people or a whole circle.</h3><p>Create a scrapbook, then invite someone by their unique @tag.</p><button id="onboardingCreate" class="primary">Create scrapbook</button></div>';
     $('#onboardingCreate')?.addEventListener('click', () => scrapbookDialog.showModal());
     return;
   }
-  $('#inviteForm').classList.remove('hidden');
-  $('#connectionsTitle').textContent = activeScrapbook.name;
-  $('#connectionsSubtitle').textContent = activeScrapbook.type === 'couple' ? 'A lovers scrapbook only ever binds two profiles.' : 'Your view keeps you at the center, with your scrapbook circle connected around you.';
-  const profiles = activeScrapbook.profiles || [];
 
-  if (activeScrapbook.type === 'couple') {
+  const isCouple = activeScrapbook.type === 'couple';
+  const archived = isCouple && activeScrapbook.bindingStatus === 'unbound';
+  const coupleFull = isCouple && activeScrapbook.members.length >= 2;
+  $('#inviteForm').classList.toggle('hidden', archived || coupleFull);
+  $('#connectionsTitle').textContent = activeScrapbook.name;
+  $('#connectionsSubtitle').textContent = archived
+    ? 'This is a preserved lovers archive. The memories remain shared even though the active bond has ended.'
+    : (isCouple ? 'A lovers scrapbook only ever binds two profiles.' : 'Your view keeps you at the center, with your scrapbook circle connected around you.');
+
+  const profiles = activeScrapbook.profiles || [];
+  if (isCouple) {
     const mine = profiles.find(p => p.tag === me.tag) || me;
     const other = profiles.find(p => p.tag !== me.tag);
-    $('#peopleMap').innerHTML = `<div class="couple-bind">
+    $('#peopleMap').innerHTML = `<div class="couple-bind ${archived ? 'unbound-bind' : ''}">
       <div class="bound-profile">${avatarHtml(mine, 'bound-avatar')}<strong>${escapeHtml(mine.displayName)}</strong><span>@${escapeHtml(mine.tag)}</span></div>
-      <div class="heart-bind"><span>♡</span><small>${other ? 'BOUND' : 'WAITING'}</small></div>
+      <div class="heart-bind"><span>${archived ? '♡' : '♡'}</span><small>${archived ? 'UNBOUND ARCHIVE' : (other ? 'BOUND' : 'WAITING')}</small></div>
       ${other ? `<div class="bound-profile">${avatarHtml(other, 'bound-avatar')}<strong>${escapeHtml(other.displayName)}</strong><span>@${escapeHtml(other.tag)}</span></div>` : `<div class="bound-profile empty-bound"><span class="avatar bound-avatar">?</span><strong>Your person</strong><span>Invite by @tag</span></div>`}
     </div>`;
+    renderUnbindPanel();
     return;
   }
 
+  $('#unbindPanel').classList.add('hidden');
+  $('#unbindPanel').innerHTML = '';
   const mine = profiles.find(p => p.tag === me.tag) || me;
   const others = profiles.filter(p => p.tag !== me.tag);
   const radius = 35;
   const points = others.map((p, i) => {
     const angle = (Math.PI * 2 * i / Math.max(1, others.length)) - Math.PI / 2;
-    return { p, x: 50 + Math.cos(angle) * radius, y: 50 + Math.sin(angle) * radius };
+    return { p, x:50 + Math.cos(angle) * radius, y:50 + Math.sin(angle) * radius };
   });
   $('#peopleMap').innerHTML = `<div class="group-network">
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${points.map(pt => `<line x1="50" y1="50" x2="${pt.x}" y2="${pt.y}" />`).join('')}</svg>
@@ -275,7 +339,10 @@ async function respondInvite(id, accept) {
 
 function resetEditor(entry = null) {
   editingId = entry?.id || null;
-  editingPhotos = (entry?.photos || []).map(p => ({ offsetY:0, ...p }));
+  editingPhotos = (entry?.photos || []).map(p => {
+    const pos = normalizedPhotoPosition(p);
+    return { ...p, width:pos.width, xPct:pos.xPct, yPx:pos.yPx, offsetY:pos.yPx, side:pos.side };
+  });
   $('#editorHeading').textContent = entry ? 'Edit this memory' : 'Write today down';
   $('#entryDate').value = entry?.date || new Date().toISOString().slice(0,10);
   $('#entryTitle').value = entry?.title || '';
@@ -309,32 +376,61 @@ function renderPreview() {
   preview.innerHTML = `<div class="entry-date">${draft.date ? formatDate(draft.date) : 'Someday'}</div><h2>${escapeHtml(draft.title)}</h2><div class="entry-meta">${me ? avatarHtml(me,'tiny-avatar') + escapeHtml(me.displayName) : ''}</div><div class="preview-flow">${bodyHtml(draft, true)}</div>`;
   wirePreviewPhotoDrag();
 }
+function applyFigurePosition(figure, photo) {
+  const pos = normalizedPhotoPosition(photo);
+  figure.classList.toggle('left', pos.side === 'left');
+  figure.classList.toggle('right', pos.side === 'right');
+  figure.style.setProperty('--photo-width', `${pos.width}%`);
+  figure.style.setProperty('--photo-offset', `${pos.yPx}px`);
+  figure.style.cssFloat = pos.side;
+  if (pos.side === 'left') {
+    figure.style.marginLeft = `${pos.xPct}%`;
+    figure.style.marginRight = '20px';
+  } else {
+    figure.style.marginRight = `${pos.rightGap}%`;
+    figure.style.marginLeft = '20px';
+  }
+}
 function renderPhotoControls() {
   if (!editingPhotos.length) {
     photoControls.innerHTML = '<div class="muted photo-empty">No photos yet. Add one or several and build the page like a real scrapbook.</div>';
     return;
   }
-  photoControls.innerHTML = editingPhotos.map((p, i) => `<div class="photo-control" data-index="${i}">
-    <img class="control-photo" src="${escapeHtml(p.src)}" alt="Photo ${i+1}" draggable="false" />
-    <div class="photo-row"><button type="button" class="side-btn ${p.side==='left'?'active':''}" data-side="left">← Wrap left</button><button type="button" class="side-btn ${p.side==='right'?'active':''}" data-side="right">Wrap right →</button></div>
-    <label class="size-label"><span>Size <b class="size-value">${Number(p.width)||42}%</b></span><input class="size-range" type="range" min="18" max="90" step="1" value="${Number(p.width)||42}" /></label>
-    <div class="position-row"><span>Vertical offset: <b>${Number(p.offsetY)||0}px</b></span><button type="button" class="reset-position">Reset position</button></div>
-    <input class="caption-input" type="text" maxlength="240" value="${escapeHtml(p.caption || '')}" placeholder="Optional little caption" />
-    <button type="button" class="remove-photo">Remove photo</button>
-  </div>`).join('');
+  photoControls.innerHTML = editingPhotos.map((p, i) => {
+    const pos = normalizedPhotoPosition(p);
+    return `<div class="photo-control" data-index="${i}">
+      <img class="control-photo" src="${escapeHtml(p.src)}" alt="Photo ${i+1}" draggable="false" />
+      <div class="photo-row"><button type="button" class="side-btn ${pos.side==='left'?'active':''}" data-side="left">← Left side</button><button type="button" class="side-btn ${pos.side==='right'?'active':''}" data-side="right">Right side →</button></div>
+      <label class="size-label"><span>Size <b class="size-value">${pos.width}%</b></span><input class="size-range" type="range" min="18" max="90" step="1" value="${pos.width}" /></label>
+      <div class="position-row"><span>Position: <b class="position-value">X ${Math.round(pos.xPct)}% · Y ${Math.round(pos.yPx)}px</b></span><button type="button" class="reset-position">Reset</button></div>
+      <input class="caption-input" type="text" maxlength="240" value="${escapeHtml(p.caption || '')}" placeholder="Optional little caption" />
+      <button type="button" class="remove-photo">Remove photo</button>
+    </div>`;
+  }).join('');
 
   photoControls.querySelectorAll('.photo-control').forEach(card => {
     const i = Number(card.dataset.index);
     card.querySelectorAll('.side-btn').forEach(btn => btn.addEventListener('click', () => {
-      editingPhotos[i].side = btn.dataset.side; renderPhotoControls(); renderPreview();
+      const width = Number(editingPhotos[i].width) || 42;
+      editingPhotos[i].side = btn.dataset.side;
+      editingPhotos[i].xPct = btn.dataset.side === 'left' ? 0 : Math.max(0, 100 - width);
+      renderPhotoControls(); renderPreview();
     }));
     card.querySelector('.size-range').addEventListener('input', e => {
-      editingPhotos[i].width = Number(e.target.value);
-      card.querySelector('.size-value').textContent = `${e.target.value}%`;
+      const width = Number(e.target.value);
+      editingPhotos[i].width = width;
+      editingPhotos[i].xPct = Math.min(Number(editingPhotos[i].xPct) || 0, Math.max(0, 100 - width));
+      card.querySelector('.size-value').textContent = `${width}%`;
       renderPreview();
     });
     card.querySelector('.caption-input').addEventListener('input', e => { editingPhotos[i].caption = e.target.value; renderPreview(); });
-    card.querySelector('.reset-position').addEventListener('click', () => { editingPhotos[i].offsetY = 0; renderPhotoControls(); renderPreview(); });
+    card.querySelector('.reset-position').addEventListener('click', () => {
+      const width = Number(editingPhotos[i].width) || 42;
+      const side = editingPhotos[i].side === 'right' ? 'right' : 'left';
+      editingPhotos[i].xPct = side === 'right' ? Math.max(0, 100 - width) : 0;
+      editingPhotos[i].yPx = 0; editingPhotos[i].offsetY = 0;
+      renderPhotoControls(); renderPreview();
+    });
     card.querySelector('.remove-photo').addEventListener('click', () => { editingPhotos.splice(i,1); renderPhotoControls(); renderPreview(); });
   });
 }
@@ -343,30 +439,46 @@ function wirePreviewPhotoDrag() {
     const id = figure.dataset.photoId;
     const index = editingPhotos.findIndex(p => String(p.id) === String(id));
     if (index < 0) return;
-    let startY = 0, startOffset = 0, dragging = false;
+    let startClientX = 0, startClientY = 0, startX = 0, startY = 0, dragging = false;
+
     figure.addEventListener('pointerdown', e => {
       if (e.target.closest('figcaption')) return;
-      dragging = true; startY = e.clientY; startOffset = Number(editingPhotos[index].offsetY) || 0;
-      figure.classList.add('dragging'); figure.setPointerCapture(e.pointerId); e.preventDefault();
+      const pos = normalizedPhotoPosition(editingPhotos[index]);
+      dragging = true;
+      startClientX = e.clientX; startClientY = e.clientY;
+      startX = pos.xPct; startY = pos.yPx;
+      figure.classList.add('dragging');
+      figure.setPointerCapture(e.pointerId);
+      e.preventDefault();
     });
+
     figure.addEventListener('pointermove', e => {
       if (!dragging) return;
-      const offset = Math.max(0, Math.min(420, startOffset + (e.clientY - startY)));
-      editingPhotos[index].offsetY = Math.round(offset);
-      figure.style.setProperty('--photo-offset', `${Math.round(offset)}px`);
-      const rect = preview.getBoundingClientRect();
-      figure.dataset.previewSide = e.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+      const flow = figure.closest('.preview-flow') || preview;
+      const rect = flow.getBoundingClientRect();
+      const photo = editingPhotos[index];
+      const width = Math.max(18, Math.min(90, Number(photo.width) || 42));
+      const dxPct = rect.width ? ((e.clientX - startClientX) / rect.width) * 100 : 0;
+      const maxX = Math.max(0, 100 - width);
+      photo.xPct = Math.max(0, Math.min(maxX, startX + dxPct));
+      photo.yPx = Math.max(0, Math.min(900, startY + (e.clientY - startClientY)));
+      photo.offsetY = photo.yPx;
+      photo.side = photo.xPct + width / 2 >= 50 ? 'right' : 'left';
+      applyFigurePosition(figure, photo);
     });
-    const finish = e => {
+
+    const finish = () => {
       if (!dragging) return;
-      dragging = false; figure.classList.remove('dragging');
-      const rect = preview.getBoundingClientRect();
-      editingPhotos[index].side = e.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
-      renderPhotoControls(); renderPreview();
+      dragging = false;
+      figure.classList.remove('dragging');
+      renderPhotoControls();
+      renderPreview();
     };
-    figure.addEventListener('pointerup', finish); figure.addEventListener('pointercancel', finish);
+    figure.addEventListener('pointerup', finish);
+    figure.addEventListener('pointercancel', finish);
   });
 }
+
 async function fileToDataUrl(file) {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 }
@@ -374,6 +486,59 @@ async function uploadImage(file) {
   if (file.size > 8 * 1024 * 1024) throw new Error(`${file.name} is larger than 8 MB.`);
   const dataUrl = await fileToDataUrl(file);
   return api('/api/upload', { method:'POST', body:JSON.stringify({ dataUrl, name:file.name }) });
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(ch => ch.charCodeAt(0)));
+}
+async function getPushRegistration() {
+  if (!('serviceWorker' in navigator)) throw new Error('This browser does not support background notifications.');
+  return navigator.serviceWorker.register('/sw.js');
+}
+async function saveReminderSettings(enabled, reminderTime) {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  if (!enabled) {
+    const data = await api('/api/push/settings', { method:'PUT', body:JSON.stringify({ enabled:false, reminderTime, timezone }) });
+    if (me) me.notifications = data.settings;
+    return data.settings;
+  }
+  if (!config.pushEnabled || !config.pushPublicKey) throw new Error('Push reminders are not available on this server yet.');
+  if (!('Notification' in window)) throw new Error('This browser does not support notifications.');
+  const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+  if (permission !== 'granted') throw new Error('Notification permission was not granted.');
+
+  const registration = await getPushRegistration();
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly:true,
+      applicationServerKey:urlBase64ToUint8Array(config.pushPublicKey)
+    });
+  }
+  const data = await api('/api/push/subscribe', {
+    method:'POST',
+    body:JSON.stringify({ subscription:subscription.toJSON(), enabled:true, reminderTime, timezone })
+  });
+  if (me) me.notifications = data.settings;
+  return data.settings;
+}
+function updateNotificationStatus() {
+  const el = $('#notificationStatus');
+  if (!el) return;
+  if (!config.pushEnabled) { el.textContent = 'Push reminders are unavailable until the server keys are configured.'; return; }
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) { el.textContent = 'This browser does not support web push reminders.'; return; }
+  if (Notification.permission === 'denied') { el.textContent = 'Notifications are blocked in your browser settings.'; return; }
+  el.textContent = $('#dailyReminderEnabled')?.checked ? 'You will be reminded only on days when you have not written a memory.' : 'Off by default. Turn this on if you want a daily reminder.';
+}
+function maybeOpenReminderComposer() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('newMemory') === '1' && activeScrapbook) {
+    history.replaceState({}, '', location.pathname);
+    setTimeout(() => openEditor(), 250);
+  }
 }
 
 function setAuthTab(tab) {
@@ -404,6 +569,7 @@ async function enterApp() {
   await loadSession();
   lockScreen.classList.add('hidden'); journalApp.classList.remove('hidden');
   showView(activeScrapbook ? 'cover' : 'connections');
+  maybeOpenReminderComposer();
 }
 $('#logoutBtn').addEventListener('click', async () => {
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
@@ -453,11 +619,15 @@ $('#profileBtn').addEventListener('click', () => {
   $('#profileName').value = me.displayName || '';
   $('#profileTag').value = `@${me.tag}`;
   $('#profileBio').value = me.bio || '';
+  $('#dailyReminderEnabled').checked = me.notifications?.enabled === true;
+  $('#dailyReminderTime').value = me.notifications?.reminderTime || '20:00';
   $('#profileAvatarLarge').outerHTML = avatarHtml(me, 'large-avatar').replace('class="avatar large-avatar"', 'id="profileAvatarLarge" class="avatar large-avatar"');
   $('#profileError').textContent = '';
+  updateNotificationStatus();
   profileDialog.showModal();
 });
 $('#closeProfileDialog').addEventListener('click', () => profileDialog.close());
+$('#dailyReminderEnabled').addEventListener('change', updateNotificationStatus);
 $('#profilePhotoInput').addEventListener('change', async e => {
   const file = e.target.files?.[0]; if (!file) return;
   $('#profileError').textContent = '';
@@ -471,10 +641,15 @@ $('#profilePhotoInput').addEventListener('change', async e => {
 $('#profileForm').addEventListener('submit', async e => {
   e.preventDefault(); $('#profileError').textContent = '';
   try {
+    const enabled = $('#dailyReminderEnabled').checked;
+    const reminderTime = $('#dailyReminderTime').value || '20:00';
     await api('/api/profile', { method:'PUT', body:JSON.stringify({ displayName:$('#profileName').value.trim(), bio:$('#profileBio').value.trim(), avatar:pendingProfileAvatar }) });
-    await loadSession(activeScrapbook?.id); profileDialog.close(); showToast('Profile updated.');
+    await saveReminderSettings(enabled, reminderTime);
+    await loadSession(activeScrapbook?.id);
+    profileDialog.close();
+    showToast(enabled ? 'Profile saved. Daily reminder is on.' : 'Profile updated.');
     if (currentMode === 'connections') renderConnections();
-  } catch (err) { $('#profileError').textContent = err.message; }
+  } catch (err) { $('#profileError').textContent = err.message; updateNotificationStatus(); }
 });
 
 function turn(direction) {
@@ -502,7 +677,10 @@ $('#photoInput').addEventListener('change', async e => {
   try {
     for (const file of files) {
       const uploaded = await uploadImage(file);
-      editingPhotos.push({ id:crypto.randomUUID?.() || String(Date.now()+Math.random()), src:uploaded.src, side:editingPhotos.length % 2 ? 'right' : 'left', width:42, offsetY:0, caption:'' });
+      {
+        const side = editingPhotos.length % 2 ? 'right' : 'left';
+        editingPhotos.push({ id:crypto.randomUUID?.() || String(Date.now()+Math.random()), src:uploaded.src, side, width:42, xPct:side === 'right' ? 58 : 0, yPx:0, offsetY:0, caption:'' });
+      }
     }
     renderPhotoControls(); renderPreview();
   } catch (err) { $('#editorError').textContent = err.message; }
