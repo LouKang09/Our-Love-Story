@@ -2155,3 +2155,48 @@ input:focus,textarea:focus,select:focus{
     white-space:nowrap;
   }
 }
+
+
+/* ===== Pan from every blank workspace region ===== */
+.scrap-canvas-viewport{
+  margin:0!important;
+}
+
+/* A resized text box may be much taller than its actual writing.
+   Keep only the real text region interactive so the unused portion can pan the canvas. */
+.canvas-text-item{
+  justify-content:flex-start;
+}
+.canvas-text-item .canvas-text-content{
+  flex:0 0 auto!important;
+  width:100%;
+  height:auto!important;
+  min-height:44px;
+  max-height:calc(100% - 28px);
+  overflow:auto;
+}
+
+/* Make the surrounding navigation area obvious and comfortably draggable. */
+.scrap-canvas-stage{
+  cursor:grab;
+}
+.scrap-canvas-stage:active{
+  cursor:grabbing;
+}
+.canvas-photo-item,
+.canvas-drag-handle,
+.canvas-resize-handle,
+.canvas-text-content{
+  cursor:auto;
+}
+
+@media(max-width:800px){
+  .scrap-canvas-stage{
+    padding:0!important;
+    scroll-padding:0!important;
+  }
+  .scrap-canvas-viewport{
+    min-width:max-content;
+    min-height:max-content;
+  }
+}

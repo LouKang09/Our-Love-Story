@@ -146,33 +146,64 @@ function updateCanvasZoomLabel() {
   const el = $('#canvasZoomValue');
   if (el) el.textContent = `${Math.round(editingCanvasZoom * 100)}%`;
 }
+function canvasNavigationGutter() {
+  const stage = $('#scrapCanvasStage');
+  const stageWidth = stage?.clientWidth || 360;
+  const stageHeight = stage?.clientHeight || 500;
+  return {
+    x: Math.max(54, Math.round(stageWidth * 0.55)),
+    y: Math.max(72, Math.round(stageHeight * 0.48))
+  };
+}
 function layoutCanvasViewport() {
   const viewport = $('#scrapCanvasViewport');
   const canvas = $('#scrapCanvas');
   if (!viewport || !canvas) return;
   const meta = canvasSizeMeta(editingCanvasSize);
+  const gutter = canvasNavigationGutter();
+  const scaledWidth = Math.round(meta.width * editingCanvasZoom);
+  const scaledHeight = Math.round(meta.height * editingCanvasZoom);
+
   canvas.style.width = `${meta.width}px`;
   canvas.style.height = `${meta.height}px`;
+  canvas.style.left = `${gutter.x}px`;
+  canvas.style.top = `${gutter.y}px`;
   canvas.style.transform = `scale(${editingCanvasZoom})`;
-  viewport.style.width = `${Math.round(meta.width * editingCanvasZoom)}px`;
-  viewport.style.height = `${Math.round(meta.height * editingCanvasZoom)}px`;
+
+  viewport.style.width = `${scaledWidth + gutter.x * 2}px`;
+  viewport.style.height = `${scaledHeight + gutter.y * 2}px`;
+  viewport.style.setProperty('--canvas-gutter-x', `${gutter.x}px`);
+  viewport.style.setProperty('--canvas-gutter-y', `${gutter.y}px`);
   updateCanvasZoomLabel();
+}
+function centerCanvasInStage() {
+  const stage = $('#scrapCanvasStage');
+  const canvas = $('#scrapCanvas');
+  if (!stage || !canvas) return;
+  const meta = canvasSizeMeta(editingCanvasSize);
+  const scaledWidth = meta.width * editingCanvasZoom;
+  const scaledHeight = meta.height * editingCanvasZoom;
+  const canvasCenterX = canvas.offsetLeft + scaledWidth / 2;
+  const canvasCenterY = canvas.offsetTop + scaledHeight / 2;
+  stage.scrollLeft = Math.max(0, canvasCenterX - stage.clientWidth / 2);
+  stage.scrollTop = Math.max(0, canvasCenterY - stage.clientHeight / 2);
 }
 function changeCanvasZoom(nextZoom, options = {}) {
   const stage = $('#scrapCanvasStage');
   const viewport = $('#scrapCanvasViewport');
-  if (!stage || !viewport) return;
+  const canvas = $('#scrapCanvas');
+  if (!stage || !viewport || !canvas) return;
   const oldZoom = editingCanvasZoom;
   const next = clampCanvasZoom(nextZoom);
   const stageRect = stage.getBoundingClientRect();
-  const viewportRect = viewport.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
   const oldClientX = options.oldClientX ?? (stageRect.left + stage.clientWidth / 2);
   const oldClientY = options.oldClientY ?? (stageRect.top + stage.clientHeight / 2);
   const newClientX = options.newClientX ?? oldClientX;
   const newClientY = options.newClientY ?? oldClientY;
   const meta = canvasSizeMeta(editingCanvasSize);
-  const pageX = Math.max(0, Math.min(meta.width, (oldClientX - viewportRect.left) / oldZoom));
-  const pageY = Math.max(0, Math.min(meta.height, (oldClientY - viewportRect.top) / oldZoom));
+  const pageX = Math.max(0, Math.min(meta.width, (oldClientX - canvasRect.left) / oldZoom));
+  const pageY = Math.max(0, Math.min(meta.height, (oldClientY - canvasRect.top) / oldZoom));
 
   editingCanvasZoom = next;
   canvasZoomMode = options.mode || 'manual';
@@ -180,8 +211,8 @@ function changeCanvasZoom(nextZoom, options = {}) {
 
   if (options.preserveAnchor !== false) {
     const nextStageRect = stage.getBoundingClientRect();
-    stage.scrollLeft = viewport.offsetLeft + pageX * next - (newClientX - nextStageRect.left);
-    stage.scrollTop = viewport.offsetTop + pageY * next - (newClientY - nextStageRect.top);
+    stage.scrollLeft = canvas.offsetLeft + pageX * next - (newClientX - nextStageRect.left);
+    stage.scrollTop = canvas.offsetTop + pageY * next - (newClientY - nextStageRect.top);
   }
 }
 function fitCanvasToStage({ resetScroll = true } = {}) {
@@ -193,10 +224,7 @@ function fitCanvasToStage({ resetScroll = true } = {}) {
   editingCanvasZoom = clampCanvasZoom(Math.min(1, available / meta.width));
   canvasZoomMode = 'fit';
   layoutCanvasViewport();
-  if (resetScroll) {
-    stage.scrollLeft = 0;
-    stage.scrollTop = 0;
-  }
+  if (resetScroll) centerCanvasInStage();
 }
 function canvasPinchGeometry() {
   const points = [...canvasGesturePointers.values()];
@@ -215,7 +243,7 @@ function initCanvasViewportGestures() {
   let panState = null;
 
   const isCanvasObjectTarget = target => Boolean(target?.closest?.(
-    '.canvas-item,.canvas-text-inspector,.canvas-zoom-controls,button,input,select,label'
+    '.canvas-photo-item,.canvas-drag-handle,.canvas-resize-handle,.canvas-remove-item,.canvas-text-content,.canvas-text-inspector,.canvas-zoom-controls,button,input,select,label'
   ));
 
   stage.addEventListener('pointerdown', e => {
@@ -1354,7 +1382,7 @@ window.visualViewport?.addEventListener('resize',positionCanvasInspectorMobile);
 window.visualViewport?.addEventListener('scroll',positionCanvasInspectorMobile);
 window.addEventListener('resize', () => {
   if (!editorDialog.open) return;
-  if (canvasZoomMode === 'fit') requestAnimationFrame(() => fitCanvasToStage({ resetScroll:false }));
+  if (canvasZoomMode === 'fit') requestAnimationFrame(() => { fitCanvasToStage({ resetScroll:false }); centerCanvasInStage(); });
   else requestAnimationFrame(layoutCanvasViewport);
 });
 window.addEventListener('orientationchange', () => {
