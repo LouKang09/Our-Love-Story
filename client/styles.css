@@ -651,3 +651,95 @@ input:focus,textarea:focus,select:focus{
   .editor-head h2{font-size:29px}
   .preview-paper{padding:22px}
 }
+
+/* Mobile header: keep Log out permanently visible without horizontal scrolling. */
+@media (max-width:800px){
+  .topbar{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;
+    gap:8px 10px;
+    padding:10px 12px 12px;
+  }
+  .brand-button{
+    grid-column:1;
+    grid-row:1;
+    min-width:0;
+  }
+  .brand-button strong{
+    max-width:calc(100vw - 155px);
+  }
+  .scrapbook-picker-wrap{
+    grid-column:1 / -1;
+    grid-row:2;
+    width:100%;
+    order:initial;
+  }
+  .toolbar{
+    grid-column:1 / -1;
+    grid-row:3;
+    width:100%;
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto;
+    align-items:center;
+    gap:8px;
+    margin:0;
+    padding:0;
+    overflow:visible;
+  }
+  .mode-switch{
+    grid-column:1 / -1;
+    grid-row:2;
+    width:100%;
+    justify-content:center;
+    overflow-x:auto;
+    scrollbar-width:none;
+  }
+  .mode-switch::-webkit-scrollbar{display:none}
+  #newEntryBtn{
+    grid-column:1;
+    grid-row:1;
+    justify-self:start;
+  }
+  .profile-chip{
+    grid-column:2;
+    grid-row:1;
+    justify-self:end;
+    max-width:120px;
+  }
+  .logout-btn{
+    grid-column:3;
+    grid-row:1;
+    display:inline-flex!important;
+    align-items:center;
+    justify-content:center;
+    min-width:78px;
+    min-height:38px;
+    padding:9px 12px;
+    background:#3c2e2f;
+    color:#fff;
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 5px 14px rgba(45,30,30,.15);
+    visibility:visible!important;
+    opacity:1!important;
+  }
+}
+@media (max-width:430px){
+  .toolbar{
+    grid-template-columns:auto 1fr auto;
+  }
+  #newEntryBtn{
+    padding:9px 11px;
+    font-size:12px;
+  }
+  .profile-chip{
+    max-width:44px;
+    padding:4px;
+    justify-self:end;
+  }
+  .logout-btn{
+    min-width:72px;
+    padding:8px 10px;
+    font-size:12px;
+  }
+}
