@@ -170,6 +170,7 @@ async function backupNamedJsonDataOnce(name) {
 async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-richtext-smartwrap-mobile-20260919');
   await backupNamedJsonDataOnce('pre-canvas-editor-20260919');
+  await backupNamedJsonDataOnce('pre-page-size-lines-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -367,7 +368,7 @@ function cleanCanvasItem(item) {
     ...common,
     html: sanitizeRichText(item.html || ''),
     font,
-    size: Math.max(12, Math.min(42, Number(item.size) || 18)),
+    size: Math.max(7, Math.min(42, Number(item.size) || 18)),
     bold: item.bold === true,
     italic: item.italic === true
   };
@@ -389,6 +390,10 @@ function cleanEntry(input, author, existing = {}) {
     canvasItems: Array.isArray(input.canvasItems)
       ? input.canvasItems.map(cleanCanvasItem).filter(Boolean).slice(0, 40)
       : (Array.isArray(existing.canvasItems) ? existing.canvasItems : []),
+    canvasSize: ['small','medium','large','wide'].includes(input.canvasSize)
+      ? input.canvasSize
+      : (['small','medium','large','wide'].includes(existing.canvasSize) ? existing.canvasSize : 'medium'),
+    canvasLined: input.canvasLined === true ? true : (input.canvasLined === false ? false : existing.canvasLined === true),
     author: existing.author || author,
     createdAt: existing.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()

@@ -31,6 +31,8 @@ let currentMode = 'cover';
 let editingId = null;
 let editingPhotos = [];
 let editingCanvasItems = [];
+let editingCanvasSize = 'medium';
+let editingCanvasLined = false;
 let selectedCanvasItemId = null;
 let savedCanvasTextRange = null;
 let me = null;
@@ -120,6 +122,18 @@ function bodyHtml(entry, interactive = false) {
 function canvasFontClass(font) {
   return ['serif','sans','hand','mono'].includes(font) ? `canvas-font-${font}` : 'canvas-font-serif';
 }
+function normalizeCanvasSize(value) {
+  return ['small','medium','large','wide'].includes(value) ? value : 'medium';
+}
+function canvasSizeMeta(value) {
+  const size = normalizeCanvasSize(value);
+  return {
+    small:  { label:'Small portrait', width:420, height:567 },
+    medium: { label:'Medium portrait', width:620, height:837 },
+    large:  { label:'Large portrait', width:820, height:1107 },
+    wide:   { label:'Wide landscape', width:960, height:600 }
+  }[size];
+}
 function canvasItemStyle(item) {
   const x = Math.max(0, Math.min(94, Number(item.x) || 0));
   const y = Math.max(0, Math.min(94, Number(item.y) || 0));
@@ -131,14 +145,16 @@ function canvasItemStyle(item) {
 function savedCanvasHtml(entry) {
   const items = Array.isArray(entry?.canvasItems) ? [...entry.canvasItems].sort((a,b)=>(a.z||0)-(b.z||0)) : [];
   if (!items.length) return '';
-  return `<div class="saved-canvas">${items.map(item => {
+  const canvasSize = normalizeCanvasSize(entry?.canvasSize);
+  const linedClass = entry?.canvasLined === true ? ' canvas-lined' : '';
+  return `<div class="saved-canvas canvas-size-${canvasSize}${linedClass}">${items.map(item => {
     if (item.type === 'photo') {
       return `<figure class="saved-canvas-item saved-photo-item" style="${canvasItemStyle(item)}"><img src="${escapeHtml(item.src)}" alt="Scrapbook photo" loading="lazy" />${item.caption ? `<figcaption>${escapeHtml(item.caption)}</figcaption>` : ''}</figure>`;
     }
     const fontClass = canvasFontClass(item.font);
     const weight = item.bold ? 'font-weight:700;' : '';
     const style = item.italic ? 'font-style:italic;' : '';
-    const size = Math.max(12, Math.min(42, Number(item.size) || 18));
+    const size = Math.max(7, Math.min(42, Number(item.size) || 18));
     return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${(size/5.6).toFixed(3)}cqw;${weight}${style}"><div class="saved-text-content">${String(item.html || '')}</div></div>`;
   }).join('')}</div>`;
 }
@@ -516,6 +532,8 @@ function resetEditor(entry = null) {
   editingId = entry?.id || null;
   editingPhotos = (entry?.photos || []).map(p => ({...p}));
   editingCanvasItems = legacyEntryToCanvas(entry);
+  editingCanvasSize = normalizeCanvasSize(entry?.canvasSize || 'medium');
+  editingCanvasLined = entry?.canvasLined === true;
   selectedCanvasItemId = null;
   savedCanvasTextRange = null;
   $('#editorHeading').textContent = entry ? 'Edit this memory' : 'Design this memory';
@@ -563,6 +581,8 @@ function currentDraft() {
     text: canvasPlainText(),
     richText: textItems.map(item=>item.html || '').join('<div><br></div>').slice(0,50000),
     canvasItems: editingCanvasItems.map(item=>({...item})),
+    canvasSize: editingCanvasSize,
+    canvasLined: editingCanvasLined,
     photos: photoItems.map(item=>({
       id:item.id,src:item.src,caption:item.caption || '',
       side:item.x + item.w/2 >= 50 ? 'right':'left',
@@ -581,7 +601,7 @@ function canvasItemHtml(item) {
       <span class="canvas-resize-handle" aria-hidden="true"></span>
     </div>`;
   }
-  const size=Math.max(12,Math.min(42,Number(item.size)||18));
+  const size=Math.max(7,Math.min(42,Number(item.size)||18));
   return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
     <button class="canvas-remove-item" type="button" title="Remove text box">×</button>
     <div class="canvas-drag-handle" title="Drag text box">✥ Move</div>
@@ -589,9 +609,21 @@ function canvasItemHtml(item) {
     <span class="canvas-resize-handle" aria-hidden="true"></span>
   </div>`;
 }
+function applyCanvasPageSettings() {
+  const canvas = $('#scrapCanvas');
+  if (!canvas) return;
+  canvas.classList.remove('canvas-size-small','canvas-size-medium','canvas-size-large','canvas-size-wide');
+  canvas.classList.add(`canvas-size-${editingCanvasSize}`);
+  canvas.classList.toggle('canvas-lined', editingCanvasLined);
+  $('#canvasPageSize').value = editingCanvasSize;
+  $('#canvasLined').checked = editingCanvasLined;
+  const meta = canvasSizeMeta(editingCanvasSize);
+  $('#canvasSizeHint').textContent = `${meta.label} · ${meta.width} × ${meta.height} workspace`;
+}
 function renderCanvasEditor() {
   const canvas=$('#scrapCanvas');
   const hint=$('#canvasEmptyHint');
+  applyCanvasPageSettings();
   canvas.querySelectorAll('.canvas-item').forEach(el=>el.remove());
   const ordered=[...editingCanvasItems].sort((a,b)=>(a.z||0)-(b.z||0));
   canvas.insertAdjacentHTML('beforeend',ordered.map(canvasItemHtml).join(''));
@@ -683,11 +715,11 @@ function setCanvasTextFont(value) {
 }
 function setCanvasTextSize(value) {
   const item=activeCanvasTextItem();if(!item)return;
-  const size=Math.max(12,Math.min(42,Number(value)||18));
+  const size=Math.max(7,Math.min(42,Number(value)||18));
   const range=canvasTextSelection();
   if(range){
     savedCanvasTextRange=range.cloneRange();
-    const level=size<=14?2:size<=18?3:size<=23?4:size<=29?5:size<=35?6:7;
+    const level=size<=9?1:size<=13?2:size<=18?3:size<=23?4:size<=29?5:size<=35?6:7;
     if(applyCanvasInline('fontSize',String(level))){
       $('#canvasFontSizeValue').textContent=`${size}px selection`;
       return;
@@ -1070,6 +1102,14 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('resize', () => { if (currentMode === 'book') renderBook(); if (currentMode === 'connections' && activeScrapbook?.type === 'group') renderConnections(); });
 
+$('#canvasPageSize').addEventListener('change', e => {
+  editingCanvasSize = normalizeCanvasSize(e.target.value);
+  applyCanvasPageSettings();
+});
+$('#canvasLined').addEventListener('change', e => {
+  editingCanvasLined = e.target.checked === true;
+  applyCanvasPageSettings();
+});
 $('#canvasAddTextBtn').addEventListener('click', addCanvasText);
 $('#canvasPhotoInput').addEventListener('change', async e => {
   const files=[...e.target.files].slice(0,Math.max(0,12-editingCanvasItems.filter(i=>i.type==='photo').length));

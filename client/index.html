@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-canvas2" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-pagesize1" />
 </head>
 <body>
   <div id="app">
@@ -145,6 +145,22 @@
             </div>
           </div>
 
+          <div class="canvas-page-options">
+            <label>Page size
+              <select id="canvasPageSize">
+                <option value="small">Small</option>
+                <option value="medium" selected>Medium</option>
+                <option value="large">Large</option>
+                <option value="wide">Wide</option>
+              </select>
+            </label>
+            <label class="canvas-lined-toggle">
+              <input id="canvasLined" type="checkbox" />
+              <span>Lined paper</span>
+            </label>
+            <span id="canvasSizeHint" class="helper">Medium portrait · 620 × 837 workspace</span>
+          </div>
+
           <div id="canvasTextInspector" class="canvas-text-inspector hidden">
             <strong>Text box</strong>
             <select id="canvasFontSelect" aria-label="Text font">
@@ -154,7 +170,7 @@
               <option value="mono">Typewriter</option>
             </select>
             <label class="canvas-size-control">Size
-              <input id="canvasFontSize" type="range" min="12" max="42" step="1" value="18" />
+              <input id="canvasFontSize" type="range" min="7" max="42" step="1" value="18" />
               <span id="canvasFontSizeValue">18px</span>
             </label>
             <button id="canvasBoldBtn" class="rich-tool rich-bold" type="button" title="Bold">B</button>
@@ -163,11 +179,13 @@
             <button id="canvasDeleteItemBtn" class="danger" type="button">Remove</button>
           </div>
 
-          <div id="scrapCanvas" class="scrap-canvas" aria-label="Scrapbook page canvas">
-            <div id="canvasEmptyHint" class="canvas-empty-hint">
-              <span>♡</span>
-              <strong>Start with a photo or a text box.</strong>
-              <small>Everything here can be moved and resized.</small>
+          <div id="scrapCanvasStage" class="scrap-canvas-stage">
+            <div id="scrapCanvas" class="scrap-canvas canvas-size-medium" aria-label="Scrapbook page canvas">
+              <div id="canvasEmptyHint" class="canvas-empty-hint">
+                <span>♡</span>
+                <strong>Start with a photo or a text box.</strong>
+                <small>Everything here can be moved and resized.</small>
+              </div>
             </div>
           </div>
         </section>
@@ -280,6 +298,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-canvas2" defer></script>
+  <script src="/app.js?v=20260919-pagesize1" defer></script>
 </body>
 </html>
