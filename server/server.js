@@ -22,7 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-const GUIDE_VERSION = 3;
+const GUIDE_VERSION = 4;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -181,6 +181,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-social-profile-browser-20260919');
   await backupNamedJsonDataOnce('pre-notification-hub-profile-zoom-20260919');
   await backupNamedJsonDataOnce('pre-comments-mentions-layout-20260919');
+  await backupNamedJsonDataOnce('pre-mention-autocomplete-push-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -469,12 +470,38 @@ function mentionTags(text) {
   const matches = String(text || '').matchAll(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi);
   return [...new Set([...matches].map(match => slugTag(match[2])).filter(Boolean))].slice(0, 12);
 }
+async function sendMentionPush(social, { to, from, kind, excerpt = '' }) {
+  if (!PUSH_READY || !to) return;
+  const subscriptions = social.pushSubscriptions.filter(item => item.tag === to);
+  if (!subscriptions.length) return;
+  const actor = publicProfileFor(social, from);
+  const name = actor.displayName || displayTag(from);
+  const profileMention = kind === 'profile';
+  const payload = JSON.stringify({
+    title: profileMention ? `${name} mentioned you in their profile` : `${name} mentioned you in a scrapbook comment`,
+    body: String(excerpt || (profileMention ? 'Open the scrapbook to see the mention.' : 'Open the memory to see the comment.')).slice(0, 180),
+    url: '/?notifications=1',
+    tag: `mention-${kind}-${from}-${to}`
+  });
+  for (const item of [...subscriptions]) {
+    try {
+      await webpush.sendNotification(item.subscription, payload, { TTL: 60 * 60 * 24 });
+    } catch (err) {
+      if (err?.statusCode === 404 || err?.statusCode === 410) {
+        social.pushSubscriptions = social.pushSubscriptions.filter(sub => sub.endpoint !== item.endpoint);
+      } else {
+        console.warn('Mention push failed:', err?.statusCode || err?.message || err);
+      }
+    }
+  }
+}
 async function appendMentionNotifications(social, { from, text, kind, scrapbookId = null, entryId = null, previousText = '', allowedTargets = null }) {
   const previous = new Set(mentionTags(previousText));
   for (const target of mentionTags(text)) {
     if (!target || target === from || previous.has(target)) continue;
     if (allowedTargets && !allowedTargets.has(target)) continue;
     if (!(await accountExists(target))) continue;
+    const excerpt = String(text || '').trim().slice(0, 180);
     social.mentions.push({
       id: crypto.randomUUID(),
       to: target,
@@ -482,9 +509,10 @@ async function appendMentionNotifications(social, { from, text, kind, scrapbookI
       kind,
       scrapbookId,
       entryId,
-      excerpt: String(text || '').trim().slice(0, 180),
+      excerpt,
       createdAt: new Date().toISOString()
     });
+    await sendMentionPush(social, { to:target, from, kind, excerpt });
   }
   if (social.mentions.length > 2000) social.mentions = social.mentions.slice(-2000);
 }
@@ -874,7 +902,7 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/people' && req.method === 'GET') {
     const q = slugTag(url.searchParams.get('q') || '');
-    if (q.length < 2) return json(res, 200, { people: [] });
+    if (q.length < 1) return json(res, 200, { people: [] });
     const tags = (await allKnownTags()).filter(t => t !== user && t.includes(q)).slice(0, 12);
     return json(res, 200, {
       people: tags.map(t => ({

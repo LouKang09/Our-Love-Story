@@ -32,7 +32,7 @@ let notificationItems = [];
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
-let guideState = { version: 2, seenVersion: 1, required: false };
+let guideState = { version: 4, seenVersion: 3, required: false };
 let activeGuideSteps = [];
 let guideIndex = 0;
 let guideMandatory = false;
@@ -103,6 +103,116 @@ function mentionTextHtml(text = '') {
     `${lead}<button class="inline-mention" type="button" data-profile-tag="${tag.toLowerCase()}">@${tag}</button>`
   );
 }
+let mentionSuggestSeq = 0;
+function mentionContext(input) {
+  if (!input || typeof input.selectionStart !== 'number') return null;
+  const caret = input.selectionStart;
+  const before = input.value.slice(0, caret);
+  const match = before.match(/(^|\s)@([a-z0-9_.-]{0,23})$/i);
+  if (!match) return null;
+  const atIndex = before.lastIndexOf('@');
+  return { start:atIndex, end:caret, query:(match[2] || '').toLowerCase() };
+}
+function connectedMentionPeople(query = '') {
+  const q = String(query || '').toLowerCase();
+  const pool = [
+    ...(following || []),
+    ...(followers || []),
+    ...((activeScrapbook?.profiles || []))
+  ];
+  const seen = new Set();
+  return pool.filter(person => {
+    const tag = String(person?.tag || '').toLowerCase();
+    if (!tag || tag === me?.tag || seen.has(tag)) return false;
+    seen.add(tag);
+    return !q || tag.includes(q) || String(person.displayName || '').toLowerCase().includes(q);
+  }).slice(0,8);
+}
+function closeMentionSuggestions(input) {
+  const popup = input?._mentionPopup;
+  if (popup) popup.remove();
+  if (input) input._mentionPopup = null;
+}
+function insertMention(input, tag, context = mentionContext(input)) {
+  if (!input || !tag || !context) return;
+  const value = input.value;
+  const insertion = `@${tag} `;
+  input.value = value.slice(0, context.start) + insertion + value.slice(context.end);
+  const caret = context.start + insertion.length;
+  input.focus({ preventScroll:true });
+  try { input.setSelectionRange(caret, caret); } catch {}
+  input.dispatchEvent(new Event('input', { bubbles:true }));
+}
+function positionMentionSuggestions(input, popup) {
+  const rect = input.getBoundingClientRect();
+  const maxWidth = Math.min(360, Math.max(220, rect.width));
+  popup.style.width = `${maxWidth}px`;
+  popup.style.left = `${Math.max(8, Math.min(window.innerWidth - maxWidth - 8, rect.left))}px`;
+  const preferredTop = rect.bottom + 6;
+  const popupHeight = Math.min(260, popup.scrollHeight || 220);
+  popup.style.top = `${preferredTop + popupHeight <= window.innerHeight - 8 ? preferredTop : Math.max(8, rect.top - popupHeight - 6)}px`;
+}
+function renderMentionSuggestions(input, people, context) {
+  closeMentionSuggestions(input);
+  if (!context || !people.length || document.activeElement !== input) return;
+  const popup = document.createElement('div');
+  popup.className = 'mention-suggestions';
+  popup.setAttribute('role','listbox');
+  popup.innerHTML = people.slice(0,8).map(person => `<button class="mention-suggestion" type="button" data-tag="${escapeHtml(person.tag || '')}">
+    ${avatarHtml(person,'mention-suggestion-avatar')}
+    <span><strong>${escapeHtml(person.displayName || person.tag)}</strong><small>@${escapeHtml(person.tag || '')}</small></span>
+  </button>`).join('');
+  document.body.appendChild(popup);
+  input._mentionPopup = popup;
+  positionMentionSuggestions(input, popup);
+  popup.querySelectorAll('.mention-suggestion').forEach(btn => {
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const latest = mentionContext(input) || context;
+      insertMention(input, btn.dataset.tag, latest);
+      closeMentionSuggestions(input);
+    });
+  });
+}
+async function updateMentionSuggestions(input) {
+  const context = mentionContext(input);
+  if (!context) { closeMentionSuggestions(input); return; }
+  const seq = ++mentionSuggestSeq;
+  let people = connectedMentionPeople(context.query);
+  if (context.query.length >= 1) {
+    try {
+      const data = await api(`/api/people?q=${encodeURIComponent(context.query)}`);
+      if (seq !== mentionSuggestSeq || document.activeElement !== input) return;
+      const merged = new Map();
+      [...people, ...(data.people || [])].forEach(person => {
+        if (person?.tag && person.tag !== me?.tag) merged.set(person.tag, person);
+      });
+      people = [...merged.values()].slice(0,8);
+    } catch {}
+  }
+  if (seq !== mentionSuggestSeq) return;
+  renderMentionSuggestions(input, people, mentionContext(input));
+}
+function wireMentionAutocomplete(input) {
+  if (!input || input.dataset.mentionAutocomplete === '1') return;
+  input.dataset.mentionAutocomplete = '1';
+  let timer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => updateMentionSuggestions(input), 90);
+  });
+  input.addEventListener('click', () => updateMentionSuggestions(input));
+  input.addEventListener('keyup', e => {
+    if (['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) updateMentionSuggestions(input);
+    if (e.key === 'Escape') closeMentionSuggestions(input);
+  });
+  input.addEventListener('blur', () => setTimeout(() => closeMentionSuggestions(input), 120));
+  window.addEventListener('resize', () => {
+    if (input._mentionPopup) positionMentionSuggestions(input, input._mentionPopup);
+  });
+}
+
 function plainTextHtml(text) {
   const clean = escapeHtml(text || '').trim();
   if (!clean) return '<p><em class="soft-note">No words were needed for this memory.</em></p>';
@@ -486,7 +596,9 @@ function renderTimeline() {
 function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
   wireProfileLinks(root);
-  root.querySelectorAll('.comment-form').forEach(form => form.addEventListener('submit', async e => {
+  root.querySelectorAll('.comment-form').forEach(form => {
+    wireMentionAutocomplete(form.querySelector('textarea'));
+    form.addEventListener('submit', async e => {
     e.preventDefault();
     const entryId = form.dataset.entryId;
     const input = form.querySelector('textarea');
@@ -502,7 +614,8 @@ function wireEntryButtons(root) {
       showToast(err.message);
       button.disabled = false;
     }
-  }));
+    });
+  });
   root.querySelectorAll('.comment-delete').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('Delete this comment?')) return;
     try {
@@ -933,6 +1046,14 @@ const GUIDE_STEPS = [
     title:'People connects your scrapbook circle.',
     text:'Search @tags, follow people, invite members to Group or Lovers scrapbooks, manage your Personal scrapbook privacy, and see your relationship connections.',
     prepare:() => showView('connections')
+  },
+  {
+    introducedIn:4,
+    selector:'#notificationBtn',
+    eyebrow:'NEW · SMARTER @MENTIONS',
+    title:'Tagging people is faster and can reach them outside the app.',
+    text:'Type @ in Profile About or Personal/Group comments to see tag suggestions. Tap a name to insert it. People who enabled browser notifications can also receive a push when you mention them.',
+    prepare:() => { closeNotificationHub(); showView('home'); }
   },
   {
     introducedIn:3,
@@ -1474,7 +1595,7 @@ async function loadSession(preferredBookId = null) {
   followers = data.followers || [];
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
   notificationSummary = data.notifications || { count:0, pendingInvites:0 };
-  guideState = data.guide || { version:3, seenVersion:2, required:false };
+  guideState = data.guide || { version:4, seenVersion:3, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
@@ -1972,6 +2093,11 @@ function updateNotificationStatus() {
 }
 function maybeOpenReminderComposer() {
   const params = new URLSearchParams(location.search);
+  if (params.get('notifications') === '1') {
+    history.replaceState({}, '', location.pathname);
+    setTimeout(() => loadNotificationHub({ markRead:true }), 250);
+    return;
+  }
   if (params.get('newMemory') === '1' && activeScrapbook) {
     history.replaceState({}, '', location.pathname);
     setTimeout(() => openEditor(), 250);
@@ -2253,6 +2379,7 @@ $('#profilePhotoInput').addEventListener('change', async e => {
   } catch (err) { $('#profileError').textContent = err.message; }
   e.target.value = '';
 });
+wireMentionAutocomplete($('#profileBio'));
 $('#profileForm').addEventListener('submit', async e => {
   e.preventDefault(); $('#profileError').textContent = '';
   try {
@@ -2283,7 +2410,14 @@ window.addEventListener('keydown', e => {
   if (editorDialog.open || scrapbookDialog.open || profileDialog.open || currentMode !== 'book') return;
   if (e.key === 'ArrowRight') turn('next'); if (e.key === 'ArrowLeft') turn('prev');
 });
-window.addEventListener('resize', () => { if (currentMode === 'book') renderBook(); if (currentMode === 'connections' && activeScrapbook?.type === 'group') renderConnections(); });
+function isTypingFieldFocused() {
+  const active = document.activeElement;
+  return Boolean(active && active.matches?.('input,textarea,[contenteditable="true"]'));
+}
+window.addEventListener('resize', () => {
+  if (currentMode === 'book' && !isTypingFieldFocused()) renderBook();
+  if (currentMode === 'connections' && activeScrapbook?.type === 'group' && !isTypingFieldFocused()) renderConnections();
+});
 
 $('#canvasPageSize').addEventListener('change', e => {
   editingCanvasSize = normalizeCanvasSize(e.target.value);
