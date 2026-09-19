@@ -1670,7 +1670,7 @@ input:focus,textarea:focus,select:focus{
   padding:5px 7px;
   overflow:hidden;
   background:rgba(255,250,241,.36);
-  font-size:clamp(9px,calc(var(--canvas-text-size) / 5.6 * 1cqw),42px);
+  font-size:clamp(9px,var(--canvas-text-cqw),var(--canvas-text-size));
   line-height:1.45;
   overflow-wrap:anywhere;
 }
