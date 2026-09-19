@@ -22,6 +22,36 @@
 secrets/
 .secret/
 
+# Package manager / CLI credentials
+.npmrc
+.yarnrc
+.yarnrc.yml
+.pypirc
+.netrc
+.git-credentials
+auth.json
+credentials.json
+*credentials*.json
+service-account*.json
+firebase-adminsdk*.json
+*.token
+tokens.json
+cookies.txt
+cookies*.txt
+*.session
+
+# Cloud / SSH / infrastructure credentials
+.aws/
+.azure/
+.gcp/
+.ssh/
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+kubeconfig
+*.kubeconfig
+
 # Railway / hosting local state
 .railway/
 railway-local/
