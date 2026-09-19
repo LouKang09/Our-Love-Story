@@ -2037,3 +2037,121 @@ input:focus,textarea:focus,select:focus{
     scroll-padding:16px;
   }
 }
+
+
+/* ===== Mobile canvas interaction polish ===== */
+
+/* Save / Cancel / Delete belongs in the document flow above the paper, never floating. */
+.canvas-mode .canvas-entry-actions{
+  position:static!important;
+  inset:auto!important;
+  bottom:auto!important;
+  z-index:auto!important;
+  width:100%;
+  margin:0!important;
+  padding:10px 12px!important;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:rgba(255,250,241,.78);
+  box-shadow:none!important;
+}
+.canvas-mode .canvas-entry-actions .spacer{flex:1}
+
+/* Font sizing is now tap-friendly instead of a tiny range slider. */
+.canvas-size-control{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:0 0 auto;
+  white-space:nowrap;
+}
+.canvas-size-label{
+  font:800 11px ui-sans-serif,system-ui,sans-serif;
+}
+.canvas-size-step{
+  width:38px;
+  min-width:38px;
+  height:38px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#fff;
+  color:var(--ink);
+  font:800 20px/1 ui-sans-serif,system-ui,sans-serif;
+  -webkit-tap-highlight-color:transparent;
+}
+.canvas-size-step:active{
+  transform:scale(.96);
+  background:var(--rose-soft);
+}
+#canvasFontSizeValue{
+  min-width:52px;
+  text-align:center;
+  font:800 11px ui-sans-serif,system-ui,sans-serif;
+}
+
+/* The app handles blank-paper pan and two-finger pinch itself.
+   This makes panning work even when the gesture starts directly on white paper. */
+.scrap-canvas-stage,
+.scrap-canvas-viewport,
+.scrap-canvas-stage .scrap-canvas{
+  touch-action:none!important;
+}
+
+@media(max-width:800px){
+  .canvas-mode .canvas-entry-actions{
+    padding:9px!important;
+  }
+  .canvas-mode .canvas-entry-actions .danger,
+  .canvas-mode .canvas-entry-actions .ghost,
+  .canvas-mode .canvas-entry-actions .primary{
+    min-height:40px;
+    padding:9px 11px;
+    font-size:11px;
+  }
+  .canvas-text-inspector{
+    transition:opacity .15s ease,transform .15s ease;
+  }
+  .canvas-size-control{
+    color:#fff;
+  }
+  .canvas-size-label{
+    display:none;
+  }
+  .canvas-size-step{
+    width:40px;
+    min-width:40px;
+    height:40px;
+    color:#fff;
+    border-color:rgba(255,255,255,.15);
+    background:rgba(255,255,255,.1);
+  }
+  .canvas-size-step:active{
+    background:rgba(255,255,255,.22);
+  }
+  #canvasFontSizeValue{
+    color:#fff;
+    min-width:46px;
+  }
+}
+
+@media(max-width:480px){
+  .canvas-mode .canvas-entry-actions{
+    display:grid;
+    grid-template-columns:auto 1fr auto auto;
+  }
+  .canvas-mode .canvas-entry-actions .spacer{
+    display:block;
+  }
+  .canvas-mode .canvas-entry-actions .danger{
+    max-width:112px;
+  }
+  .canvas-mode .canvas-entry-actions .primary{
+    white-space:nowrap;
+  }
+}

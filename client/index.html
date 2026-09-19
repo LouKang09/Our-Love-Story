@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-pinch1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-pan2" />
 </head>
 <body>
   <div id="app">
@@ -168,6 +168,13 @@
             <span class="canvas-gesture-hint">One finger scrolls empty paper · two fingers pinch & pan</span>
           </div>
 
+          <div class="editor-actions canvas-entry-actions">
+            <button id="deleteEntryBtn" class="danger hidden" type="button">Delete memory</button>
+            <span class="spacer"></span>
+            <button id="cancelEditorBtn" class="ghost" type="button">Cancel</button>
+            <button class="primary" type="submit">Save to scrapbook</button>
+          </div>
+
           <div id="canvasTextInspector" class="canvas-text-inspector hidden">
             <strong>Text box</strong>
             <select id="canvasFontSelect" aria-label="Text font">
@@ -176,10 +183,12 @@
               <option value="hand">Handwritten</option>
               <option value="mono">Typewriter</option>
             </select>
-            <label class="canvas-size-control">Size
-              <input id="canvasFontSize" type="range" min="7" max="42" step="1" value="18" />
+            <div class="canvas-size-control" role="group" aria-label="Text size">
+              <span class="canvas-size-label">Size</span>
+              <button id="canvasFontSizeMinus" class="canvas-size-step" type="button" aria-label="Decrease text size">−</button>
               <span id="canvasFontSizeValue">18px</span>
-            </label>
+              <button id="canvasFontSizePlus" class="canvas-size-step" type="button" aria-label="Increase text size">＋</button>
+            </div>
             <button id="canvasBoldBtn" class="rich-tool rich-bold" type="button" title="Bold">B</button>
             <button id="canvasItalicBtn" class="rich-tool rich-italic" type="button" title="Italic">I</button>
             <button id="canvasBringFrontBtn" class="ghost" type="button">Bring front</button>
@@ -236,12 +245,6 @@
           <article id="entryPreview" class="preview-paper"></article>
         </section>
 
-        <div class="editor-actions">
-          <button id="deleteEntryBtn" class="danger hidden" type="button">Delete memory</button>
-          <span class="spacer"></span>
-          <button id="cancelEditorBtn" class="ghost" type="button">Cancel</button>
-          <button class="primary" type="submit">Save to scrapbook</button>
-        </div>
         <p id="editorError" class="form-error" aria-live="polite"></p>
       </form>
 
@@ -307,6 +310,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-pinch1" defer></script>
+  <script src="/app.js?v=20260919-pan2" defer></script>
 </body>
 </html>

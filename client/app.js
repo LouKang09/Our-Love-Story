@@ -212,14 +212,36 @@ function initCanvasViewportGestures() {
   const stage = $('#scrapCanvasStage');
   if (!stage || stage.dataset.gesturesReady === '1') return;
   stage.dataset.gesturesReady = '1';
+  let panState = null;
+
+  const isCanvasObjectTarget = target => Boolean(target?.closest?.(
+    '.canvas-item,.canvas-text-inspector,.canvas-zoom-controls,button,input,select,label'
+  ));
 
   stage.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse') return;
     canvasGesturePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+
     if (canvasGesturePointers.size >= 2) {
+      panState = null;
       const g = canvasPinchGeometry();
       canvasGesturePinching = true;
       canvasPinchState = g ? { distance:g.distance, x:g.x, y:g.y } : null;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    if (!isCanvasObjectTarget(e.target)) {
+      clearCanvasSelection();
+      panState = {
+        pointerId:e.pointerId,
+        x:e.clientX,
+        y:e.clientY,
+        left:stage.scrollLeft,
+        top:stage.scrollTop
+      };
+      try { stage.setPointerCapture(e.pointerId); } catch {}
       e.preventDefault();
       e.stopPropagation();
     }
@@ -228,25 +250,36 @@ function initCanvasViewportGestures() {
   stage.addEventListener('pointermove', e => {
     if (!canvasGesturePointers.has(e.pointerId)) return;
     canvasGesturePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    if (!canvasGesturePinching || canvasGesturePointers.size < 2 || !canvasPinchState) return;
-    const g = canvasPinchGeometry();
-    if (!g) return;
-    const ratio = g.distance / Math.max(1, canvasPinchState.distance);
-    changeCanvasZoom(editingCanvasZoom * ratio, {
-      oldClientX:canvasPinchState.x,
-      oldClientY:canvasPinchState.y,
-      newClientX:g.x,
-      newClientY:g.y,
-      preserveAnchor:true,
-      mode:'manual'
-    });
-    canvasPinchState = { distance:g.distance, x:g.x, y:g.y };
-    e.preventDefault();
-    e.stopPropagation();
+
+    if (canvasGesturePinching && canvasGesturePointers.size >= 2 && canvasPinchState) {
+      const g = canvasPinchGeometry();
+      if (!g) return;
+      const ratio = g.distance / Math.max(1, canvasPinchState.distance);
+      changeCanvasZoom(editingCanvasZoom * ratio, {
+        oldClientX:canvasPinchState.x,
+        oldClientY:canvasPinchState.y,
+        newClientX:g.x,
+        newClientY:g.y,
+        preserveAnchor:true,
+        mode:'manual'
+      });
+      canvasPinchState = { distance:g.distance, x:g.x, y:g.y };
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    if (panState && panState.pointerId === e.pointerId && canvasGesturePointers.size === 1) {
+      stage.scrollLeft = panState.left - (e.clientX - panState.x);
+      stage.scrollTop = panState.top - (e.clientY - panState.y);
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }, true);
 
   const finishPointer = e => {
     canvasGesturePointers.delete(e.pointerId);
+    if (panState?.pointerId === e.pointerId) panState = null;
     if (canvasGesturePointers.size >= 2) {
       const g = canvasPinchGeometry();
       canvasPinchState = g ? { distance:g.distance, x:g.x, y:g.y } : null;
@@ -787,13 +820,21 @@ function activeCanvasTextItem() {
   const item=editingCanvasItems.find(x=>x.id===selectedCanvasItemId);
   return item?.type==='text' ? item : null;
 }
+function clearCanvasSelection() {
+  selectedCanvasItemId = null;
+  savedCanvasTextRange = null;
+  $('#canvasTextInspector')?.classList.add('hidden');
+  $('#scrapCanvas')?.querySelectorAll('.canvas-item.selected').forEach(el => el.classList.remove('selected'));
+  const active = document.activeElement;
+  if (active?.closest?.('.canvas-text-content')) active.blur();
+  try { window.getSelection()?.removeAllRanges(); } catch {}
+}
 function updateCanvasInspector() {
   const inspector=$('#canvasTextInspector');
   const item=activeCanvasTextItem();
   inspector.classList.toggle('hidden',!item);
   if(!item)return;
   $('#canvasFontSelect').value=item.font || 'serif';
-  $('#canvasFontSize').value=String(item.size || 18);
   $('#canvasFontSizeValue').textContent=`${item.size || 18}px`;
   $('#canvasBoldBtn').classList.toggle('active',item.bold===true);
   $('#canvasItalicBtn').classList.toggle('active',item.italic===true);
@@ -859,9 +900,9 @@ function setCanvasTextFont(value) {
 function setCanvasTextSize(value) {
   const item=activeCanvasTextItem();if(!item)return;
   const size=Math.max(7,Math.min(42,Number(value)||18));
-  const range=canvasTextSelection();
-  if(range){
-    savedCanvasTextRange=range.cloneRange();
+  const liveRange=canvasTextSelection();
+  if(liveRange) savedCanvasTextRange=liveRange.cloneRange();
+  if(liveRange || savedCanvasTextRange){
     const level=size<=9?1:size<=13?2:size<=18?3:size<=23?4:size<=29?5:size<=35?6:7;
     if(applyCanvasInline('fontSize',String(level))){
       $('#canvasFontSizeValue').textContent=`${size}px selection`;
@@ -872,6 +913,11 @@ function setCanvasTextSize(value) {
   $('#canvasFontSizeValue').textContent=`${size}px`;
   const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"]`);
   el?.style.setProperty('--edit-text-size',`${size}px`);
+}
+function stepCanvasTextSize(delta) {
+  const item=activeCanvasTextItem();
+  if(!item)return;
+  setCanvasTextSize(Math.max(7,Math.min(42,(Number(item.size)||18)+delta)));
 }
 function toggleCanvasTextStyle(kind) {
   const item=activeCanvasTextItem();if(!item)return;
@@ -1282,8 +1328,11 @@ $('#canvasPhotoInput').addEventListener('change', async e => {
 });
 $('#canvasFontSelect').addEventListener('pointerdown',rememberCanvasTextSelection);
 $('#canvasFontSelect').addEventListener('change',e=>setCanvasTextFont(e.target.value));
-$('#canvasFontSize').addEventListener('pointerdown',rememberCanvasTextSelection);
-$('#canvasFontSize').addEventListener('input',e=>setCanvasTextSize(e.target.value));
+['canvasFontSizeMinus','canvasFontSizePlus'].forEach(id=>{
+  $('#'+id).addEventListener('pointerdown',e=>{rememberCanvasTextSelection();e.preventDefault();});
+});
+$('#canvasFontSizeMinus').addEventListener('click',()=>stepCanvasTextSize(-1));
+$('#canvasFontSizePlus').addEventListener('click',()=>stepCanvasTextSize(1));
 ['canvasBoldBtn','canvasItalicBtn','canvasBringFrontBtn','canvasDeleteItemBtn'].forEach(id=>{
   $('#'+id).addEventListener('pointerdown',e=>{rememberCanvasTextSelection(); if(id!=='canvasBringFrontBtn'&&id!=='canvasDeleteItemBtn')e.preventDefault();});
 });
