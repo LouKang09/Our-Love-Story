@@ -4,8 +4,6 @@ self.addEventListener('push', event => {
   const title = data.title || 'Your scrapbook is waiting ♡';
   const options = {
     body: data.body || 'Add a little memory before the day ends.',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
     tag: data.tag || 'journey-reminder',
     renotify: false,
     data: { url: data.url || '/' }
