@@ -22,7 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-const GUIDE_VERSION = 4;
+const GUIDE_VERSION = 5;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -70,6 +70,45 @@ function parseBootstrapUsers() {
 }
 const BOOTSTRAP_USERS = parseBootstrapUsers();
 const PENDING_SIGNUP_TAGS = new Set();
+const LIVE_CLIENTS = new Map();
+
+function emitLiveEvent(tag, event, data = {}) {
+  const clients = LIVE_CLIENTS.get(tag);
+  if (!clients?.size) return;
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of [...clients]) {
+    try { res.write(payload); }
+    catch {
+      clients.delete(res);
+    }
+  }
+  if (!clients.size) LIVE_CLIENTS.delete(tag);
+}
+function emitLiveMany(tags, event, data = {}) {
+  for (const tag of new Set((tags || []).filter(Boolean))) emitLiveEvent(tag, event, data);
+}
+function registerLiveClient(req, res, tag) {
+  res.writeHead(200, {
+    'Content-Type':'text/event-stream; charset=utf-8',
+    'Cache-Control':'no-cache, no-transform',
+    'Connection':'keep-alive',
+    'X-Accel-Buffering':'no'
+  });
+  res.write(`event: connected\ndata: ${JSON.stringify({ ok:true })}\n\n`);
+  if (!LIVE_CLIENTS.has(tag)) LIVE_CLIENTS.set(tag, new Set());
+  LIVE_CLIENTS.get(tag).add(res);
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch {}
+  }, 20 * 1000);
+  const cleanup = () => {
+    clearInterval(heartbeat);
+    const set = LIVE_CLIENTS.get(tag);
+    set?.delete(res);
+    if (set && !set.size) LIVE_CLIENTS.delete(tag);
+  };
+  req.on('close', cleanup);
+  req.on('error', cleanup);
+}
 
 async function readJson(file, fallback) {
   try {
@@ -109,6 +148,7 @@ async function readSocial() {
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   data.notificationHub = data.notificationHub && typeof data.notificationHub === 'object' ? data.notificationHub : {};
   data.mentions = Array.isArray(data.mentions) ? data.mentions : [];
+  data.activityNotifications = Array.isArray(data.activityNotifications) ? data.activityNotifications : [];
   return data;
 }
 async function writeSocial(social) { await writeJson(SOCIAL_FILE, social); }
@@ -117,7 +157,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [] });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [] });
 
   const social = await readSocial();
   const bootstrapTags = [...BOOTSTRAP_USERS.keys()];
@@ -182,6 +222,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-notification-hub-profile-zoom-20260919');
   await backupNamedJsonDataOnce('pre-comments-mentions-layout-20260919');
   await backupNamedJsonDataOnce('pre-mention-autocomplete-push-20260919');
+  await backupNamedJsonDataOnce('pre-realtime-stream-layout-20260920');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -470,30 +511,38 @@ function mentionTags(text) {
   const matches = String(text || '').matchAll(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi);
   return [...new Set([...matches].map(match => slugTag(match[2])).filter(Boolean))].slice(0, 12);
 }
-async function sendMentionPush(social, { to, from, kind, excerpt = '' }) {
+async function sendUserPush(social, { to, title, body, tag = 'scrapbook-social', url = '/?notifications=1' }) {
   if (!PUSH_READY || !to) return;
   const subscriptions = social.pushSubscriptions.filter(item => item.tag === to);
   if (!subscriptions.length) return;
-  const actor = publicProfileFor(social, from);
-  const name = actor.displayName || displayTag(from);
-  const profileMention = kind === 'profile';
   const payload = JSON.stringify({
-    title: profileMention ? `${name} mentioned you in their profile` : `${name} mentioned you in a scrapbook comment`,
-    body: String(excerpt || (profileMention ? 'Open the scrapbook to see the mention.' : 'Open the memory to see the comment.')).slice(0, 180),
-    url: '/?notifications=1',
-    tag: `mention-${kind}-${from}-${to}`
+    title:String(title || 'Scrapbook update').slice(0,120),
+    body:String(body || 'Open your scrapbook to see what changed.').slice(0,180),
+    url,
+    tag:String(tag || 'scrapbook-social').slice(0,120)
   });
   for (const item of [...subscriptions]) {
     try {
-      await webpush.sendNotification(item.subscription, payload, { TTL: 60 * 60 * 24 });
+      await webpush.sendNotification(item.subscription, payload, { TTL:60 * 60 * 24 });
     } catch (err) {
       if (err?.statusCode === 404 || err?.statusCode === 410) {
         social.pushSubscriptions = social.pushSubscriptions.filter(sub => sub.endpoint !== item.endpoint);
       } else {
-        console.warn('Mention push failed:', err?.statusCode || err?.message || err);
+        console.warn('Social push failed:', err?.statusCode || err?.message || err);
       }
     }
   }
+}
+async function sendMentionPush(social, { to, from, kind, excerpt = '' }) {
+  const actor = publicProfileFor(social, from);
+  const name = actor.displayName || displayTag(from);
+  const profileMention = kind === 'profile';
+  await sendUserPush(social, {
+    to,
+    title:profileMention ? `${name} mentioned you in their profile` : `${name} mentioned you in a scrapbook comment`,
+    body:excerpt || (profileMention ? 'Open the scrapbook to see the mention.' : 'Open the memory to see the comment.'),
+    tag:`mention-${kind}-${from}-${to}`
+  });
 }
 async function appendMentionNotifications(social, { from, text, kind, scrapbookId = null, entryId = null, previousText = '', allowedTargets = null }) {
   const previous = new Set(mentionTags(previousText));
@@ -513,8 +562,39 @@ async function appendMentionNotifications(social, { from, text, kind, scrapbookI
       createdAt: new Date().toISOString()
     });
     await sendMentionPush(social, { to:target, from, kind, excerpt });
+    emitLiveEvent(target, 'notification', { type:kind === 'profile' ? 'profile_mention' : 'comment_mention', from, scrapbookId, entryId });
   }
   if (social.mentions.length > 2000) social.mentions = social.mentions.slice(-2000);
+}
+function appendActivityNotification(social, { to, from, type, scrapbookId = null, entryId = null, scrapbookName = '', excerpt = '' }) {
+  if (!to || to === from) return null;
+  const item = {
+    id:crypto.randomUUID(),
+    to,
+    from,
+    type,
+    scrapbookId,
+    entryId,
+    scrapbookName:String(scrapbookName || '').slice(0,80),
+    excerpt:String(excerpt || '').slice(0,180),
+    createdAt:new Date().toISOString()
+  };
+  social.activityNotifications.push(item);
+  if (social.activityNotifications.length > 3000) social.activityNotifications = social.activityNotifications.slice(-3000);
+  return item;
+}
+function realtimeBookViewers(social, book) {
+  if (!book) return [];
+  if (book.type !== 'personal') return [...new Set(book.members || [])];
+  const viewers = new Set([book.owner]);
+  const privacy = personalPrivacy(book);
+  if (privacy === 'followers') {
+    social.follows.filter(f => f.following === book.owner).forEach(f => viewers.add(f.follower));
+  } else if (privacy === 'partner') {
+    const partner = activePartnerTag(social, book.owner);
+    if (partner) viewers.add(partner);
+  }
+  return [...viewers];
 }
 function canCommentBook(social, book, viewer) {
   if (!book || !viewer) return false;
@@ -573,14 +653,29 @@ function notificationSnapshot(social, user) {
       excerpt: item.excerpt || ''
     }));
 
-  const items = [...inviteItems, ...followItems, ...mentionItems]
+  const activityItems = social.activityNotifications
+    .filter(item => item.to === user)
+    .map(item => ({
+      id:`activity:${item.id}`,
+      type:item.type,
+      createdAt:item.createdAt || '',
+      unread:(Date.parse(item.createdAt || '') || 0) > seenMs,
+      actor:publicProfileFor(social, item.from),
+      scrapbookId:item.scrapbookId || null,
+      entryId:item.entryId || null,
+      scrapbookName:item.scrapbookName || '',
+      excerpt:item.excerpt || ''
+    }));
+
+  const items = [...inviteItems, ...followItems, ...mentionItems, ...activityItems]
     .sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-    .slice(0, 60);
+    .slice(0, 80);
   const unreadFollowers = followItems.filter(item => item.unread).length;
   const unreadMentions = mentionItems.filter(item => item.unread).length;
+  const unreadActivities = activityItems.filter(item => item.unread).length;
   return {
     items,
-    unreadCount: unreadFollowers + unreadMentions + inviteItems.length,
+    unreadCount: unreadFollowers + unreadMentions + unreadActivities + inviteItems.length,
     pendingInviteCount: inviteItems.length
   };
 }
@@ -697,6 +792,10 @@ async function handleApi(req, res, url) {
 
   const user = await requireAuth(req, res);
   if (!user) return;
+  if (pathname === '/api/events' && req.method === 'GET') {
+    registerLiveClient(req, res, user);
+    return;
+  }
   const social = await readSocial();
 
   if (pathname === '/api/me' && req.method === 'GET') {
@@ -960,6 +1059,15 @@ async function handleApi(req, res, url) {
     if (!(await accountExists(target))) return json(res, 404, { error: `We could not find ${displayTag(target)}.` });
     if (!isFollowing(social, user, target)) {
       social.follows.push({ follower:user, following:target, createdAt:new Date().toISOString() });
+      const actor = publicProfileFor(social, user);
+      await sendUserPush(social, {
+        to:target,
+        title:`${actor.displayName || displayTag(user)} followed you`,
+        body:'Open the scrapbook to view their profile.',
+        tag:`follow-${user}-${target}`
+      });
+      emitLiveEvent(target, 'notification', { type:'follow', from:user });
+      emitLiveEvent(target, 'social', { type:'followers_changed' });
       await writeSocial(social);
     }
     return json(res, 200, { following:true, profile:{ ...publicProfileFor(social,target), isFollowing:true, followsYou:isFollowing(social,target,user), isPartner:isActivePartner(social,user,target) } });
@@ -968,7 +1076,10 @@ async function handleApi(req, res, url) {
     const target = slugTag(followMatch[1]);
     const before = social.follows.length;
     social.follows = social.follows.filter(f => !(f.follower === user && f.following === target));
-    if (social.follows.length !== before) await writeSocial(social);
+    if (social.follows.length !== before) {
+      await writeSocial(social);
+      emitLiveEvent(target, 'social', { type:'followers_changed' });
+    }
     return json(res, 200, { following:false });
   }
 
@@ -1033,6 +1144,14 @@ async function handleApi(req, res, url) {
     if (existing) return json(res, 409, { error: 'That invitation is already waiting for them.' });
     const invite = { id: crypto.randomUUID(), scrapbookId: book.id, type: book.type, from: user, to: target, status: 'pending', createdAt: new Date().toISOString() };
     social.invites.push(invite);
+    const inviter = publicProfileFor(social, user);
+    await sendUserPush(social, {
+      to:target,
+      title:`${inviter.displayName || displayTag(user)} invited you`,
+      body:book.type === 'couple' ? 'You received a Lovers scrapbook invitation.' : `You were invited to ${book.name}.`,
+      tag:`invite-${invite.id}`
+    });
+    emitLiveEvent(target, 'notification', { type:book.type === 'couple' ? 'couple_invite' : 'group_invite', from:user, inviteId:invite.id });
     await writeSocial(social);
     return json(res, 201, { invite });
   }
@@ -1044,6 +1163,16 @@ async function handleApi(req, res, url) {
     const body = await readBody(req, 64 * 1024);
     if (body.accept !== true) {
       invite.status = 'declined'; invite.respondedAt = new Date().toISOString();
+      const responder = publicProfileFor(social, user);
+      appendActivityNotification(social, { to:invite.from, from:user, type:'invite_declined', scrapbookId:invite.scrapbookId });
+      await sendUserPush(social, {
+        to:invite.from,
+        title:`${responder.displayName || displayTag(user)} declined your invitation`,
+        body:'Open your scrapbook to see the latest status.',
+        tag:`invite-response-${invite.id}`
+      });
+      emitLiveEvent(invite.from, 'notification', { type:'invite_declined', from:user, scrapbookId:invite.scrapbookId });
+      emitLiveEvent(user, 'notification', { type:'invite_removed' });
       await writeSocial(social);
       return json(res, 200, { accepted: false });
     }
@@ -1055,6 +1184,17 @@ async function handleApi(req, res, url) {
     }
     if (!book.members.includes(user)) book.members.push(user);
     invite.status = 'accepted'; invite.respondedAt = new Date().toISOString();
+    const responder = publicProfileFor(social, user);
+    appendActivityNotification(social, { to:invite.from, from:user, type:'invite_accepted', scrapbookId:book.id, scrapbookName:book.name });
+    await sendUserPush(social, {
+      to:invite.from,
+      title:`${responder.displayName || displayTag(user)} accepted your invitation`,
+      body:`${book.name} is ready to use together.`,
+      tag:`invite-response-${invite.id}`
+    });
+    emitLiveEvent(invite.from, 'notification', { type:'invite_accepted', from:user, scrapbookId:book.id });
+    emitLiveEvent(user, 'notification', { type:'invite_removed' });
+    emitLiveMany(book.members, 'social', { type:'scrapbook_members_changed', scrapbookId:book.id });
     await writeSocial(social);
     return json(res, 200, { accepted: true, scrapbook: decorateBook(social, book, user) });
   }
@@ -1131,6 +1271,7 @@ async function handleApi(req, res, url) {
     const entries = await readEntries();
     const entry = cleanEntry(body, user);
     entries.push(entry); await writeEntries(entries);
+    emitLiveMany(realtimeBookViewers(social, book), 'entries', { type:'entry_added', scrapbookId:book.id, entryId:entry.id, from:user });
     return json(res, 201, { entry });
   }
 
@@ -1162,8 +1303,33 @@ async function handleApi(req, res, url) {
       entryId:entry.id,
       allowedTargets:allowedMentionTargets
     });
+
+    const genericRecipients = book.type === 'group'
+      ? (book.members || []).filter(tag => tag !== user && !allowedMentionTargets.has(tag))
+      : [book.owner].filter(tag => tag && tag !== user && !allowedMentionTargets.has(tag));
+    const actor = publicProfileFor(social, user);
+    for (const target of genericRecipients) {
+      appendActivityNotification(social, {
+        to:target,
+        from:user,
+        type:'comment',
+        scrapbookId:book.id,
+        entryId:entry.id,
+        scrapbookName:book.name,
+        excerpt:text
+      });
+      await sendUserPush(social, {
+        to:target,
+        title:`${actor.displayName || displayTag(user)} commented in ${book.name}`,
+        body:text,
+        tag:`comment-${entry.id}-${comment.id}-${target}`
+      });
+      emitLiveEvent(target, 'notification', { type:'comment', from:user, scrapbookId:book.id, entryId:entry.id });
+    }
+
     await writeEntries(entries);
     await writeSocial(social);
+    emitLiveMany(realtimeBookViewers(social, book), 'entries', { type:'comment_added', scrapbookId:book.id, entryId:entry.id, from:user });
     return json(res, 201, { comment, profile:publicProfileFor(social, user) });
   }
 
@@ -1180,6 +1346,7 @@ async function handleApi(req, res, url) {
     if (comment.author !== user && book.owner !== user) return forbidden(res, 'Only the comment writer or scrapbook owner can remove this comment.');
     entry.comments = comments.filter(item => item.id !== comment.id);
     await writeEntries(entries);
+    emitLiveMany(realtimeBookViewers(social, book), 'entries', { type:'comment_deleted', scrapbookId:book.id, entryId:entry.id, from:user });
     return json(res, 200, { ok:true });
   }
 
@@ -1193,10 +1360,15 @@ async function handleApi(req, res, url) {
     if (!entryBook || !canWriteBook(entryBook, user)) return forbidden(res, 'This scrapbook is read-only for you.');
     if (entry.author !== user) return forbidden(res, 'Only the person who wrote this memory can change it.');
     if (req.method === 'DELETE') {
-      entries.splice(idx,1); await writeEntries(entries); return json(res, 200, { ok:true });
+      entries.splice(idx,1);
+      await writeEntries(entries);
+      emitLiveMany(realtimeBookViewers(social, entryBook), 'entries', { type:'entry_deleted', scrapbookId:entryBook.id, entryId:entry.id, from:user });
+      return json(res, 200, { ok:true });
     }
     const body = await readBody(req);
-    entries[idx] = cleanEntry(body, user, entry); await writeEntries(entries);
+    entries[idx] = cleanEntry(body, user, entry);
+    await writeEntries(entries);
+    emitLiveMany(realtimeBookViewers(social, entryBook), 'entries', { type:'entry_updated', scrapbookId:entryBook.id, entryId:entry.id, from:user });
     return json(res, 200, { entry: entries[idx] });
   }
 

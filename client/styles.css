@@ -4138,3 +4138,63 @@ input:focus,textarea:focus,select:focus{
     padding:8px 10px;
   }
 }
+
+
+/* ===== Saved scrapbook stream containment + full text ===== */
+.topbar{
+  z-index:5000!important;
+}
+.stream-card,
+.entry-page,
+.canvas-entry-body{
+  position:relative;
+  isolation:isolate;
+}
+.stream-card{
+  z-index:0;
+}
+.saved-canvas{
+  position:relative!important;
+  z-index:0!important;
+  isolation:isolate!important;
+  contain:paint;
+  overflow:hidden!important;
+}
+.saved-canvas-item{
+  max-width:100%;
+}
+.saved-text-item{
+  overflow:visible!important;
+}
+.saved-text-content{
+  height:auto!important;
+  min-height:100%!important;
+  overflow:visible!important;
+}
+.saved-text-content p:last-child,
+.saved-text-content div:last-child{
+  margin-bottom:0!important;
+}
+
+/* Keep saved canvas objects beneath sticky/navigation UI while scrolling. */
+.stream-view,
+.timeline,
+.timeline-item{
+  position:relative;
+  z-index:0;
+}
+.notification-panel,
+.mention-suggestions{
+  z-index:6000;
+}
+
+@media(max-width:800px){
+  .saved-text-item{
+    overflow:visible!important;
+  }
+  .saved-text-content{
+    height:auto!important;
+    min-height:100%!important;
+    overflow:visible!important;
+  }
+}

@@ -32,7 +32,7 @@ let notificationItems = [];
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
-let guideState = { version: 4, seenVersion: 3, required: false };
+let guideState = { version: 5, seenVersion: 4, required: false };
 let activeGuideSteps = [];
 let guideIndex = 0;
 let guideMandatory = false;
@@ -62,6 +62,9 @@ const profileViewerPointers = new Map();
 let profileViewerGesture = null;
 let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.' };
 let toastTimer;
+let liveEventSource = null;
+let realtimeEntryTimer = null;
+let realtimeSocialTimer = null;
 
 const api = async (url, options = {}) => {
   const res = await fetch(url, {
@@ -753,6 +756,27 @@ function renderNotificationHub() {
         ${inComment && item.scrapbookId && item.entryId ? `<button class="ghost notification-view-memory" type="button" data-scrapbook-id="${escapeHtml(item.scrapbookId)}" data-entry-id="${escapeHtml(item.entryId)}">View memory</button>` : ''}
       </article>`;
     }
+    if (item.type === 'comment') {
+      return `<article class="notification-item mention-notification ${item.unread ? 'unread' : ''}">
+        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>commented in ${escapeHtml(item.scrapbookName || 'a scrapbook')}</small></span>
+        </button>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+        ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
+        ${item.scrapbookId && item.entryId ? `<button class="ghost notification-view-memory" type="button" data-scrapbook-id="${escapeHtml(item.scrapbookId)}" data-entry-id="${escapeHtml(item.entryId)}">View memory</button>` : ''}
+      </article>`;
+    }
+    if (item.type === 'invite_accepted' || item.type === 'invite_declined') {
+      const accepted = item.type === 'invite_accepted';
+      return `<article class="notification-item ${item.unread ? 'unread' : ''}">
+        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>${accepted ? 'accepted' : 'declined'} your scrapbook invitation${item.scrapbookName ? ` · ${escapeHtml(item.scrapbookName)}` : ''}</small></span>
+        </button>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+      </article>`;
+    }
     if (item.type === 'follow') {
       return `<article class="notification-item ${item.unread ? 'unread' : ''}">
         <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
@@ -816,7 +840,7 @@ async function loadNotificationHub({ markRead = true } = {}) {
     $('#notificationBtn').setAttribute('aria-expanded','true');
     if (markRead) {
       const read = await api('/api/notifications/read', { method:'POST', body:'{}' });
-      notificationItems = notificationItems.map(item => ['follow','profile_mention','comment_mention'].includes(item.type) ? { ...item, unread:false } : item);
+      notificationItems = notificationItems.map(item => ['couple_invite','group_invite'].includes(item.type) ? item : { ...item, unread:false });
       notificationSummary = { count:read.unreadCount || 0, pendingInvites:read.pendingInviteCount || 0 };
       renderNotificationBadge();
       renderNotificationHub();
@@ -853,6 +877,66 @@ async function refreshNotificationCount() {
       renderNotificationHub();
     }
   } catch {}
+}
+
+function scheduleRealtimeEntryRefresh(payload = {}) {
+  if (!activeScrapbook || payload.scrapbookId !== activeScrapbook.id) return;
+  if (payload.from && payload.from === me?.tag) return;
+  clearTimeout(realtimeEntryTimer);
+  const run = async () => {
+    if (isTypingFieldFocused() || editorDialog.open || scrapbookDialog.open || profileDialog.open) {
+      realtimeEntryTimer = setTimeout(run, 700);
+      return;
+    }
+    try { await refreshEntries(); } catch {}
+  };
+  realtimeEntryTimer = setTimeout(run, 120);
+}
+function scheduleRealtimeSocialRefresh() {
+  clearTimeout(realtimeSocialTimer);
+  const run = async () => {
+    if (isTypingFieldFocused() || editorDialog.open || scrapbookDialog.open || profileDialog.open) {
+      realtimeSocialTimer = setTimeout(run, 700);
+      return;
+    }
+    try {
+      const currentId = activeScrapbook?.id || null;
+      await loadSession(currentId);
+      if (currentMode === 'home') renderHome();
+      if (currentMode === 'connections') renderConnections();
+      if (currentMode === 'person' && viewedPersonData?.profile?.tag) {
+        await openPersonProfile(viewedPersonData.profile.tag, { preserveReturn:true, list:personListMode });
+      }
+    } catch {}
+  };
+  realtimeSocialTimer = setTimeout(run, 180);
+}
+function connectLiveEvents() {
+  if (!('EventSource' in window) || journalApp.classList.contains('hidden')) return;
+  if (liveEventSource) {
+    try { liveEventSource.close(); } catch {}
+  }
+  const source = new EventSource('/api/events');
+  liveEventSource = source;
+  source.addEventListener('notification', () => {
+    refreshNotificationCount();
+  });
+  source.addEventListener('entries', e => {
+    try { scheduleRealtimeEntryRefresh(JSON.parse(e.data || '{}')); } catch {}
+  });
+  source.addEventListener('social', () => {
+    refreshNotificationCount();
+    scheduleRealtimeSocialRefresh();
+  });
+  source.onerror = () => {
+    // EventSource reconnects automatically. The 60-second polling remains as fallback.
+  };
+}
+function disconnectLiveEvents() {
+  if (liveEventSource) {
+    try { liveEventSource.close(); } catch {}
+    liveEventSource = null;
+  }
 }
 
 function renderInviteBanner() {
@@ -1046,6 +1130,14 @@ const GUIDE_STEPS = [
     title:'People connects your scrapbook circle.',
     text:'Search @tags, follow people, invite members to Group or Lovers scrapbooks, manage your Personal scrapbook privacy, and see your relationship connections.',
     prepare:() => showView('connections')
+  },
+  {
+    introducedIn:5,
+    selector:'#notificationBtn',
+    eyebrow:'NEW · LIVE SCRAPBOOK UPDATES',
+    title:'Comments and social changes now arrive in real time.',
+    text:'The bell updates immediately for follows, invitations, comments, and mentions while you are online. Supported browser notifications can also alert you when the scrapbook is in the background.',
+    prepare:() => { closeNotificationHub(); showView('home'); }
   },
   {
     introducedIn:4,
@@ -1595,7 +1687,7 @@ async function loadSession(preferredBookId = null) {
   followers = data.followers || [];
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
   notificationSummary = data.notifications || { count:0, pendingInvites:0 };
-  guideState = data.guide || { version:4, seenVersion:3, required:false };
+  guideState = data.guide || { version:5, seenVersion:4, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
@@ -2161,10 +2253,12 @@ async function enterApp() {
   await loadSession();
   lockScreen.classList.add('hidden'); journalApp.classList.remove('hidden');
   showView('home');
+  connectLiveEvents();
   if (guideState.required) setTimeout(() => startGuide(true), 180);
   else maybeOpenReminderComposer();
 }
 $('#logoutBtn').addEventListener('click', async () => {
+  disconnectLiveEvents();
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
   localStorage.removeItem('activeScrapbookId'); location.reload();
 });
@@ -2660,6 +2754,12 @@ $('#deleteEntryBtn').addEventListener('click', async () => {
   } catch (err) { $('#editorError').textContent = err.message; }
 });
 
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !journalApp.classList.contains('hidden')) {
+    connectLiveEvents();
+    refreshNotificationCount();
+  }
+});
 setInterval(() => refreshNotificationCount(), 60 * 1000);
 
 (async function boot() {
