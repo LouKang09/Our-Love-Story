@@ -1711,21 +1711,10 @@ function renderHome() {
 
     const moreBooksHtml = books.length > 1 ? `
       <button class="ghost home-view-all-books" type="button" data-profile-tag="${escapeHtml(p.tag || '')}" aria-label="View all scrapbooks by ${escapeHtml(p.displayName || p.tag || 'this person')}">
-        <span>View all ${books.length} scrapbooks</span>
+        <span>View all scrapbooks</span>
         <small>Tap here to see the rest</small>
       </button>` : '';
 
-    const lockedHtml = hasLocked ? `<div class="home-personal-book-card">
-      <div class="home-closed-book locked">
-        <div class="home-book-spine"></div>
-        <div class="home-book-face">
-          <span class="home-book-mark">🔒</span>
-          <small>PERSONAL SCRAPBOOK</small>
-          <strong>Private scrapbook</strong>
-          <em>Not shared with you</em>
-        </div>
-      </div>
-    </div>` : '';
 
     const emptyHtml = !books.length && !hasLocked ? `<div class="home-personal-book-card">
       <div class="home-closed-book empty-book">
@@ -1743,7 +1732,7 @@ function renderHome() {
         ${avatarHtml(p,'home-person-avatar')}
         <span><strong>${escapeHtml(p.displayName || p.tag)}</strong><em>@${escapeHtml(p.tag || '')}</em></span>
       </button>
-      <div class="home-personal-books-grid">${booksHtml}${lockedHtml}${emptyHtml}${moreBooksHtml}</div>
+      <div class="home-personal-books-grid">${booksHtml}${emptyHtml}${moreBooksHtml}</div>
     </article>`;
   }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from People and their Personal scrapbooks will appear here when they choose to share them with you.</p></div>';
 
