@@ -33,6 +33,11 @@ let editingPhotos = [];
 let editingCanvasItems = [];
 let editingCanvasSize = 'medium';
 let editingCanvasLined = false;
+let editingCanvasZoom = 1;
+let canvasZoomMode = 'fit';
+let canvasGesturePinching = false;
+const canvasGesturePointers = new Map();
+let canvasPinchState = null;
 let selectedCanvasItemId = null;
 let savedCanvasTextRange = null;
 let me = null;
@@ -133,6 +138,139 @@ function canvasSizeMeta(value) {
     large:  { label:'Large portrait', width:820, height:1107 },
     wide:   { label:'Wide landscape', width:960, height:600 }
   }[size];
+}
+function clampCanvasZoom(value) {
+  return Math.max(0.25, Math.min(2.5, Number(value) || 1));
+}
+function updateCanvasZoomLabel() {
+  const el = $('#canvasZoomValue');
+  if (el) el.textContent = `${Math.round(editingCanvasZoom * 100)}%`;
+}
+function layoutCanvasViewport() {
+  const viewport = $('#scrapCanvasViewport');
+  const canvas = $('#scrapCanvas');
+  if (!viewport || !canvas) return;
+  const meta = canvasSizeMeta(editingCanvasSize);
+  canvas.style.width = `${meta.width}px`;
+  canvas.style.height = `${meta.height}px`;
+  canvas.style.transform = `scale(${editingCanvasZoom})`;
+  viewport.style.width = `${Math.round(meta.width * editingCanvasZoom)}px`;
+  viewport.style.height = `${Math.round(meta.height * editingCanvasZoom)}px`;
+  updateCanvasZoomLabel();
+}
+function changeCanvasZoom(nextZoom, options = {}) {
+  const stage = $('#scrapCanvasStage');
+  const viewport = $('#scrapCanvasViewport');
+  if (!stage || !viewport) return;
+  const oldZoom = editingCanvasZoom;
+  const next = clampCanvasZoom(nextZoom);
+  const stageRect = stage.getBoundingClientRect();
+  const viewportRect = viewport.getBoundingClientRect();
+  const oldClientX = options.oldClientX ?? (stageRect.left + stage.clientWidth / 2);
+  const oldClientY = options.oldClientY ?? (stageRect.top + stage.clientHeight / 2);
+  const newClientX = options.newClientX ?? oldClientX;
+  const newClientY = options.newClientY ?? oldClientY;
+  const meta = canvasSizeMeta(editingCanvasSize);
+  const pageX = Math.max(0, Math.min(meta.width, (oldClientX - viewportRect.left) / oldZoom));
+  const pageY = Math.max(0, Math.min(meta.height, (oldClientY - viewportRect.top) / oldZoom));
+
+  editingCanvasZoom = next;
+  canvasZoomMode = options.mode || 'manual';
+  layoutCanvasViewport();
+
+  if (options.preserveAnchor !== false) {
+    const nextStageRect = stage.getBoundingClientRect();
+    stage.scrollLeft = viewport.offsetLeft + pageX * next - (newClientX - nextStageRect.left);
+    stage.scrollTop = viewport.offsetTop + pageY * next - (newClientY - nextStageRect.top);
+  }
+}
+function fitCanvasToStage({ resetScroll = true } = {}) {
+  const stage = $('#scrapCanvasStage');
+  if (!stage || !stage.clientWidth) return;
+  const meta = canvasSizeMeta(editingCanvasSize);
+  const breathingRoom = window.matchMedia('(max-width:800px)').matches ? 34 : 48;
+  const available = Math.max(160, stage.clientWidth - breathingRoom);
+  editingCanvasZoom = clampCanvasZoom(Math.min(1, available / meta.width));
+  canvasZoomMode = 'fit';
+  layoutCanvasViewport();
+  if (resetScroll) {
+    stage.scrollLeft = 0;
+    stage.scrollTop = 0;
+  }
+}
+function canvasPinchGeometry() {
+  const points = [...canvasGesturePointers.values()];
+  if (points.length < 2) return null;
+  const a = points[0], b = points[1];
+  return {
+    distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2
+  };
+}
+function initCanvasViewportGestures() {
+  const stage = $('#scrapCanvasStage');
+  if (!stage || stage.dataset.gesturesReady === '1') return;
+  stage.dataset.gesturesReady = '1';
+
+  stage.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse') return;
+    canvasGesturePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (canvasGesturePointers.size >= 2) {
+      const g = canvasPinchGeometry();
+      canvasGesturePinching = true;
+      canvasPinchState = g ? { distance:g.distance, x:g.x, y:g.y } : null;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+
+  stage.addEventListener('pointermove', e => {
+    if (!canvasGesturePointers.has(e.pointerId)) return;
+    canvasGesturePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (!canvasGesturePinching || canvasGesturePointers.size < 2 || !canvasPinchState) return;
+    const g = canvasPinchGeometry();
+    if (!g) return;
+    const ratio = g.distance / Math.max(1, canvasPinchState.distance);
+    changeCanvasZoom(editingCanvasZoom * ratio, {
+      oldClientX:canvasPinchState.x,
+      oldClientY:canvasPinchState.y,
+      newClientX:g.x,
+      newClientY:g.y,
+      preserveAnchor:true,
+      mode:'manual'
+    });
+    canvasPinchState = { distance:g.distance, x:g.x, y:g.y };
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
+  const finishPointer = e => {
+    canvasGesturePointers.delete(e.pointerId);
+    if (canvasGesturePointers.size >= 2) {
+      const g = canvasPinchGeometry();
+      canvasPinchState = g ? { distance:g.distance, x:g.x, y:g.y } : null;
+      return;
+    }
+    canvasPinchState = null;
+    if (canvasGesturePointers.size === 0) canvasGesturePinching = false;
+  };
+  stage.addEventListener('pointerup', finishPointer, true);
+  stage.addEventListener('pointercancel', finishPointer, true);
+
+  stage.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.08 : 0.92;
+    changeCanvasZoom(editingCanvasZoom * factor, {
+      oldClientX:e.clientX,
+      oldClientY:e.clientY,
+      newClientX:e.clientX,
+      newClientY:e.clientY,
+      preserveAnchor:true,
+      mode:'manual'
+    });
+  }, { passive:false });
 }
 function canvasItemStyle(item) {
   const x = Math.max(0, Math.min(94, Number(item.x) || 0));
@@ -551,7 +689,11 @@ function openEditor(id = null) {
   if (entry && entry.author !== me.tag) { showToast('Only the writer can edit that memory.'); return; }
   resetEditor(entry || null);
   editorDialog.showModal();
-  setTimeout(() => $('#entryTitle').focus(), 80);
+  setTimeout(() => {
+    initCanvasViewportGestures();
+    fitCanvasToStage({ resetScroll:true });
+    $('#entryTitle').focus();
+  }, 80);
 }
 function closeEditor() {
   selectedCanvasItemId = null;
@@ -619,6 +761,7 @@ function applyCanvasPageSettings() {
   $('#canvasLined').checked = editingCanvasLined;
   const meta = canvasSizeMeta(editingCanvasSize);
   $('#canvasSizeHint').textContent = `${meta.label} · ${meta.width} × ${meta.height} workspace`;
+  layoutCanvasViewport();
 }
 function renderCanvasEditor() {
   const canvas=$('#scrapCanvas');
@@ -739,11 +882,11 @@ function toggleCanvasTextStyle(kind) {
 }
 function syncCanvasTextHeight(content,itemEl,item) {
   const canvas=$('#scrapCanvas');
-  const canvasRect=canvas.getBoundingClientRect();
-  if(!canvasRect.height)return;
+  const canvasHeight=canvas.offsetHeight || canvasSizeMeta(editingCanvasSize).height;
+  if(!canvasHeight)return;
   const dragH=itemEl.querySelector('.canvas-drag-handle')?.offsetHeight || 28;
   const needed=content.scrollHeight+dragH+18;
-  const neededPct=needed/canvasRect.height*100;
+  const neededPct=needed/canvasHeight*100;
   if(neededPct>item.h){
     item.h=Math.min(96-item.y,Math.max(item.h,neededPct));
     itemEl.style.height=`${item.h}%`;
@@ -765,6 +908,7 @@ function wireCanvasItems() {
       const sx=e.clientX,sy=e.clientY,ox=item.x,oy=item.y;
       el.setPointerCapture(e.pointerId);el.classList.add('dragging');
       const move=ev=>{
+        if(canvasGesturePinching)return;
         const dx=(ev.clientX-sx)/r.width*100,dy=(ev.clientY-sy)/r.height*100;
         item.x=Math.max(0,Math.min(100-item.w,ox+dx));
         item.y=Math.max(0,Math.min(100-item.h,oy+dy));
@@ -789,6 +933,7 @@ function wireCanvasItems() {
       const r=rect(),sx=e.clientX,sy=e.clientY,ow=item.w,oh=item.h;
       handle.setPointerCapture(e.pointerId);el.classList.add('resizing');
       const move=ev=>{
+        if(canvasGesturePinching)return;
         item.w=Math.max(item.type==='text'?18:14,Math.min(100-item.x,ow+(ev.clientX-sx)/r.width*100));
         item.h=Math.max(item.type==='text'?8:10,Math.min(100-item.y,oh+(ev.clientY-sy)/r.height*100));
         el.style.width=`${item.w}%`;el.style.height=`${item.h}%`;
@@ -1105,11 +1250,15 @@ window.addEventListener('resize', () => { if (currentMode === 'book') renderBook
 $('#canvasPageSize').addEventListener('change', e => {
   editingCanvasSize = normalizeCanvasSize(e.target.value);
   applyCanvasPageSettings();
+  requestAnimationFrame(() => fitCanvasToStage({ resetScroll:true }));
 });
 $('#canvasLined').addEventListener('change', e => {
   editingCanvasLined = e.target.checked === true;
   applyCanvasPageSettings();
 });
+$('#canvasZoomOut').addEventListener('click', () => changeCanvasZoom(editingCanvasZoom * 0.84, { mode:'manual' }));
+$('#canvasZoomIn').addEventListener('click', () => changeCanvasZoom(editingCanvasZoom * 1.18, { mode:'manual' }));
+$('#canvasZoomFit').addEventListener('click', () => fitCanvasToStage({ resetScroll:false }));
 $('#canvasAddTextBtn').addEventListener('click', addCanvasText);
 $('#canvasPhotoInput').addEventListener('change', async e => {
   const files=[...e.target.files].slice(0,Math.max(0,12-editingCanvasItems.filter(i=>i.type==='photo').length));
@@ -1154,6 +1303,15 @@ document.addEventListener('selectionchange',()=>{
 });
 window.visualViewport?.addEventListener('resize',positionCanvasInspectorMobile);
 window.visualViewport?.addEventListener('scroll',positionCanvasInspectorMobile);
+window.addEventListener('resize', () => {
+  if (!editorDialog.open) return;
+  if (canvasZoomMode === 'fit') requestAnimationFrame(() => fitCanvasToStage({ resetScroll:false }));
+  else requestAnimationFrame(layoutCanvasViewport);
+});
+window.addEventListener('orientationchange', () => {
+  if (!editorDialog.open) return;
+  setTimeout(() => fitCanvasToStage({ resetScroll:false }), 180);
+});
 
 let savedRichRange = null;
 

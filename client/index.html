@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-pagesize1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-pinch1" />
 </head>
 <body>
   <div id="app">
@@ -159,6 +159,13 @@
               <span>Lined paper</span>
             </label>
             <span id="canvasSizeHint" class="helper">Medium portrait · 620 × 837 workspace</span>
+            <div class="canvas-zoom-controls" role="group" aria-label="Canvas zoom">
+              <button id="canvasZoomOut" type="button" aria-label="Zoom out">−</button>
+              <button id="canvasZoomFit" type="button">Fit</button>
+              <span id="canvasZoomValue">100%</span>
+              <button id="canvasZoomIn" type="button" aria-label="Zoom in">＋</button>
+            </div>
+            <span class="canvas-gesture-hint">One finger scrolls empty paper · two fingers pinch & pan</span>
           </div>
 
           <div id="canvasTextInspector" class="canvas-text-inspector hidden">
@@ -179,12 +186,14 @@
             <button id="canvasDeleteItemBtn" class="danger" type="button">Remove</button>
           </div>
 
-          <div id="scrapCanvasStage" class="scrap-canvas-stage">
-            <div id="scrapCanvas" class="scrap-canvas canvas-size-medium" aria-label="Scrapbook page canvas">
-              <div id="canvasEmptyHint" class="canvas-empty-hint">
-                <span>♡</span>
-                <strong>Start with a photo or a text box.</strong>
-                <small>Everything here can be moved and resized.</small>
+          <div id="scrapCanvasStage" class="scrap-canvas-stage" aria-label="Zoomable scrapbook workspace">
+            <div id="scrapCanvasViewport" class="scrap-canvas-viewport">
+              <div id="scrapCanvas" class="scrap-canvas canvas-size-medium" aria-label="Scrapbook page canvas">
+                <div id="canvasEmptyHint" class="canvas-empty-hint">
+                  <span>♡</span>
+                  <strong>Start with a photo or a text box.</strong>
+                  <small>Everything here can be moved and resized.</small>
+                </div>
               </div>
             </div>
           </div>
@@ -298,6 +307,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-pagesize1" defer></script>
+  <script src="/app.js?v=20260919-pinch1" defer></script>
 </body>
 </html>
