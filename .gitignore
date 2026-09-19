@@ -1,0 +1,137 @@
+# ==========================================================
+# Our Love Story — hardened Git ignore
+# Keep credentials, private journal data, uploads and local
+# machine/build artifacts out of source control.
+# ==========================================================
+
+# --- Secrets / environment files ---
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+*.keystore
+*.secret
+*.secrets
+secrets/
+.secret/
+
+# Railway / hosting local state
+.railway/
+railway-local/
+
+# --- Private application data ---
+server/storage/*
+!server/storage/uploads/
+server/storage/uploads/*
+!server/storage/uploads/.gitkeep
+server/storage/journal.json
+server/storage/*.json
+server/storage/*.db
+server/storage/*.sqlite
+server/storage/*.sqlite3
+uploads/
+data/
+private/
+backup/
+backups/
+
+# --- Dependencies ---
+node_modules/
+bower_components/
+.pnpm-store/
+.yarn/
+.yarn-cache/
+.npm/
+
+# --- Build / coverage / cache ---
+dist/
+build/
+out/
+coverage/
+.cache/
+.parcel-cache/
+.vite/
+.next/
+.nuxt/
+.svelte-kit/
+.turbo/
+.eslintcache
+*.tsbuildinfo
+
+# --- Logs / runtime files ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+*.pid.lock
+*.seed
+*.retry
+
+# --- OS metadata ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# --- Temporary / scratch files ---
+tmp/
+temp/
+.tmp/
+.temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.rej
+
+# --- Archives / exports that may contain private memories ---
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# --- Test artifacts ---
+.nyc_output/
+playwright-report/
+test-results/
+
+# --- Local database / persistence files ---
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# Keep source-controlled placeholders only
+!.gitkeep
