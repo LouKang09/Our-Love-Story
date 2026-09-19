@@ -33,6 +33,7 @@ let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
 let guideState = { version: 2, seenVersion: 1, required: false };
+let activeGuideSteps = [];
 let guideIndex = 0;
 let guideMandatory = false;
 let guideRunning = false;
@@ -830,6 +831,7 @@ const GUIDE_STEPS = [
     prepare:() => showView('connections')
   },
   {
+    introducedIn:2,
     selector:'#notificationBtn',
     eyebrow:'STAY IN THE LOOP',
     title:'The bell keeps your scrapbook circle together.',
@@ -860,7 +862,7 @@ function guideTarget(step) {
 }
 function positionGuideSpotlight() {
   if (!guideRunning) return;
-  const step = GUIDE_STEPS[guideIndex];
+  const step = activeGuideSteps[guideIndex];
   const target = guideTarget(step);
   const spot = $('#guideSpotlight');
   if (!target) {
@@ -878,7 +880,7 @@ function positionGuideSpotlight() {
 }
 function renderGuideStep() {
   if (!guideRunning) return;
-  const step = GUIDE_STEPS[guideIndex];
+  const step = activeGuideSteps[guideIndex];
   step.prepare?.();
   requestAnimationFrame(() => {
     const target = guideTarget(step);
@@ -886,8 +888,8 @@ function renderGuideStep() {
     setTimeout(positionGuideSpotlight, 160);
   });
 
-  $('#guideStepLabel').textContent = `${guideIndex + 1} of ${GUIDE_STEPS.length}`;
-  $('#guideProgressBar').style.width = `${((guideIndex + 1) / GUIDE_STEPS.length) * 100}%`;
+  $('#guideStepLabel').textContent = `${guideIndex + 1} of ${activeGuideSteps.length}`;
+  $('#guideProgressBar').style.width = `${((guideIndex + 1) / activeGuideSteps.length) * 100}%`;
   $('#guideEyebrow').textContent = step.eyebrow;
   $('#guideTitle').textContent = step.title;
   $('#guideText').textContent = step.text;
@@ -895,12 +897,25 @@ function renderGuideStep() {
   tip.textContent = step.tip || '';
   tip.classList.toggle('hidden', !step.tip);
   $('#guideBackBtn').classList.toggle('hidden', guideIndex === 0);
-  $('#guideNextBtn').textContent = guideIndex === GUIDE_STEPS.length - 1 ? 'Start journaling' : 'Next';
+  const isLast = guideIndex === activeGuideSteps.length - 1;
+  const isUpdateOnly = guideMandatory && (Number(guideState.seenVersion) || 0) > 0;
+  $('#guideNextBtn').textContent = isLast ? (isUpdateOnly ? 'Got it' : 'Start journaling') : 'Next';
   $('#guideCloseBtn').classList.toggle('hidden', guideMandatory);
 }
 function startGuide(required = false) {
   if (guideRunning) return;
   guideMandatory = required === true;
+  const seenVersion = Math.max(0, Number(guideState.seenVersion) || 0);
+  activeGuideSteps = guideMandatory && seenVersion > 0
+    ? GUIDE_STEPS.filter(step => (Number(step.introducedIn) || 1) > seenVersion)
+    : [...GUIDE_STEPS];
+
+  if (!activeGuideSteps.length) {
+    guideState.required = false;
+    maybeOpenReminderComposer();
+    return;
+  }
+
   guideIndex = 0;
   guideRunning = true;
   if (editorDialog.open) editorDialog.close();
@@ -930,6 +945,7 @@ async function finishGuide({ completed = true } = {}) {
   }
   guideRunning = false;
   guideMandatory = false;
+  activeGuideSteps = [];
   $('#guideOverlay').classList.add('hidden');
   document.body.classList.remove('guide-active');
   $('#guideSpotlight').style.cssText = '';
@@ -937,7 +953,7 @@ async function finishGuide({ completed = true } = {}) {
   if (wasMandatory) maybeOpenReminderComposer();
 }
 $('#guideNextBtn').addEventListener('click', async () => {
-  if (guideIndex >= GUIDE_STEPS.length - 1) {
+  if (guideIndex >= activeGuideSteps.length - 1) {
     await finishGuide({ completed:true });
     return;
   }
