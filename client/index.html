@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-notifyzoom1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-comments3" />
 </head>
 <body>
   <div id="app">
@@ -84,6 +84,19 @@
           </div>
           <div id="homeProfileCard" class="home-profile-card"></div>
         </div>
+
+        <section class="home-search-section">
+          <div>
+            <p class="eyebrow">FIND PEOPLE</p>
+            <h3>Search the scrapbook community</h3>
+            <p>Search by @tag from Home, open a profile, follow them, or view a Personal scrapbook they share with you.</p>
+          </div>
+          <form id="homeSearchForm" class="home-search-form">
+            <input id="homeSearchInput" placeholder="Search @tag" autocomplete="off" required />
+            <button class="primary" type="submit">Search</button>
+          </form>
+          <div id="homeSearchResults" class="home-search-results hidden"></div>
+        </section>
 
         <section class="home-section">
           <div class="home-section-head">
@@ -385,7 +398,8 @@
         </div>
         <label>Display name<input id="profileName" maxlength="60" required /></label>
         <label>@tag<input id="profileTag" disabled /></label>
-        <label>About you<textarea id="profileBio" rows="4" maxlength="220" placeholder="A tiny note about you..."></textarea></label>
+        <label>About you<textarea id="profileBio" rows="4" maxlength="220" placeholder="A tiny note about you... Tag someone with @theirtag"></textarea></label>
+        <p class="helper profile-bio-helper">Tip: use <strong>@tag</strong> in your About text to mention someone. They will receive a notification when the tag is newly added.</p>
 
         <section class="notification-settings">
           <div>
@@ -421,6 +435,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-guideupdates1" defer></script>
+  <script src="/app.js?v=20260919-comments3" defer></script>
 </body>
 </html>

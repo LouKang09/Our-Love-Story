@@ -92,6 +92,17 @@ function formatDate(dateString) {
   const d = new Date(`${dateString}T12:00:00`);
   return new Intl.DateTimeFormat(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }).format(d);
 }
+function formatEntryTime(value) {
+  const d = new Date(value || '');
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat(undefined, { hour:'numeric', minute:'2-digit' }).format(d);
+}
+function mentionTextHtml(text = '') {
+  const escaped = escapeHtml(text);
+  return escaped.replace(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi, (match, lead, tag) =>
+    `${lead}<button class="inline-mention" type="button" data-profile-tag="${tag.toLowerCase()}">@${tag}</button>`
+  );
+}
 function plainTextHtml(text) {
   const clean = escapeHtml(text || '').trim();
   if (!clean) return '<p><em class="soft-note">No words were needed for this memory.</em></p>';
@@ -363,16 +374,25 @@ function savedCanvasHtml(entry) {
   const items = Array.isArray(entry?.canvasItems) ? [...entry.canvasItems].sort((a,b)=>(a.z||0)-(b.z||0)) : [];
   if (!items.length) return '';
   const canvasSize = normalizeCanvasSize(entry?.canvasSize);
+  const meta = canvasSizeMeta(canvasSize);
   const linedClass = entry?.canvasLined === true ? ' canvas-lined' : '';
   return `<div class="saved-canvas canvas-size-${canvasSize}${linedClass}">${items.map(item => {
     if (item.type === 'photo') {
-      return `<figure class="saved-canvas-item saved-photo-item" style="${canvasItemStyle(item)}"><img src="${escapeHtml(item.src)}" alt="Scrapbook photo" loading="lazy" />${item.caption ? `<figcaption>${escapeHtml(item.caption)}</figcaption>` : ''}</figure>`;
+      const hasCaption = Boolean(String(item.caption || '').trim());
+      return `<figure class="saved-canvas-item saved-photo-item${hasCaption ? ' has-caption' : ''}" style="${canvasItemStyle(item)}">
+        <div class="saved-photo-frame"><img src="${escapeHtml(item.src)}" alt="Scrapbook photo" loading="lazy" /></div>
+        ${hasCaption ? `<figcaption>${escapeHtml(item.caption)}</figcaption>` : ''}
+      </figure>`;
     }
     const fontClass = canvasFontClass(item.font);
     const weight = item.bold ? 'font-weight:700;' : '';
     const style = item.italic ? 'font-style:italic;' : '';
     const size = Math.max(7, Math.min(42, Number(item.size) || 18));
-    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${(size/5.6).toFixed(3)}cqw;${weight}${style}"><div class="saved-text-content">${String(item.html || '')}</div></div>`;
+    const sizeCqw = (size / meta.width * 100).toFixed(4);
+    const topCqw = (24 / meta.width * 100).toFixed(4);
+    const padYCqw = (8 / meta.width * 100).toFixed(4);
+    const padXCqw = (10 / meta.width * 100).toFixed(4);
+    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${sizeCqw}cqw;--saved-text-top:${topCqw}cqw;--saved-text-pad-y:${padYCqw}cqw;--saved-text-pad-x:${padXCqw}cqw;${weight}${style}"><div class="saved-text-content">${String(item.html || '')}</div></div>`;
   }).join('')}</div>`;
 }
 function entryContentHtml(entry) {
@@ -384,14 +404,39 @@ function authorHtml(entry) {
   const p = authorProfiles[entry.author] || activeScrapbook?.profiles?.find(x => x.tag === entry.author) || { tag: entry.author, displayName: entry.author };
   return `<span class="author-line">${avatarHtml(p, 'tiny-avatar')}<span>${escapeHtml(p.displayName || p.tag)} <small>@${escapeHtml(p.tag || entry.author)}</small></span></span>`;
 }
+function commentProfile(comment) {
+  return authorProfiles[comment?.author] || { tag:comment?.author || '', displayName:comment?.author || 'Someone' };
+}
+function commentsEnabledForActiveBook() {
+  return Boolean(activeScrapbook && ['personal','group'].includes(activeScrapbook.type) && activeScrapbook.canComment !== false);
+}
+function commentsHtml(entry) {
+  if (!activeScrapbook || !['personal','group'].includes(activeScrapbook.type)) return '';
+  const comments = Array.isArray(entry.comments) ? entry.comments : [];
+  const list = comments.length ? comments.map(comment => {
+    const p = commentProfile(comment);
+    const canDelete = me && (comment.author === me.tag || activeScrapbook.owner === me.tag);
+    return `<article class="memory-comment" data-comment-id="${escapeHtml(comment.id || '')}">
+      <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
+      <p>${mentionTextHtml(comment.text || '')}</p>
+      ${canDelete ? `<button class="comment-delete" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="Delete comment">×</button>` : ''}
+    </article>`;
+  }).join('') : '<p class="comments-empty">No comments yet. Leave the first little note.</p>';
+  const composer = commentsEnabledForActiveBook()
+    ? `<form class="comment-form" data-entry-id="${escapeHtml(entry.id)}"><textarea maxlength="600" rows="2" placeholder="Write a comment… Tag someone with @tag"></textarea><button class="primary" type="submit">Post</button></form>`
+    : '';
+  return `<section class="memory-comments"><div class="comments-head"><strong>Comments</strong><span>${comments.length}</span></div><div class="comments-list">${list}</div>${composer}</section>`;
+}
 function pageHtml(entry) {
   if (!entry) return '<div class="blank-page"><div><strong>A blank page.</strong><span>Some days are only waiting to happen.</span></div></div>';
   const editable = me && entry.author === me.tag;
-  return `<div class="entry-page">
-    <div class="entry-date">${formatDate(entry.date)}</div>
+  const time = formatEntryTime(entry.createdAt);
+  return `<div class="entry-page" data-entry-id="${escapeHtml(entry.id)}">
+    <div class="entry-date-row"><div class="entry-date">${formatDate(entry.date)}</div>${time ? `<time class="entry-time">${escapeHtml(time)}</time>` : ''}</div>
     <h2>${escapeHtml(entry.title)}</h2>
     <div class="entry-meta">${authorHtml(entry)}</div>
     <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
+    ${commentsHtml(entry)}
     ${editable ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this page</button></div>` : ''}
   </div>`;
 }
@@ -422,20 +467,50 @@ function renderBook() {
 }
 function renderTimeline() {
   const ordered = chronologicalEntries().reverse();
-  $('#timeline').innerHTML = ordered.map(entry => `<article class="timeline-item">
-    <div class="timeline-dot"></div>
-    <div class="stream-card">
-      <div class="entry-date">${formatDate(entry.date)}</div>
-      <h2>${escapeHtml(entry.title)}</h2>
-      <div class="entry-meta">${authorHtml(entry)}</div>
-      <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
-      ${me && entry.author === me.tag ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button></div>` : ''}
-    </div>
-  </article>`).join('');
+  $('#timeline').innerHTML = ordered.map(entry => {
+    const time = formatEntryTime(entry.createdAt);
+    return `<article class="timeline-item" data-entry-id="${escapeHtml(entry.id)}">
+      <div class="timeline-dot"></div>
+      <div class="stream-card">
+        <div class="entry-date-row"><div class="entry-date">${formatDate(entry.date)}</div>${time ? `<time class="entry-time">${escapeHtml(time)}</time>` : ''}</div>
+        <h2>${escapeHtml(entry.title)}</h2>
+        <div class="entry-meta">${authorHtml(entry)}</div>
+        <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
+        ${commentsHtml(entry)}
+        ${me && entry.author === me.tag ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button></div>` : ''}
+      </div>
+    </article>`;
+  }).join('');
   wireEntryButtons($('#timeline'));
 }
 function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
+  wireProfileLinks(root);
+  root.querySelectorAll('.comment-form').forEach(form => form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const entryId = form.dataset.entryId;
+    const input = form.querySelector('textarea');
+    const text = input?.value.trim() || '';
+    if (!text) return;
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      await api(`/api/entries/${encodeURIComponent(entryId)}/comments`, { method:'POST', body:JSON.stringify({ text }) });
+      await refreshEntries();
+      showToast('Comment posted.');
+    } catch (err) {
+      showToast(err.message);
+      button.disabled = false;
+    }
+  }));
+  root.querySelectorAll('.comment-delete').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('Delete this comment?')) return;
+    try {
+      await api(`/api/entries/${encodeURIComponent(btn.dataset.entryId)}/comments/${encodeURIComponent(btn.dataset.commentId)}`, { method:'DELETE' });
+      await refreshEntries();
+      showToast('Comment removed.');
+    } catch (err) { showToast(err.message); }
+  }));
 }
 
 function privacyLabel(value) {
@@ -553,6 +628,18 @@ function renderNotificationHub() {
   }
   host.innerHTML = notificationItems.map(item => {
     const actor = item.actor || {};
+    if (item.type === 'profile_mention' || item.type === 'comment_mention') {
+      const inComment = item.type === 'comment_mention';
+      return `<article class="notification-item mention-notification ${item.unread ? 'unread' : ''}">
+        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>${inComment ? 'tagged you in a scrapbook comment' : 'tagged you in their profile About'}</small></span>
+        </button>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+        ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
+        ${inComment && item.scrapbookId && item.entryId ? `<button class="ghost notification-view-memory" type="button" data-scrapbook-id="${escapeHtml(item.scrapbookId)}" data-entry-id="${escapeHtml(item.entryId)}">View memory</button>` : ''}
+      </article>`;
+    }
     if (item.type === 'follow') {
       return `<article class="notification-item ${item.unread ? 'unread' : ''}">
         <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
@@ -581,6 +668,23 @@ function renderNotificationHub() {
     closeNotificationHub();
     await openPersonProfile(tag);
   }));
+  host.querySelectorAll('.notification-view-memory').forEach(btn => btn.addEventListener('click', async () => {
+    closeNotificationHub();
+    try {
+      const targetBookId = btn.dataset.scrapbookId;
+      await loadSession(targetBookId);
+      if (!activeScrapbook || activeScrapbook.id !== targetBookId) {
+        showToast('That scrapbook is no longer shared with you.');
+        return;
+      }
+      showView('stream');
+      requestAnimationFrame(() => {
+        document.querySelector(`#timeline [data-entry-id="${CSS.escape(btn.dataset.entryId)}"]`)?.scrollIntoView({ behavior:'smooth', block:'start' });
+      });
+    } catch (err) {
+      showToast(err.message || 'That memory is no longer available.');
+    }
+  }));
   host.querySelectorAll('.notification-accept').forEach(btn => btn.addEventListener('click', async () => {
     await respondNotificationInvite(btn.closest('.invite-notification')?.dataset.inviteId, true);
   }));
@@ -599,7 +703,7 @@ async function loadNotificationHub({ markRead = true } = {}) {
     $('#notificationBtn').setAttribute('aria-expanded','true');
     if (markRead) {
       const read = await api('/api/notifications/read', { method:'POST', body:'{}' });
-      notificationItems = notificationItems.map(item => item.type === 'follow' ? { ...item, unread:false } : item);
+      notificationItems = notificationItems.map(item => ['follow','profile_mention','comment_mention'].includes(item.type) ? { ...item, unread:false } : item);
       notificationSummary = { count:read.unreadCount || 0, pendingInvites:read.pendingInviteCount || 0 };
       renderNotificationBadge();
       renderNotificationHub();
@@ -831,6 +935,22 @@ const GUIDE_STEPS = [
     prepare:() => showView('connections')
   },
   {
+    introducedIn:3,
+    selector:'#homeSearchForm',
+    eyebrow:'NEW · SEARCH FROM HOME',
+    title:'Finding someone is now available right from Home.',
+    text:'Search an @tag here to open a profile, follow someone, or find a Personal scrapbook they have shared with you.',
+    prepare:() => showView('home')
+  },
+  {
+    introducedIn:3,
+    selector:'#profileBtn',
+    eyebrow:'NEW · TAGS & COMMENTS',
+    title:'@tags now connect profiles and scrapbook conversations.',
+    text:'Use @tag in your profile About or in comments on Personal and Group scrapbook memories. The person you tag receives a notification. Saved memories also show the time they were posted.',
+    prepare:() => showView('home')
+  },
+  {
     introducedIn:2,
     selector:'#notificationBtn',
     eyebrow:'STAY IN THE LOOP',
@@ -907,7 +1027,7 @@ function startGuide(required = false) {
   guideMandatory = required === true;
   const seenVersion = Math.max(0, Number(guideState.seenVersion) || 0);
   activeGuideSteps = guideMandatory && seenVersion > 0
-    ? GUIDE_STEPS.filter(step => (Number(step.introducedIn) || 1) > seenVersion)
+    ? GUIDE_STEPS.filter(step => (Number(step.introducedIn) || 1) === Number(guideState.version || 1))
     : [...GUIDE_STEPS];
 
   if (!activeGuideSteps.length) {
@@ -1074,7 +1194,7 @@ function renderPersonProfile() {
       <p class="eyebrow">${data.isSelf ? 'YOUR SOCIAL PROFILE' : 'SCRAPBOOK PROFILE'}</p>
       <h2>${escapeHtml(p.displayName || p.tag)}</h2>
       <span>@${escapeHtml(p.tag || '')}</span>
-      ${p.bio ? `<p>${escapeHtml(p.bio)}</p>` : '<p class="muted">No bio yet.</p>'}
+      ${p.bio ? `<p class="profile-about-text">${mentionTextHtml(p.bio)}</p>` : '<p class="muted">No bio yet.</p>'}
       <div class="person-relation-badges">${data.isPartner ? '<span>Partner</span>' : ''}${data.followsYou ? '<span>Follows you</span>' : ''}${data.isFollowing ? '<span>You follow</span>' : ''}</div>
     </div>`;
   $('#personFollowerCount').textContent = String(data.followerCount || 0);
@@ -1099,6 +1219,7 @@ function renderPersonProfile() {
     </div>`;
   }
 
+  wireProfileLinks($('#personProfileIdentity'));
   $('#personAvatarZoomBtn')?.addEventListener('click', () => openProfileImageViewer(p));
   $('#personEditOwnProfile')?.addEventListener('click', () => $('#profileBtn').click());
   $('#personProfileActions .person-follow-toggle')?.addEventListener('click', async e => {
@@ -1146,6 +1267,10 @@ $('#personProfileBackBtn').addEventListener('click', async () => {
 
 function renderHome() {
   if (!me) return;
+  if (!$('#homeSearchInput')?.value.trim()) {
+    $('#homeSearchResults')?.classList.add('hidden');
+    if ($('#homeSearchResults')) $('#homeSearchResults').innerHTML = '';
+  }
   const profileCard = $('#homeProfileCard');
   profileCard.innerHTML = `<button class="home-profile-link" type="button" data-profile-tag="${escapeHtml(me.tag)}">${avatarHtml(me,'home-avatar')}<span><strong>${escapeHtml(me.displayName || me.tag)}</strong><em>@${escapeHtml(me.tag)}</em><small>${followers.length} followers · ${following.length} following</small></span></button>`;
 
@@ -1206,6 +1331,58 @@ function renderHome() {
     }
   }));
 }
+function renderHomeSearchResults(people = []) {
+  const host = $('#homeSearchResults');
+  if (!host) return;
+  host.classList.remove('hidden');
+  if (!people.length) {
+    host.innerHTML = '<p class="home-search-empty">No matching profiles found.</p>';
+    return;
+  }
+  host.innerHTML = people.map(person => `<article class="home-search-person" data-profile-tag="${escapeHtml(person.tag)}" data-tag="${escapeHtml(person.tag)}">
+    ${avatarHtml(person,'home-search-avatar')}
+    <div><strong>${escapeHtml(person.displayName || person.tag)}</strong><span>@${escapeHtml(person.tag)}</span>${person.bio ? `<small>${mentionTextHtml(person.bio)}</small>` : ''}</div>
+    <button class="${person.isFollowing ? 'ghost' : 'primary'} home-search-follow" type="button">${person.isFollowing ? 'Following' : 'Follow'}</button>
+  </article>`).join('');
+  wireProfileLinks(host);
+  host.querySelectorAll('.home-search-follow').forEach(btn => btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    const card = btn.closest('.home-search-person');
+    const tag = card?.dataset.tag;
+    if (!tag) return;
+    const currentlyFollowing = btn.textContent.trim() === 'Following';
+    btn.disabled = true;
+    try {
+      await api(`/api/people/${encodeURIComponent(tag)}/follow`, {
+        method:currentlyFollowing ? 'DELETE' : 'POST',
+        body:currentlyFollowing ? undefined : '{}'
+      });
+      await loadSession(activeScrapbook?.id || null);
+      const query = $('#homeSearchInput').value.trim();
+      if (query) {
+        const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
+        renderHomeSearchResults(data.people || []);
+      }
+      showToast(currentlyFollowing ? `Unfollowed @${tag}.` : `You are now following @${tag}.`);
+    } catch (err) {
+      showToast(err.message);
+      btn.disabled = false;
+    }
+  }));
+}
+
+$('#homeSearchForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const query = $('#homeSearchInput').value.trim();
+  if (!query) return;
+  try {
+    const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
+    renderHomeSearchResults(data.people || []);
+  } catch (err) {
+    showToast(err.message || 'Could not search profiles.');
+  }
+});
+
 async function openHomeScrapbook(id, mode = 'book') {
   try {
     await loadSession(id);
@@ -1297,7 +1474,7 @@ async function loadSession(preferredBookId = null) {
   followers = data.followers || [];
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
   notificationSummary = data.notifications || { count:0, pendingInvites:0 };
-  guideState = data.guide || { version:2, seenVersion:1, required:false };
+  guideState = data.guide || { version:3, seenVersion:2, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;

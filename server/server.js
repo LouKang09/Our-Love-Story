@@ -22,7 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-const GUIDE_VERSION = 2;
+const GUIDE_VERSION = 3;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -108,6 +108,7 @@ async function readSocial() {
   data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   data.notificationHub = data.notificationHub && typeof data.notificationHub === 'object' ? data.notificationHub : {};
+  data.mentions = Array.isArray(data.mentions) ? data.mentions : [];
   return data;
 }
 async function writeSocial(social) { await writeJson(SOCIAL_FILE, social); }
@@ -116,7 +117,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {} });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [] });
 
   const social = await readSocial();
   const bootstrapTags = [...BOOTSTRAP_USERS.keys()];
@@ -179,6 +180,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-session-live-refresh-caption-20260919');
   await backupNamedJsonDataOnce('pre-social-profile-browser-20260919');
   await backupNamedJsonDataOnce('pre-notification-hub-profile-zoom-20260919');
+  await backupNamedJsonDataOnce('pre-comments-mentions-layout-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -404,6 +406,7 @@ function cleanEntry(input, author, existing = {}) {
       : (['small','medium','large','wide'].includes(existing.canvasSize) ? existing.canvasSize : 'medium'),
     canvasLined: input.canvasLined === true ? true : (input.canvasLined === false ? false : existing.canvasLined === true),
     author: existing.author || author,
+    comments: Array.isArray(existing.comments) ? existing.comments : [],
     createdAt: existing.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -462,6 +465,35 @@ function canViewBook(social, book, viewer) {
   if (privacy === 'partner') return isActivePartner(social, viewer, book.owner);
   return false;
 }
+function mentionTags(text) {
+  const matches = String(text || '').matchAll(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi);
+  return [...new Set([...matches].map(match => slugTag(match[2])).filter(Boolean))].slice(0, 12);
+}
+async function appendMentionNotifications(social, { from, text, kind, scrapbookId = null, entryId = null, previousText = '', allowedTargets = null }) {
+  const previous = new Set(mentionTags(previousText));
+  for (const target of mentionTags(text)) {
+    if (!target || target === from || previous.has(target)) continue;
+    if (allowedTargets && !allowedTargets.has(target)) continue;
+    if (!(await accountExists(target))) continue;
+    social.mentions.push({
+      id: crypto.randomUUID(),
+      to: target,
+      from,
+      kind,
+      scrapbookId,
+      entryId,
+      excerpt: String(text || '').trim().slice(0, 180),
+      createdAt: new Date().toISOString()
+    });
+  }
+  if (social.mentions.length > 2000) social.mentions = social.mentions.slice(-2000);
+}
+function canCommentBook(social, book, viewer) {
+  if (!book || !viewer) return false;
+  if (book.type === 'group') return Array.isArray(book.members) && book.members.includes(viewer);
+  if (book.type === 'personal') return canViewBook(social, book, viewer);
+  return false;
+}
 function notificationSnapshot(social, user) {
   social.notificationHub ||= {};
   const hub = social.notificationHub[user] || {};
@@ -500,13 +532,27 @@ function notificationSnapshot(social, user) {
       actor: publicProfileFor(social, follow.follower)
     }));
 
-  const items = [...inviteItems, ...followItems]
+  const mentionItems = social.mentions
+    .filter(item => item.to === user)
+    .map(item => ({
+      id: `mention:${item.id}`,
+      type: item.kind === 'profile' ? 'profile_mention' : 'comment_mention',
+      createdAt: item.createdAt || '',
+      unread: (Date.parse(item.createdAt || '') || 0) > seenMs,
+      actor: publicProfileFor(social, item.from),
+      scrapbookId: item.scrapbookId || null,
+      entryId: item.entryId || null,
+      excerpt: item.excerpt || ''
+    }));
+
+  const items = [...inviteItems, ...followItems, ...mentionItems]
     .sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     .slice(0, 60);
   const unreadFollowers = followItems.filter(item => item.unread).length;
+  const unreadMentions = mentionItems.filter(item => item.unread).length;
   return {
     items,
-    unreadCount: unreadFollowers + inviteItems.length,
+    unreadCount: unreadFollowers + unreadMentions + inviteItems.length,
     pendingInviteCount: inviteItems.length
   };
 }
@@ -753,10 +799,18 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/profile' && req.method === 'PUT') {
     const body = await readBody(req, 128 * 1024);
     const current = social.profiles[user] || { tag: user, createdAt: new Date().toISOString() };
+    const previousBio = String(current.bio || '');
+    const nextBio = String(body.bio || '').trim().slice(0, 220);
     current.displayName = String(body.displayName || current.displayName || user).trim().slice(0, 60);
-    current.bio = String(body.bio || '').trim().slice(0, 220);
+    current.bio = nextBio;
     if (String(body.avatar || '').startsWith('/uploads/')) current.avatar = String(body.avatar);
     social.profiles[user] = current;
+    await appendMentionNotifications(social, {
+      from:user,
+      text:nextBio,
+      previousText:previousBio,
+      kind:'profile'
+    });
     await writeSocial(social);
     return json(res, 200, { profile: profileFor(social, user) });
   }
@@ -1031,9 +1085,15 @@ async function handleApi(req, res, url) {
     if (!book) return forbidden(res);
     const entries = (await readEntries()).filter(e => e.scrapbookId === scrapbookId);
     entries.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
-    const profileTags = book.type === 'personal' ? [book.owner] : book.members;
+    const baseTags = book.type === 'personal' ? [book.owner] : book.members;
+    const commentTags = entries.flatMap(entry => Array.isArray(entry.comments) ? entry.comments.map(comment => comment.author) : []);
+    const profileTags = [...new Set([...baseTags, ...commentTags].filter(Boolean))];
     const profiles = Object.fromEntries(profileTags.map(tag => [tag, publicProfileFor(social, tag)]));
-    return json(res, 200, { entries, profiles, scrapbook: decorateBook(social, book, user) });
+    return json(res, 200, {
+      entries,
+      profiles,
+      scrapbook: { ...decorateBook(social, book, user), canComment:canCommentBook(social, book, user) }
+    });
   }
 
   if (pathname === '/api/entries' && req.method === 'POST') {
@@ -1044,6 +1104,55 @@ async function handleApi(req, res, url) {
     const entry = cleanEntry(body, user);
     entries.push(entry); await writeEntries(entries);
     return json(res, 201, { entry });
+  }
+
+  const commentMatch = pathname.match(/^\/api\/entries\/([a-f0-9-]+)\/comments$/i);
+  if (commentMatch && req.method === 'POST') {
+    const entries = await readEntries();
+    const entry = entries.find(e => e.id === commentMatch[1]);
+    if (!entry) return notFound(res);
+    const book = bookForViewer(social, entry.scrapbookId, user);
+    if (!book || !canCommentBook(social, book, user)) return forbidden(res, 'Comments are available on Personal and Group scrapbooks you can access.');
+    const body = await readBody(req, 64 * 1024);
+    const text = String(body.text || '').trim().slice(0, 600);
+    if (!text) return json(res, 400, { error:'Write something before posting your comment.' });
+    entry.comments = Array.isArray(entry.comments) ? entry.comments : [];
+    const comment = {
+      id: crypto.randomUUID(),
+      author: user,
+      text,
+      createdAt: new Date().toISOString()
+    };
+    entry.comments.push(comment);
+    if (entry.comments.length > 300) entry.comments = entry.comments.slice(-300);
+    const allowedMentionTargets = new Set(mentionTags(text).filter(target => canViewBook(social, book, target)));
+    await appendMentionNotifications(social, {
+      from:user,
+      text,
+      kind:'comment',
+      scrapbookId:book.id,
+      entryId:entry.id,
+      allowedTargets:allowedMentionTargets
+    });
+    await writeEntries(entries);
+    await writeSocial(social);
+    return json(res, 201, { comment, profile:publicProfileFor(social, user) });
+  }
+
+  const deleteCommentMatch = pathname.match(/^\/api\/entries\/([a-f0-9-]+)\/comments\/([a-f0-9-]+)$/i);
+  if (deleteCommentMatch && req.method === 'DELETE') {
+    const entries = await readEntries();
+    const entry = entries.find(e => e.id === deleteCommentMatch[1]);
+    if (!entry) return notFound(res);
+    const book = bookForViewer(social, entry.scrapbookId, user);
+    if (!book || !canCommentBook(social, book, user)) return forbidden(res);
+    const comments = Array.isArray(entry.comments) ? entry.comments : [];
+    const comment = comments.find(item => item.id === deleteCommentMatch[2]);
+    if (!comment) return notFound(res);
+    if (comment.author !== user && book.owner !== user) return forbidden(res, 'Only the comment writer or scrapbook owner can remove this comment.');
+    entry.comments = comments.filter(item => item.id !== comment.id);
+    await writeEntries(entries);
+    return json(res, 200, { ok:true });
   }
 
   const entryMatch = pathname.match(/^\/api\/entries\/([a-f0-9-]+)$/i);
