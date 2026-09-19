@@ -456,9 +456,9 @@ function setBookCoverOpen(open) {
   $('#introBook').classList.toggle('open', open === true);
   syncBookCoverControls();
 }
-function toggleBookCover() {
+async function toggleBookCover() {
   if (!activeScrapbook) {
-    showView('connections');
+    await refreshAndShow('connections', null);
     return;
   }
   if (isBookCoverOpen()) {
@@ -466,10 +466,18 @@ function toggleBookCover() {
     showView('cover');
     return;
   }
-  setBookCoverOpen(true);
-  setTimeout(() => {
-    if (isBookCoverOpen()) showView('book');
-  }, 720);
+  try {
+    const currentId = activeScrapbook.id;
+    const latest = await refreshLiveData(currentId);
+    if (!latest || !activeScrapbook || activeScrapbook.id !== currentId) return;
+    setBookCoverOpen(true);
+    setTimeout(() => {
+      if (isBookCoverOpen()) showView('book');
+    }, 720);
+  } catch (err) {
+    if (err.status === 401) location.reload();
+    else showToast(err.message || 'Could not refresh the scrapbook.');
+  }
 }
 
 function updateCover() {
@@ -889,23 +897,27 @@ function renderHome() {
   }));
 }
 async function openHomeScrapbook(id, mode = 'book') {
-  const book = scrapbooks.find(b => b.id === id && b.type === 'personal');
-  if (!book) {
-    showToast('That scrapbook is no longer shared with you.');
-    await loadSession(activeScrapbook?.id || null);
-    showView('home');
-    return;
-  }
-  activeScrapbook = book;
-  spreadIndex = 0;
-  localStorage.setItem('activeScrapbookId', book.id);
-  renderScrapbookPicker();
-  updateCover();
-  await refreshEntries();
-  if (mode === 'stream') showView('stream');
-  else {
-    $('#introBook').classList.add('open');
-    showView('book');
+  try {
+    await loadSession(id);
+    const book = scrapbooks.find(b => b.id === id && b.type === 'personal');
+    if (!book) {
+      showToast('That scrapbook is no longer shared with you.');
+      showView('home');
+      return;
+    }
+    activeScrapbook = book;
+    spreadIndex = 0;
+    localStorage.setItem('activeScrapbookId', book.id);
+    renderScrapbookPicker();
+    updateCover();
+    if (mode === 'stream') showView('stream');
+    else {
+      setBookCoverOpen(true);
+      showView('book');
+    }
+  } catch (err) {
+    if (err.status === 401) location.reload();
+    else showToast(err.message || 'Could not open that scrapbook.');
   }
 }
 
@@ -977,6 +989,28 @@ async function loadSession(preferredBookId = null) {
   renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderFollowStats(); renderHome(); updateCover();
   await refreshEntries();
 }
+let liveRefreshSeq = 0;
+async function refreshLiveData(preferredBookId = activeScrapbook?.id || null) {
+  const seq = ++liveRefreshSeq;
+  await loadSession(preferredBookId);
+  return seq === liveRefreshSeq;
+}
+async function refreshAndShow(mode, preferredBookId = activeScrapbook?.id || null) {
+  try {
+    const latest = await refreshLiveData(preferredBookId);
+    if (!latest) return;
+    if (mode === 'book') setBookCoverOpen(true);
+    if (mode === 'cover') setBookCoverOpen(false);
+    showView(mode);
+  } catch (err) {
+    if (err.status === 401) {
+      location.reload();
+      return;
+    }
+    showToast(err.message || 'Could not refresh the scrapbook. Please try again.');
+  }
+}
+
 async function respondInvite(id, accept) {
   try {
     const data = await api(`/api/invites/${id}/respond`, { method:'POST', body:JSON.stringify({ accept }) });
@@ -1515,7 +1549,10 @@ $('#logoutBtn').addEventListener('click', async () => {
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
   localStorage.removeItem('activeScrapbookId'); location.reload();
 });
-$('#brandButton').addEventListener('click', () => { setBookCoverOpen(false); showView('cover'); });
+$('#brandButton').addEventListener('click', async () => {
+  setBookCoverOpen(false);
+  await refreshAndShow('cover');
+});
 $('#openBookBtn').addEventListener('click', toggleBookCover);
 $('#introBook').addEventListener('click', toggleBookCover);
 $('#introBook').addEventListener('keydown', e => {
@@ -1524,31 +1561,34 @@ $('#introBook').addEventListener('keydown', e => {
   toggleBookCover();
 });
 $('#guideBtn').addEventListener('click', () => startGuide(false));
-$('#homeModeBtn').addEventListener('click', () => showView('home'));
-$('#bookModeBtn').addEventListener('click', () => {
-  if (!activeScrapbook) { showView('connections'); return; }
-  setBookCoverOpen(true);
-  showView('book');
+$('#homeModeBtn').addEventListener('click', () => refreshAndShow('home'));
+$('#bookModeBtn').addEventListener('click', async () => {
+  if (!activeScrapbook) { await refreshAndShow('connections', null); return; }
+  await refreshAndShow('book');
 });
-$('#closeBookViewBtn').addEventListener('click', () => {
+$('#closeBookViewBtn').addEventListener('click', async () => {
   setBookCoverOpen(false);
-  showView('cover');
+  await refreshAndShow('cover');
 });
-$('#streamModeBtn').addEventListener('click', () => showView('stream'));
-$('#connectionsModeBtn').addEventListener('click', () => showView('connections'));
+$('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
+$('#connectionsModeBtn').addEventListener('click', () => refreshAndShow('connections'));
 $('#newEntryBtn').addEventListener('click', () => openEditor());
 $('#emptyAddBtn').addEventListener('click', () => activeScrapbook ? openEditor() : scrapbookDialog.showModal());
 $('#closeEditorBtn').addEventListener('click', closeEditor);
 $('#cancelEditorBtn').addEventListener('click', closeEditor);
 
 $('#scrapbookPicker').addEventListener('change', async e => {
+  const selectedId = e.target.value || null;
   setBookCoverOpen(false);
-  activeScrapbook = scrapbooks.find(b => b.id === e.target.value) || null;
   spreadIndex = 0;
-  if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
-  updateCover();
-  await refreshEntries();
-  showView('cover');
+  try {
+    await loadSession(selectedId);
+    setBookCoverOpen(false);
+    showView('cover');
+  } catch (err) {
+    if (err.status === 401) location.reload();
+    else showToast(err.message || 'Could not refresh that scrapbook.');
+  }
 });
 function updateScrapbookDialogForType() {
   const type = $('#scrapbookType').value;

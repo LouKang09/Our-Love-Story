@@ -175,6 +175,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-page-size-lines-20260919');
   await backupNamedJsonDataOnce('pre-home-social-20260919');
   await backupNamedJsonDataOnce('pre-guided-onboarding-20260919');
+  await backupNamedJsonDataOnce('pre-session-live-refresh-caption-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -230,10 +231,11 @@ async function getUser(req) {
   } catch { return null; }
 }
 function sessionCookie(token) {
-  return `journal_session=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE}; SameSite=Strict${PROD ? '; Secure' : ''}`;
+  const expires = new Date(Date.now() + SESSION_MAX_AGE * 1000).toUTCString();
+  return `journal_session=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE}; Expires=${expires}; SameSite=Lax; Priority=High${PROD ? '; Secure' : ''}`;
 }
 function clearCookie() {
-  return `journal_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict${PROD ? '; Secure' : ''}`;
+  return `journal_session=; HttpOnly; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${PROD ? '; Secure' : ''}`;
 }
 function json(res, status, data, extraHeaders = {}) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extraHeaders });
@@ -637,7 +639,7 @@ async function handleApi(req, res, url) {
         followingShelf,
         friendSuggestions
       }
-    });
+    }, { 'Set-Cookie': sessionCookie(makeSession(user)) });
   }
 
   if (pathname === '/api/guide/complete' && req.method === 'POST') {
