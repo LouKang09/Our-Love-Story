@@ -175,6 +175,43 @@
       </form>
     </dialog>
 
+    <dialog id="spaceDialog" class="small-dialog">
+      <form id="spaceForm" class="modal-card">
+        <div class="editor-head"><div><p class="eyebrow">NEW SCRAPBOOK</p><h2>Create a shared journey</h2></div><button id="closeSpaceBtn" class="icon-btn" type="button">×</button></div>
+        <div class="journey-options compact-options">
+          <label class="journey-card selectable"><input type="radio" name="spaceType" value="lover" checked /><span class="journey-icon">♡</span><strong>Lover</strong><small>Only two people.</small></label>
+          <label class="journey-card selectable"><input type="radio" name="spaceType" value="group" /><span class="journey-icon">✦</span><strong>Group</strong><small>Friends or family.</small></label>
+        </div>
+        <label>Scrapbook name<input id="spaceName" maxlength="80" placeholder="Our Story / College Barkada" required /></label>
+        <button class="primary wide" type="submit">Create scrapbook</button>
+        <p id="spaceError" class="form-error"></p>
+      </form>
+    </dialog>
+
+    <dialog id="peopleDialog" class="small-dialog">
+      <div class="modal-card">
+        <div class="editor-head"><div><p class="eyebrow">PEOPLE</p><h2 id="peopleHeading">Your scrapbook circle</h2></div><button id="closePeopleBtn" class="icon-btn" type="button">×</button></div>
+        <div id="peopleRelationship" class="relationship-modal"></div>
+        <form id="inviteForm" class="invite-form">
+          <label>Invite by @tagname<div class="inline-field"><input id="inviteTag" placeholder="@friend" required /><button class="primary" type="submit">Invite</button></div></label>
+          <p id="inviteError" class="form-error"></p>
+        </form>
+        <div id="memberList" class="member-list"></div>
+      </div>
+    </dialog>
+
+    <dialog id="profileDialog" class="small-dialog">
+      <form id="profileForm" class="modal-card">
+        <div class="editor-head"><div><p class="eyebrow">YOUR PROFILE</p><h2>How you appear in memories</h2></div><button id="closeProfileBtn" class="icon-btn" type="button">×</button></div>
+        <div class="profile-editor-avatar"><img id="profileAvatarPreview" alt="Profile" /><span id="profileAvatarFallback">♡</span></div>
+        <label>Profile picture<input id="profilePhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
+        <label>Display name<input id="profileDisplayName" maxlength="60" required /></label>
+        <label>@tagname<input id="profileTag" disabled /></label>
+        <button class="primary wide" type="submit">Save profile</button>
+        <p id="profileError" class="form-error"></p>
+      </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
   <script src="/app.js" defer></script>
