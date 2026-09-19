@@ -1090,6 +1090,37 @@ function renderPersonalPrivacyQuick() {
   });
 }
 
+async function saveAllPersonalPrivacy(privacy) {
+  const ownedPersonal = scrapbooks.filter(book => book.type === 'personal' && book.owner === me?.tag);
+  if (!ownedPersonal.length) return;
+
+  try {
+    const data = await api('/api/personal/privacy', {
+      method:'PUT',
+      body:JSON.stringify({ privacy })
+    });
+
+    const updated = Array.isArray(data.scrapbooks) ? data.scrapbooks : [];
+    const byId = new Map(updated.map(book => [book.id, book]));
+    scrapbooks = scrapbooks.map(book => byId.get(book.id) || book);
+
+    if (activeScrapbook && byId.has(activeScrapbook.id)) {
+      activeScrapbook = byId.get(activeScrapbook.id);
+    }
+
+    renderScrapbookPicker();
+    updateCover();
+    renderPersonalPrivacy();
+    renderPersonalPrivacyQuick();
+    renderHome();
+
+    showToast(`${updated.length} Personal scrapbook${updated.length === 1 ? '' : 's'} changed to ${privacyLabel(privacy)}.`);
+  } catch (err) {
+    showToast(err.message || 'Could not update all Personal scrapbook privacy.');
+    renderPersonalPrivacy();
+  }
+}
+
 function renderPersonalPrivacy() {
   const panel = $('#personalPrivacyPanel');
   if (!activeScrapbook || activeScrapbook.type !== 'personal') {
@@ -1104,12 +1135,19 @@ function renderPersonalPrivacy() {
     return;
   }
 
-  panel.innerHTML = `<div class="privacy-card"><div><strong>Personal scrapbook privacy</strong><p>You can also change this directly from the privacy controls under the scrapbook header.</p></div><select id="personalPrivacySelect">
-    <option value="followers" ${activeScrapbook.privacy==='followers'?'selected':''}>Followers Only</option>
-    <option value="partner" ${activeScrapbook.privacy==='partner'?'selected':''}>Partner Only</option>
-    <option value="private" ${activeScrapbook.privacy==='private'?'selected':''}>You Only</option>
+  const ownedPersonal = scrapbooks.filter(book => book.type === 'personal' && book.owner === me.tag);
+  const privacyValues = [...new Set(ownedPersonal.map(book => book.privacy || 'private'))];
+  const bulkPrivacy = privacyValues.length === 1 ? privacyValues[0] : 'mixed';
+
+  panel.innerHTML = `<div class="privacy-card"><div><strong>All Personal scrapbooks privacy</strong><p>Changing this setting applies to all ${ownedPersonal.length} of your Personal scrapbooks. Afterward, you can open any one scrapbook and manually give that book a different privacy setting.</p></div><select id="personalPrivacySelect" aria-label="Apply privacy to all Personal scrapbooks">
+    ${bulkPrivacy === 'mixed' ? '<option value="mixed" selected disabled>Mixed — individual settings differ</option>' : ''}
+    <option value="followers" ${bulkPrivacy==='followers'?'selected':''}>Followers Only — all Personal scrapbooks</option>
+    <option value="partner" ${bulkPrivacy==='partner'?'selected':''}>Partner Only — all Personal scrapbooks</option>
+    <option value="private" ${bulkPrivacy==='private'?'selected':''}>You Only — all Personal scrapbooks</option>
   </select></div>`;
-  $('#personalPrivacySelect')?.addEventListener('change', e => savePersonalPrivacy(e.target.value));
+  $('#personalPrivacySelect')?.addEventListener('change', e => {
+    if (e.target.value && e.target.value !== 'mixed') saveAllPersonalPrivacy(e.target.value);
+  });
 }
 function renderConnections() {
   renderFollowStats();
@@ -1136,7 +1174,7 @@ function renderConnections() {
     $('#unbindPanel').innerHTML = '';
     const owner = activeScrapbook.profiles?.[0] || { tag:activeScrapbook.owner, displayName:activeScrapbook.owner };
     $('#connectionsSubtitle').textContent = activeScrapbook.owner === me.tag
-      ? 'Your personal journal. You decide who can read it.'
+      ? 'Your Personal scrapbook. The privacy setting below can apply one choice to all of your Personal scrapbooks.'
       : `A personal scrapbook by @${activeScrapbook.owner}. You have read-only access.`;
     $('#peopleMap').innerHTML = `<button class="personal-owner-card profile-card-button" type="button" data-profile-tag="${escapeHtml(owner.tag)}">${avatarHtml(owner,'bound-avatar')}<strong>${escapeHtml(owner.displayName || owner.tag)}</strong><span>@${escapeHtml(owner.tag)}</span><small>${privacyLabel(activeScrapbook.privacy)}</small></button>`;
     wireProfileLinks($('#peopleMap'));

@@ -240,6 +240,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-private-group-chat-20260920');
   await backupNamedJsonDataOnce('pre-night-cover-mobilechat-20260920');
   await backupNamedJsonDataOnce('pre-night-privacy-multipersonal-20260920');
+  await backupNamedJsonDataOnce('pre-bulk-personal-privacy-20260920');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -1255,6 +1256,38 @@ async function handleApi(req, res, url) {
     await writeSocial(social);
     emitLiveMany(realtimeBookViewers(social, book), 'social', { type:'cover_theme_changed', scrapbookId:book.id });
     return json(res, 200, { scrapbook:decorateBook(social, book, user) });
+  }
+
+  if (pathname === '/api/personal/privacy' && req.method === 'PUT') {
+    const body = await readBody(req, 64 * 1024);
+    if (!['followers','partner','private'].includes(body.privacy)) {
+      return json(res, 400, { error:'Invalid privacy setting.' });
+    }
+
+    const books = social.scrapbooks.filter(book => book.type === 'personal' && book.owner === user);
+    if (!books.length) return json(res, 404, { error:'You do not have any Personal scrapbooks yet.' });
+
+    for (const book of books) book.privacy = body.privacy;
+    await writeSocial(social);
+
+    const affected = new Set([user]);
+    social.follows
+      .filter(follow => follow.following === user)
+      .forEach(follow => affected.add(follow.follower));
+    const partner = activePartnerTag(social, user);
+    if (partner) affected.add(partner);
+
+    emitLiveMany([...affected], 'social', {
+      type:'personal_privacy_bulk_changed',
+      owner:user,
+      privacy:body.privacy,
+      scrapbookIds:books.map(book => book.id)
+    });
+
+    return json(res, 200, {
+      privacy:body.privacy,
+      scrapbooks:books.map(book => decorateBook(social, book, user))
+    });
   }
 
   const privacyMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/privacy$/i);
