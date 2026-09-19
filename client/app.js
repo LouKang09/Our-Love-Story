@@ -824,18 +824,62 @@ window.addEventListener('keydown', e => {
 window.addEventListener('resize', () => { if (currentMode === 'book') renderBook(); if (currentMode === 'connections' && activeScrapbook?.type === 'group') renderConnections(); });
 
 let savedRichRange = null;
-function rememberRichSelection() {
+
+function mobileFormattingMode() {
+  return window.matchMedia('(max-width: 800px), (pointer: coarse)').matches;
+}
+function selectedEditorRange() {
   const editor = $('#entryText');
   const sel = window.getSelection();
-  if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) return;
-  savedRichRange = sel.getRangeAt(0).cloneRange();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  const node = range.commonAncestorContainer;
+  if (!editor.contains(node) && node !== editor) return null;
+  return range;
+}
+function rememberRichSelection() {
+  const range = selectedEditorRange();
+  if (range) savedRichRange = range.cloneRange();
 }
 function restoreRichSelection() {
   if (!savedRichRange) return false;
+  const editor = $('#entryText');
+  if (!editor.contains(savedRichRange.commonAncestorContainer)) return false;
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(savedRichRange);
   return true;
+}
+function hideMobileRichToolbar() {
+  const bar = $('#mobileRichToolbar');
+  if (!bar) return;
+  bar.classList.add('hidden');
+  bar.style.top = '';
+}
+function positionMobileRichToolbar() {
+  const bar = $('#mobileRichToolbar');
+  if (!bar || bar.classList.contains('hidden')) return;
+  const vv = window.visualViewport;
+  const viewportTop = vv ? vv.offsetTop : 0;
+  const viewportHeight = vv ? vv.height : window.innerHeight;
+  const barHeight = Math.max(48, bar.offsetHeight || 48);
+  const top = Math.max(viewportTop + 8, viewportTop + viewportHeight - barHeight - 10);
+  bar.style.top = `${Math.round(top)}px`;
+}
+function syncMobileRichToolbar() {
+  const bar = $('#mobileRichToolbar');
+  if (!bar || !mobileFormattingMode() || !editorDialog.open) {
+    hideMobileRichToolbar();
+    return;
+  }
+  const range = selectedEditorRange();
+  if (!range) {
+    if (!bar.matches(':focus-within')) hideMobileRichToolbar();
+    return;
+  }
+  savedRichRange = range.cloneRange();
+  bar.classList.remove('hidden');
+  requestAnimationFrame(positionMobileRichToolbar);
 }
 function applyRichCommand(command, value = null) {
   const editor = $('#entryText');
@@ -852,6 +896,7 @@ function applyRichCommand(command, value = null) {
   document.execCommand(command, false, value);
   rememberRichSelection();
   renderPreview();
+  syncMobileRichToolbar();
 }
 function changeSelectedTextSize(delta) {
   if (!restoreRichSelection()) return showToast('Select some journal text first.');
@@ -861,20 +906,52 @@ function changeSelectedTextSize(delta) {
   if (!Number.isFinite(current) || current < 1 || current > 7) current = 3;
   applyRichCommand('fontSize', String(Math.max(1, Math.min(7, current + delta))));
 }
-document.addEventListener('selectionchange', rememberRichSelection);
-['richBoldBtn','richItalicBtn','richSmallerBtn','richLargerBtn','richClearBtn'].forEach(id => {
-  $('#'+id).addEventListener('pointerdown', e => e.preventDefault());
+
+document.addEventListener('selectionchange', () => {
+  rememberRichSelection();
+  syncMobileRichToolbar();
 });
+window.visualViewport?.addEventListener('resize', positionMobileRichToolbar);
+window.visualViewport?.addEventListener('scroll', positionMobileRichToolbar);
+window.addEventListener('orientationchange', () => setTimeout(positionMobileRichToolbar, 120));
+editorDialog.addEventListener('close', hideMobileRichToolbar);
+
+['richBoldBtn','richItalicBtn','richSmallerBtn','richLargerBtn','richClearBtn',
+ 'mobileRichBold','mobileRichItalic','mobileRichSmaller','mobileRichLarger','mobileRichClear'].forEach(id => {
+  $('#'+id)?.addEventListener('pointerdown', e => {
+    rememberRichSelection();
+    e.preventDefault();
+  });
+});
+
 $('#richBoldBtn').addEventListener('click', () => applyRichCommand('bold'));
 $('#richItalicBtn').addEventListener('click', () => applyRichCommand('italic'));
 $('#richSmallerBtn').addEventListener('click', () => changeSelectedTextSize(-1));
 $('#richLargerBtn').addEventListener('click', () => changeSelectedTextSize(1));
 $('#richClearBtn').addEventListener('click', () => applyRichCommand('removeFormat'));
+$('#richFontSelect').addEventListener('pointerdown', rememberRichSelection);
 $('#richFontSelect').addEventListener('change', e => {
   const face = e.target.value;
   if (face) applyRichCommand('fontName', face);
   e.target.value = '';
 });
+
+$('#mobileRichBold').addEventListener('click', () => applyRichCommand('bold'));
+$('#mobileRichItalic').addEventListener('click', () => applyRichCommand('italic'));
+$('#mobileRichSmaller').addEventListener('click', () => changeSelectedTextSize(-1));
+$('#mobileRichLarger').addEventListener('click', () => changeSelectedTextSize(1));
+$('#mobileRichClear').addEventListener('click', () => applyRichCommand('removeFormat'));
+$('#mobileRichFont').addEventListener('pointerdown', rememberRichSelection);
+$('#mobileRichFont').addEventListener('change', e => {
+  const face = e.target.value;
+  if (face) applyRichCommand('fontName', face);
+  e.target.value = '';
+  requestAnimationFrame(positionMobileRichToolbar);
+});
+
+$('#entryText').addEventListener('focus', () => setTimeout(syncMobileRichToolbar, 80));
+$('#entryText').addEventListener('keyup', syncMobileRichToolbar);
+$('#entryText').addEventListener('touchend', () => setTimeout(syncMobileRichToolbar, 120));
 $('#entryText').addEventListener('paste', e => {
   e.preventDefault();
   const text = e.clipboardData?.getData('text/plain') || '';

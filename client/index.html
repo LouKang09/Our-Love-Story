@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-rich1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-mobilefmt2" />
 </head>
 <body>
   <div id="app">
@@ -150,7 +150,7 @@
             <button id="richClearBtn" type="button" class="rich-tool rich-clear" title="Clear selected text formatting">Clear</button>
           </div>
           <div id="entryText" class="rich-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Write it the way you want to remember it..."></div>
-          <p class="helper rich-help">Select text first, then use the formatting controls above.</p>
+          <p class="helper rich-help"><span class="desktop-format-help">Select text first, then use the formatting controls above.</span><span class="mobile-format-help">Select text and the formatting dock will appear above your keyboard.</span></p>
         </section>
 
         <section class="photo-editor">
@@ -177,6 +177,21 @@
         </div>
         <p id="editorError" class="form-error" aria-live="polite"></p>
       </form>
+
+      <div id="mobileRichToolbar" class="mobile-rich-toolbar hidden" role="toolbar" aria-label="Selected text formatting">
+        <button id="mobileRichBold" type="button" class="mobile-rich-tool rich-bold" aria-label="Bold selected text">B</button>
+        <button id="mobileRichItalic" type="button" class="mobile-rich-tool rich-italic" aria-label="Italicize selected text">I</button>
+        <button id="mobileRichSmaller" type="button" class="mobile-rich-tool" aria-label="Decrease selected text size">A−</button>
+        <button id="mobileRichLarger" type="button" class="mobile-rich-tool" aria-label="Increase selected text size">A+</button>
+        <select id="mobileRichFont" class="mobile-rich-font" aria-label="Change selected text font">
+          <option value="">Font</option>
+          <option value="Georgia">Serif</option>
+          <option value="Arial">Sans</option>
+          <option value="Segoe Print">Hand</option>
+          <option value="Courier New">Type</option>
+        </select>
+        <button id="mobileRichClear" type="button" class="mobile-rich-tool mobile-rich-clear" aria-label="Clear selected text formatting">Clear</button>
+      </div>
     </dialog>
 
     <dialog id="scrapbookDialog" class="small-dialog">
@@ -225,6 +240,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-rich1" defer></script>
+  <script src="/app.js?v=20260919-mobilefmt2" defer></script>
 </body>
 </html>
