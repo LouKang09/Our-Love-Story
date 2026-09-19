@@ -16,9 +16,11 @@
         <h1 id="lockTitle">Our Little Book of Us</h1>
         <p id="lockSubtitle" class="muted">Every ordinary day deserves to be remembered.</p>
 
+        <input id="authSigninMode" class="auth-mode-radio" type="radio" name="authMode" checked />
+        <input id="authSignupMode" class="auth-mode-radio" type="radio" name="authMode" />
         <div class="auth-tabs" role="tablist">
-          <button id="signInTab" class="active" type="button">Sign in</button>
-          <button id="signUpTab" type="button">Create profile</button>
+          <label id="signInTab" class="active" for="authSigninMode" role="button" tabindex="0">Sign in</label>
+          <label id="signUpTab" for="authSignupMode" role="button" tabindex="0">Create profile</label>
         </div>
 
         <form id="loginForm" autocomplete="on">
