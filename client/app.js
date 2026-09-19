@@ -464,7 +464,7 @@ $('#profilePhotoInput').addEventListener('change', async e => {
   try {
     const uploaded = await uploadImage(file); pendingProfileAvatar = uploaded.src;
     const temp = { ...me, avatar:pendingProfileAvatar };
-    $('#profileAvatarLarge').outerHTML = avatarHtml(temp, 'large-avatar').replace('class="avatar large-avatar'', 'id="profileAvatarLarge" class="avatar large-avatar"');
+    $('#profileAvatarLarge').outerHTML = avatarHtml(temp, 'large-avatar').replace('class="avatar large-avatar"', 'id="profileAvatarLarge" class="avatar large-avatar"');
   } catch (err) { $('#profileError').textContent = err.message; }
   e.target.value = '';
 });
