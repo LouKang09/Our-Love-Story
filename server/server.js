@@ -97,10 +97,11 @@ async function readAccounts() {
 }
 async function writeAccounts(accounts) { await writeJson(ACCOUNTS_FILE, accounts); }
 async function readSocial() {
-  const data = await readJson(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], pushSubscriptions: [], notificationSettings: {} });
+  const data = await readJson(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {} });
   data.profiles ||= {};
   data.scrapbooks = Array.isArray(data.scrapbooks) ? data.scrapbooks : [];
   data.invites = Array.isArray(data.invites) ? data.invites : [];
+  data.follows = Array.isArray(data.follows) ? data.follows : [];
   data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   return data;
@@ -111,7 +112,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], pushSubscriptions: [], notificationSettings: {} });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {} });
 
   const social = await readSocial();
   const bootstrapTags = [...BOOTSTRAP_USERS.keys()];
@@ -292,20 +293,62 @@ function profileFor(social, tag) {
     }
   };
 }
+function isFollowing(social, follower, following) {
+  return social.follows.some(f => f.follower === follower && f.following === following);
+}
+function activePartnerTag(social, tag) {
+  const couple = social.scrapbooks.find(b =>
+    b.type === 'couple' &&
+    (b.bindingStatus || 'bound') !== 'unbound' &&
+    Array.isArray(b.members) &&
+    b.members.length === 2 &&
+    b.members.includes(tag)
+  );
+  return couple ? couple.members.find(member => member !== tag) || null : null;
+}
+function isActivePartner(social, a, b) {
+  return Boolean(a && b && activePartnerTag(social, a) === b);
+}
+function personalPrivacy(book) {
+  return ['followers','partner','private'].includes(book?.privacy) ? book.privacy : 'private';
+}
+function canViewBook(social, book, viewer) {
+  if (!book || !viewer) return false;
+  if (book.type !== 'personal') return Array.isArray(book.members) && book.members.includes(viewer);
+  if (book.owner === viewer) return true;
+  const privacy = personalPrivacy(book);
+  if (privacy === 'followers') return isFollowing(social, viewer, book.owner);
+  if (privacy === 'partner') return isActivePartner(social, viewer, book.owner);
+  return false;
+}
+function bookForViewer(social, id, tag) {
+  const book = social.scrapbooks.find(b => b.id === id);
+  return canViewBook(social, book, tag) ? book : null;
+}
 function bookForUser(social, id, tag) {
   const book = social.scrapbooks.find(b => b.id === id);
-  if (!book || !book.members.includes(tag)) return null;
+  if (!book || !Array.isArray(book.members) || !book.members.includes(tag)) return null;
   return book;
 }
+function canWriteBook(book, viewer) {
+  if (!book || !viewer) return false;
+  if (book.type === 'personal') return book.owner === viewer;
+  return Array.isArray(book.members) && book.members.includes(viewer);
+}
 function decorateBook(social, book, viewer) {
+  const viewingAsFollower = book.type === 'personal' && book.owner !== viewer && isFollowing(social, viewer, book.owner);
+  const viewingAsPartner = book.type === 'personal' && book.owner !== viewer && isActivePartner(social, viewer, book.owner);
   return {
     id: book.id,
     type: book.type,
     name: book.name,
     owner: book.owner,
     members: book.members,
+    privacy: book.type === 'personal' ? personalPrivacy(book) : null,
     createdAt: book.createdAt,
     isOwner: book.owner === viewer,
+    canWrite: canWriteBook(book, viewer),
+    accessReason: book.owner === viewer ? 'owner' : (viewingAsPartner ? 'partner' : (viewingAsFollower ? 'follower' : 'member')),
     bindingStatus: book.bindingStatus || 'bound',
     unboundAt: book.unboundAt || null,
     unbindRequest: book.unbindRequest ? {
@@ -314,7 +357,9 @@ function decorateBook(social, book, viewer) {
       approvals: Array.isArray(book.unbindRequest.approvals) ? book.unbindRequest.approvals : [],
       createdAt: book.unbindRequest.createdAt
     } : null,
-    profiles: book.members.map(tag => profileFor(social, tag))
+    profiles: book.type === 'personal'
+      ? [profileFor(social, book.owner)]
+      : book.members.map(tag => profileFor(social, tag))
   };
 }
 function userHasOtherCouple(social, tag, exceptId = null) {
@@ -372,13 +417,30 @@ async function handleApi(req, res, url) {
   const social = await readSocial();
 
   if (pathname === '/api/me' && req.method === 'GET') {
-    const books = social.scrapbooks.filter(b => b.members.includes(user)).map(b => decorateBook(social, b, user));
+    const books = social.scrapbooks
+      .filter(b => canViewBook(social, b, user))
+      .sort((a,b) => {
+        const ao = a.owner === user ? 0 : 1;
+        const bo = b.owner === user ? 0 : 1;
+        return ao - bo || String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+      })
+      .map(b => decorateBook(social, b, user));
     const invites = social.invites.filter(i => i.to === user && i.status === 'pending').map(i => ({
       ...i,
       fromProfile: profileFor(social, i.from),
       scrapbook: social.scrapbooks.find(b => b.id === i.scrapbookId) ? decorateBook(social, social.scrapbooks.find(b => b.id === i.scrapbookId), user) : null
     }));
-    return json(res, 200, { authenticated: true, profile: profileFor(social, user), scrapbooks: books, invites });
+    const following = social.follows.filter(f => f.follower === user).map(f => profileFor(social, f.following));
+    const followers = social.follows.filter(f => f.following === user).map(f => profileFor(social, f.follower));
+    return json(res, 200, {
+      authenticated: true,
+      profile: profileFor(social, user),
+      scrapbooks: books,
+      invites,
+      following,
+      followers,
+      partnerTag: activePartnerTag(social, user)
+    });
   }
 
   if (pathname === '/api/profile' && req.method === 'PUT') {
@@ -452,24 +514,83 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/people' && req.method === 'GET') {
     const q = slugTag(url.searchParams.get('q') || '');
     if (q.length < 2) return json(res, 200, { people: [] });
-    const tags = (await allKnownTags()).filter(t => t !== user && t.includes(q)).slice(0, 8);
-    return json(res, 200, { people: tags.map(t => profileFor(social, t)) });
+    const tags = (await allKnownTags()).filter(t => t !== user && t.includes(q)).slice(0, 12);
+    return json(res, 200, {
+      people: tags.map(t => ({
+        ...profileFor(social, t),
+        isFollowing: isFollowing(social, user, t),
+        followsYou: isFollowing(social, t, user),
+        isPartner: isActivePartner(social, user, t)
+      }))
+    });
+  }
+
+  const followMatch = pathname.match(/^\/api\/people\/([^/]+)\/follow$/);
+  if (followMatch && req.method === 'POST') {
+    const target = slugTag(followMatch[1]);
+    if (!target || target === user) return json(res, 400, { error: 'You cannot follow yourself.' });
+    if (!(await accountExists(target))) return json(res, 404, { error: `We could not find ${displayTag(target)}.` });
+    if (!isFollowing(social, user, target)) {
+      social.follows.push({ follower:user, following:target, createdAt:new Date().toISOString() });
+      await writeSocial(social);
+    }
+    return json(res, 200, { following:true, profile:{ ...profileFor(social,target), isFollowing:true, followsYou:isFollowing(social,target,user), isPartner:isActivePartner(social,user,target) } });
+  }
+  if (followMatch && req.method === 'DELETE') {
+    const target = slugTag(followMatch[1]);
+    const before = social.follows.length;
+    social.follows = social.follows.filter(f => !(f.follower === user && f.following === target));
+    if (social.follows.length !== before) await writeSocial(social);
+    return json(res, 200, { following:false });
+  }
+
+  if (pathname === '/api/follows' && req.method === 'GET') {
+    return json(res, 200, {
+      following: social.follows.filter(f => f.follower === user).map(f => profileFor(social, f.following)),
+      followers: social.follows.filter(f => f.following === user).map(f => profileFor(social, f.follower))
+    });
   }
 
   if (pathname === '/api/scrapbooks' && req.method === 'POST') {
     const body = await readBody(req, 128 * 1024);
-    const type = body.type === 'couple' ? 'couple' : 'group';
+    const type = body.type === 'couple' ? 'couple' : (body.type === 'personal' ? 'personal' : 'group');
     if (type === 'couple' && userHasOtherCouple(social, user)) return json(res, 409, { error: 'You are already bound in a lovers scrapbook. Leave that binding before creating another.' });
-    const book = { id: crypto.randomUUID(), type, name: String(body.name || (type === 'couple' ? 'Our Love Story' : 'Our Scrapbook')).trim().slice(0, 80), owner: user, members: [user], createdAt: new Date().toISOString() };
+    if (type === 'personal' && social.scrapbooks.some(b => b.type === 'personal' && b.owner === user)) {
+      return json(res, 409, { error: 'You already have a personal scrapbook.' });
+    }
+    const privacy = ['followers','partner','private'].includes(body.privacy) ? body.privacy : 'private';
+    const defaultName = type === 'couple' ? 'Our Love Story' : (type === 'personal' ? 'My Personal Scrapbook' : 'Our Scrapbook');
+    const book = {
+      id: crypto.randomUUID(),
+      type,
+      name: String(body.name || defaultName).trim().slice(0, 80),
+      owner: user,
+      members: [user],
+      privacy: type === 'personal' ? privacy : undefined,
+      createdAt: new Date().toISOString()
+    };
     social.scrapbooks.push(book);
     await writeSocial(social);
     return json(res, 201, { scrapbook: decorateBook(social, book, user) });
+  }
+
+  const privacyMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/privacy$/i);
+  if (privacyMatch && req.method === 'PUT') {
+    const book = social.scrapbooks.find(b => b.id === privacyMatch[1]);
+    if (!book || book.type !== 'personal') return notFound(res);
+    if (book.owner !== user) return forbidden(res, 'Only the owner can change personal scrapbook privacy.');
+    const body = await readBody(req, 64 * 1024);
+    if (!['followers','partner','private'].includes(body.privacy)) return json(res, 400, { error: 'Invalid privacy setting.' });
+    book.privacy = body.privacy;
+    await writeSocial(social);
+    return json(res, 200, { scrapbook: decorateBook(social, book, user) });
   }
 
   const inviteMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/invite$/i);
   if (inviteMatch && req.method === 'POST') {
     const book = bookForUser(social, inviteMatch[1], user);
     if (!book) return forbidden(res);
+    if (book.type === 'personal') return json(res, 409, { error: 'Personal scrapbooks use privacy and followers instead of invitations.' });
     const body = await readBody(req, 64 * 1024);
     const target = slugTag(body.tag);
     if (!target || target === user) return json(res, 400, { error: 'Enter another person’s @tag.' });
@@ -560,18 +681,19 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/entries' && req.method === 'GET') {
     const scrapbookId = String(url.searchParams.get('scrapbookId') || '');
-    const book = bookForUser(social, scrapbookId, user);
+    const book = bookForViewer(social, scrapbookId, user);
     if (!book) return forbidden(res);
     const entries = (await readEntries()).filter(e => e.scrapbookId === scrapbookId);
     entries.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
-    const profiles = Object.fromEntries(book.members.map(tag => [tag, profileFor(social, tag)]));
-    return json(res, 200, { entries, profiles });
+    const profileTags = book.type === 'personal' ? [book.owner] : book.members;
+    const profiles = Object.fromEntries(profileTags.map(tag => [tag, profileFor(social, tag)]));
+    return json(res, 200, { entries, profiles, scrapbook: decorateBook(social, book, user) });
   }
 
   if (pathname === '/api/entries' && req.method === 'POST') {
     const body = await readBody(req);
-    const book = bookForUser(social, String(body.scrapbookId || ''), user);
-    if (!book) return forbidden(res);
+    const book = social.scrapbooks.find(b => b.id === String(body.scrapbookId || ''));
+    if (!book || !canWriteBook(book, user)) return forbidden(res, 'This scrapbook is read-only for you.');
     const entries = await readEntries();
     const entry = cleanEntry(body, user);
     entries.push(entry); await writeEntries(entries);
@@ -584,7 +706,8 @@ async function handleApi(req, res, url) {
     const idx = entries.findIndex(e => e.id === entryMatch[1]);
     if (idx < 0) return notFound(res);
     const entry = entries[idx];
-    if (!bookForUser(social, entry.scrapbookId, user)) return forbidden(res);
+    const entryBook = social.scrapbooks.find(b => b.id === entry.scrapbookId);
+    if (!entryBook || !canWriteBook(entryBook, user)) return forbidden(res, 'This scrapbook is read-only for you.');
     if (entry.author !== user) return forbidden(res, 'Only the person who wrote this memory can change it.');
     if (req.method === 'DELETE') {
       entries.splice(idx,1); await writeEntries(entries); return json(res, 200, { ok:true });
