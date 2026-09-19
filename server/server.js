@@ -607,7 +607,7 @@ async function handleApi(req, res, url) {
       const personal = social.scrapbooks.find(b => b.type === 'personal' && b.owner === tag);
       const accessible = Boolean(personal && canViewBook(social, personal, user));
       return {
-        profile: profileFor(social, tag),
+        profile: publicProfileFor(social, tag),
         scrapbook: !personal ? null : accessible
           ? { ...decorateBook(social, personal, user), accessible:true }
           : { type:'personal', owner:tag, accessible:false, locked:true }
@@ -628,9 +628,9 @@ async function handleApi(req, res, url) {
       .sort((a,b) => b[1].size - a[1].size || String(a[0]).localeCompare(String(b[0])))
       .slice(0, 10)
       .map(([tag, via]) => ({
-        profile: profileFor(social, tag),
+        profile: publicProfileFor(social, tag),
         mutualCount: via.size,
-        via: [...via].slice(0, 3).map(v => profileFor(social, v))
+        via: [...via].slice(0, 3).map(v => publicProfileFor(social, v))
       }));
 
     return json(res, 200, {
@@ -744,7 +744,7 @@ async function handleApi(req, res, url) {
     const tags = (await allKnownTags()).filter(t => t !== user && t.includes(q)).slice(0, 12);
     return json(res, 200, {
       people: tags.map(t => ({
-        ...profileFor(social, t),
+        ...publicProfileFor(social, t),
         isFollowing: isFollowing(social, user, t),
         followsYou: isFollowing(social, t, user),
         isPartner: isActivePartner(social, user, t)
@@ -769,7 +769,12 @@ async function handleApi(req, res, url) {
     const personal = social.scrapbooks.find(b => b.type === 'personal' && b.owner === target);
     const canOpenPersonal = Boolean(personal && canViewBook(social, personal, user));
     const personalScrapbook = !personal ? null : canOpenPersonal
-      ? { ...decorateBook(social, personal, user), accessible:true, locked:false }
+      ? {
+          ...decorateBook(social, personal, user),
+          profiles: [publicProfileFor(social, target)],
+          accessible:true,
+          locked:false
+        }
       : { type:'personal', owner:target, accessible:false, locked:true };
 
     return json(res, 200, {
@@ -795,7 +800,7 @@ async function handleApi(req, res, url) {
       social.follows.push({ follower:user, following:target, createdAt:new Date().toISOString() });
       await writeSocial(social);
     }
-    return json(res, 200, { following:true, profile:{ ...profileFor(social,target), isFollowing:true, followsYou:isFollowing(social,target,user), isPartner:isActivePartner(social,user,target) } });
+    return json(res, 200, { following:true, profile:{ ...publicProfileFor(social,target), isFollowing:true, followsYou:isFollowing(social,target,user), isPartner:isActivePartner(social,user,target) } });
   }
   if (followMatch && req.method === 'DELETE') {
     const target = slugTag(followMatch[1]);
