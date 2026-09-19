@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-logout1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-journey3" />
 </head>
 <body>
   <div id="app">
@@ -101,6 +101,7 @@
           <form id="inviteForm" class="invite-form"><input id="inviteTag" placeholder="@friendtag" autocomplete="off" required /><button class="primary" type="submit">Invite</button></form>
         </div>
         <div id="peopleMap" class="people-map"></div>
+        <div id="unbindPanel" class="unbind-panel hidden"></div>
       </section>
 
       <div id="emptyState" class="empty-state hidden">
@@ -127,7 +128,7 @@
           <div class="photo-editor-head">
             <div>
               <strong>Photos inside this page</strong>
-              <span>Resize with the slider. You can also drag a photo directly in the preview: left/right changes its wrap side, up/down changes where it begins in the text.</span>
+              <span>Resize with the slider, then drag the photo freely anywhere inside the preview. Its horizontal and vertical position will be saved with the page.</span>
             </div>
             <label class="upload-btn">＋ Add photos<input id="photoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden /></label>
           </div>
@@ -135,7 +136,7 @@
         </section>
 
         <section class="live-preview">
-          <div class="preview-label">Interactive page preview — drag the photos here</div>
+          <div class="preview-label">Interactive page preview — free drag photos anywhere inside the page</div>
           <article id="entryPreview" class="entry-body preview-paper"></article>
         </section>
 
@@ -170,6 +171,17 @@
         <label>Display name<input id="profileName" maxlength="60" required /></label>
         <label>@tag<input id="profileTag" disabled /></label>
         <label>About you<textarea id="profileBio" rows="4" maxlength="220" placeholder="A tiny note about you..."></textarea></label>
+
+        <section class="notification-settings">
+          <div>
+            <strong>Daily journey reminder</strong>
+            <p>Optional browser push reminder if you have not written a memory that day.</p>
+          </div>
+          <label class="toggle-row"><input id="dailyReminderEnabled" type="checkbox" /> <span>Remind me</span></label>
+          <label>Reminder time<input id="dailyReminderTime" type="time" value="20:00" /></label>
+          <p id="notificationStatus" class="helper"></p>
+        </section>
+
         <button class="primary wide" type="submit">Save profile</button>
         <p id="profileError" class="form-error"></p>
       </form>
@@ -177,6 +189,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-clean2" defer></script>
+  <script src="/app.js?v=20260919-journey3" defer></script>
 </body>
 </html>
