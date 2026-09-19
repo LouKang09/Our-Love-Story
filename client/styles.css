@@ -5235,6 +5235,30 @@ html[data-theme="night"] .profile-image-viewer{
 .home-personal-book-card .home-closed-book{
   width:100%;
 }
+.home-view-all-books{
+  width:100%;
+  min-height:52px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px 12px;
+  text-align:left;
+  border-style:dashed;
+}
+.home-view-all-books span,
+.home-view-all-books small{
+  display:block;
+}
+.home-view-all-books span{
+  color:var(--ink);
+  font:750 11px ui-sans-serif,system-ui,sans-serif;
+}
+.home-view-all-books small{
+  color:var(--muted);
+  font:9px ui-sans-serif,system-ui,sans-serif;
+  white-space:nowrap;
+}
 
 /* Personal privacy is now available directly under the app header. */
 .personal-privacy-quick{
