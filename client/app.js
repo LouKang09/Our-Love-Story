@@ -6,6 +6,7 @@ const bookView = $('#bookView');
 const streamView = $('#streamView');
 const homeView = $('#homeView');
 const connectionsView = $('#connectionsView');
+const personProfileView = $('#personProfileView');
 const emptyState = $('#emptyState');
 const leftPage = $('#leftPage');
 const rightPage = $('#rightPage');
@@ -26,6 +27,9 @@ let invites = [];
 let following = [];
 let followers = [];
 let homeData = { followingShelf: [], friendSuggestions: [] };
+let viewedPersonData = null;
+let personListMode = 'followers';
+let personProfileReturnMode = 'connections';
 let guideState = { version: 1, seenVersion: 1, required: false };
 let guideIndex = 0;
 let guideMandatory = false;
@@ -562,7 +566,8 @@ async function respondUnbind(approve) {
 function renderFollowStats() {
   const el = $('#followStats');
   if (!el) return;
-  el.innerHTML = `<span><b>${followers.length}</b> followers</span><span><b>${following.length}</b> following</span>`;
+  el.innerHTML = `<button class="follow-stat-button" type="button" data-list="followers"><b>${followers.length}</b><span>followers</span></button><button class="follow-stat-button" type="button" data-list="following"><b>${following.length}</b><span>following</span></button>`;
+  el.querySelectorAll('.follow-stat-button').forEach(btn => btn.addEventListener('click', () => openPersonProfile(me.tag, { list:btn.dataset.list })));
 }
 function renderPersonalPrivacy() {
   const panel = $('#personalPrivacyPanel');
@@ -616,7 +621,8 @@ function renderConnections() {
     $('#connectionsSubtitle').textContent = activeScrapbook.owner === me.tag
       ? 'Your personal journal. You decide who can read it.'
       : `A personal scrapbook by @${activeScrapbook.owner}. You have read-only access.`;
-    $('#peopleMap').innerHTML = `<div class="personal-owner-card">${avatarHtml(owner,'bound-avatar')}<strong>${escapeHtml(owner.displayName || owner.tag)}</strong><span>@${escapeHtml(owner.tag)}</span><small>${privacyLabel(activeScrapbook.privacy)}</small></div>`;
+    $('#peopleMap').innerHTML = `<button class="personal-owner-card profile-card-button" type="button" data-profile-tag="${escapeHtml(owner.tag)}">${avatarHtml(owner,'bound-avatar')}<strong>${escapeHtml(owner.displayName || owner.tag)}</strong><span>@${escapeHtml(owner.tag)}</span><small>${privacyLabel(activeScrapbook.privacy)}</small></button>`;
+    wireProfileLinks($('#peopleMap'));
     renderPersonalPrivacy();
     return;
   }
@@ -632,10 +638,11 @@ function renderConnections() {
     const mine = profiles.find(p => p.tag === me.tag) || me;
     const other = profiles.find(p => p.tag !== me.tag);
     $('#peopleMap').innerHTML = `<div class="couple-bind ${archived ? 'unbound-bind' : ''}">
-      <div class="bound-profile">${avatarHtml(mine, 'bound-avatar')}<strong>${escapeHtml(mine.displayName)}</strong><span>@${escapeHtml(mine.tag)}</span></div>
+      <button class="bound-profile profile-card-button" type="button" data-profile-tag="${escapeHtml(mine.tag)}">${avatarHtml(mine, 'bound-avatar')}<strong>${escapeHtml(mine.displayName)}</strong><span>@${escapeHtml(mine.tag)}</span></button>
       <div class="heart-bind"><span>♡</span><small>${archived ? 'UNBOUND ARCHIVE' : (other ? 'BOUND' : 'WAITING')}</small></div>
-      ${other ? `<div class="bound-profile">${avatarHtml(other, 'bound-avatar')}<strong>${escapeHtml(other.displayName)}</strong><span>@${escapeHtml(other.tag)}</span></div>` : `<div class="bound-profile empty-bound"><span class="avatar bound-avatar">?</span><strong>Your person</strong><span>Invite by @tag</span></div>`}
+      ${other ? `<button class="bound-profile profile-card-button" type="button" data-profile-tag="${escapeHtml(other.tag)}">${avatarHtml(other, 'bound-avatar')}<strong>${escapeHtml(other.displayName)}</strong><span>@${escapeHtml(other.tag)}</span></button>` : `<div class="bound-profile empty-bound"><span class="avatar bound-avatar">?</span><strong>Your person</strong><span>Invite by @tag</span></div>`}
     </div>`;
+    wireProfileLinks($('#peopleMap'));
     renderUnbindPanel();
     return;
   }
@@ -651,10 +658,11 @@ function renderConnections() {
   });
   $('#peopleMap').innerHTML = `<div class="group-network">
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${points.map(pt => `<line x1="50" y1="50" x2="${pt.x}" y2="${pt.y}" />`).join('')}</svg>
-    <div class="network-person center-person" style="left:50%;top:50%">${avatarHtml(mine, 'network-avatar')}<strong>${escapeHtml(mine.displayName)}</strong><span>@${escapeHtml(mine.tag)}</span></div>
-    ${points.map(pt => `<div class="network-person" style="left:${pt.x}%;top:${pt.y}%">${avatarHtml(pt.p, 'network-avatar')}<strong>${escapeHtml(pt.p.displayName)}</strong><span>@${escapeHtml(pt.p.tag)}</span></div>`).join('')}
+    <button class="network-person center-person profile-card-button" type="button" data-profile-tag="${escapeHtml(mine.tag)}" style="left:50%;top:50%">${avatarHtml(mine, 'network-avatar')}<strong>${escapeHtml(mine.displayName)}</strong><span>@${escapeHtml(mine.tag)}</span></button>
+    ${points.map(pt => `<button class="network-person profile-card-button" type="button" data-profile-tag="${escapeHtml(pt.p.tag)}" style="left:${pt.x}%;top:${pt.y}%">${avatarHtml(pt.p, 'network-avatar')}<strong>${escapeHtml(pt.p.displayName)}</strong><span>@${escapeHtml(pt.p.tag)}</span></button>`).join('')}
     ${!others.length ? '<div class="network-empty">Invite friends by @tag and they will connect around you.</div>' : ''}
   </div>`;
+  wireProfileLinks($('#peopleMap'));
 }
 
 const GUIDE_STEPS = [
@@ -835,10 +843,122 @@ document.addEventListener('keydown', e => {
   if (!guideMandatory) finishGuide({ completed:false });
 });
 
+function publicPersonRow(person) {
+  return `<button class="person-list-row" type="button" data-profile-tag="${escapeHtml(person.tag || '')}">
+    ${avatarHtml(person,'person-list-avatar')}
+    <span class="person-list-copy">
+      <strong>${escapeHtml(person.displayName || person.tag)}</strong>
+      <small>@${escapeHtml(person.tag || '')}</small>
+      ${person.bio ? `<em>${escapeHtml(person.bio)}</em>` : ''}
+    </span>
+    <span class="person-list-arrow">›</span>
+  </button>`;
+}
+function wireProfileLinks(root = document) {
+  root.querySelectorAll('[data-profile-tag]').forEach(el => {
+    if (el.dataset.profileWired === '1') return;
+    el.dataset.profileWired = '1';
+    el.addEventListener('click', e => {
+      if (e.target.closest('button.follow-toggle,button.home-follow-suggestion,button.person-follow-toggle,.home-open-book')) return;
+      const tag = el.dataset.profileTag || el.closest('[data-profile-tag]')?.dataset.profileTag;
+      if (tag) openPersonProfile(tag);
+    });
+  });
+}
+function renderPersonConnections() {
+  if (!viewedPersonData) return;
+  const list = personListMode === 'following' ? viewedPersonData.following : viewedPersonData.followers;
+  $('#personConnectionsTitle').textContent = personListMode === 'following' ? 'Following' : 'Followers';
+  $('#personFollowersTab').classList.toggle('active', personListMode === 'followers');
+  $('#personFollowingTab').classList.toggle('active', personListMode === 'following');
+  $('#personConnectionsList').innerHTML = list?.length
+    ? list.map(publicPersonRow).join('')
+    : `<div class="person-list-empty">No ${personListMode === 'following' ? 'following' : 'followers'} yet.</div>`;
+  wireProfileLinks($('#personConnectionsList'));
+}
+function renderPersonProfile() {
+  if (!viewedPersonData) return;
+  const data = viewedPersonData;
+  const p = data.profile || {};
+  $('#personProfileIdentity').innerHTML = `
+    ${avatarHtml(p,'person-profile-avatar')}
+    <div>
+      <p class="eyebrow">${data.isSelf ? 'YOUR SOCIAL PROFILE' : 'SCRAPBOOK PROFILE'}</p>
+      <h2>${escapeHtml(p.displayName || p.tag)}</h2>
+      <span>@${escapeHtml(p.tag || '')}</span>
+      ${p.bio ? `<p>${escapeHtml(p.bio)}</p>` : '<p class="muted">No bio yet.</p>'}
+      <div class="person-relation-badges">${data.isPartner ? '<span>Partner</span>' : ''}${data.followsYou ? '<span>Follows you</span>' : ''}${data.isFollowing ? '<span>You follow</span>' : ''}</div>
+    </div>`;
+  $('#personFollowerCount').textContent = String(data.followerCount || 0);
+  $('#personFollowingCount').textContent = String(data.followingCount || 0);
+
+  $('#personProfileActions').innerHTML = data.isSelf
+    ? '<button id="personEditOwnProfile" class="ghost" type="button">Edit my profile</button>'
+    : `<button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>`;
+
+  const book = data.personalScrapbook;
+  if (!book) {
+    $('#personScrapbookPanel').innerHTML = '<div class="person-no-book"><span>♡</span><strong>No Personal scrapbook yet</strong><p>This profile has not created a Personal scrapbook.</p></div>';
+  } else if (!book.accessible) {
+    $('#personScrapbookPanel').innerHTML = `<div class="person-book-layout">
+      <div class="person-book-copy"><p class="eyebrow">PERSONAL SCRAPBOOK</p><h3>Private scrapbook</h3><p>This scrapbook exists, but its privacy settings do not currently give you access.</p></div>
+      <div class="person-closed-book locked"><div class="person-book-spine"></div><div class="person-book-face"><span>🔒</span><small>PERSONAL SCRAPBOOK</small><strong>Private</strong></div></div>
+    </div>`;
+  } else {
+    $('#personScrapbookPanel').innerHTML = `<div class="person-book-layout">
+      <div class="person-book-copy"><p class="eyebrow">PERSONAL SCRAPBOOK</p><h3>${escapeHtml(book.name || 'Personal Scrapbook')}</h3><p>Shared with you. Open it as a flip book or read it as a continuous memory stream.</p><div class="person-book-actions"><button class="primary person-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button><button class="ghost person-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button></div></div>
+      <button class="person-closed-book person-book-tap" data-id="${escapeHtml(book.id)}" type="button" aria-label="Open ${escapeHtml(book.name || 'Personal scrapbook')}"><div class="person-book-spine"></div><div class="person-book-face"><span>✦</span><small>PERSONAL SCRAPBOOK</small><strong>${escapeHtml(book.name || 'Personal Scrapbook')}</strong><em>tap to open</em></div></button>
+    </div>`;
+  }
+
+  $('#personEditOwnProfile')?.addEventListener('click', () => $('#profileBtn').click());
+  $('#personProfileActions .person-follow-toggle')?.addEventListener('click', async e => {
+    const wasFollowing = data.isFollowing === true;
+    e.currentTarget.disabled = true;
+    try {
+      await api(`/api/people/${encodeURIComponent(p.tag)}/follow`, { method:wasFollowing ? 'DELETE' : 'POST', body:wasFollowing ? undefined : '{}' });
+      await loadSession(activeScrapbook?.id || null);
+      await openPersonProfile(p.tag, { preserveReturn:true, list:personListMode });
+      showToast(wasFollowing ? `Unfollowed @${p.tag}.` : `You are now following @${p.tag}.`);
+    } catch (err) {
+      showToast(err.message);
+      e.currentTarget.disabled = false;
+    }
+  });
+  $('#personScrapbookPanel').querySelectorAll('.person-open-book,.person-book-tap').forEach(btn => btn.addEventListener('click', async () => {
+    await openHomeScrapbook(btn.dataset.id, btn.dataset.mode || 'book');
+  }));
+  renderPersonConnections();
+}
+async function openPersonProfile(tag, options = {}) {
+  const cleanTag = String(tag || '').replace(/^@/,'').toLowerCase();
+  if (!cleanTag) return;
+  if (currentMode !== 'person' && !options.preserveReturn) personProfileReturnMode = currentMode;
+  if (options.list === 'following' || options.list === 'followers') personListMode = options.list;
+  try {
+    viewedPersonData = await api(`/api/people/${encodeURIComponent(cleanTag)}/profile`);
+    renderPersonProfile();
+    showView('person');
+  } catch (err) {
+    if (err.status === 401) location.reload();
+    else showToast(err.message || 'Could not open that profile.');
+  }
+}
+
+$('#personFollowersBtn').addEventListener('click', () => { personListMode='followers'; renderPersonConnections(); $('#personConnectionsList').scrollIntoView({behavior:'smooth',block:'nearest'}); });
+$('#personFollowingBtn').addEventListener('click', () => { personListMode='following'; renderPersonConnections(); $('#personConnectionsList').scrollIntoView({behavior:'smooth',block:'nearest'}); });
+$('#personFollowersTab').addEventListener('click', () => { personListMode='followers'; renderPersonConnections(); });
+$('#personFollowingTab').addEventListener('click', () => { personListMode='following'; renderPersonConnections(); });
+$('#personProfileBackBtn').addEventListener('click', async () => {
+  const mode = ['home','cover','book','stream','connections'].includes(personProfileReturnMode) ? personProfileReturnMode : 'connections';
+  if (mode === 'home' || mode === 'connections') await refreshAndShow(mode);
+  else showView(mode);
+});
+
 function renderHome() {
   if (!me) return;
   const profileCard = $('#homeProfileCard');
-  profileCard.innerHTML = `${avatarHtml(me,'home-avatar')}<div><strong>${escapeHtml(me.displayName || me.tag)}</strong><span>@${escapeHtml(me.tag)}</span><small>${followers.length} followers · ${following.length} following</small></div>`;
+  profileCard.innerHTML = `<button class="home-profile-link" type="button" data-profile-tag="${escapeHtml(me.tag)}">${avatarHtml(me,'home-avatar')}<span><strong>${escapeHtml(me.displayName || me.tag)}</strong><em>@${escapeHtml(me.tag)}</em><small>${followers.length} followers · ${following.length} following</small></span></button>`;
 
   const shelf = Array.isArray(homeData.followingShelf) ? homeData.followingShelf : [];
   $('#homeFollowingCount').textContent = `${shelf.length} following`;
@@ -859,7 +979,7 @@ function renderHome() {
         </div>`
       : `<div class="home-closed-book empty-book"><div class="home-book-face"><span class="home-book-mark">♡</span><small>PERSONAL SCRAPBOOK</small><strong>No scrapbook yet</strong><em>Nothing to open right now</em></div></div>`;
     return `<article class="home-shelf-card">
-      <div class="home-person-row">${avatarHtml(p,'home-person-avatar')}<div><strong>${escapeHtml(p.displayName || p.tag)}</strong><span>@${escapeHtml(p.tag || '')}</span></div></div>
+      <button class="home-person-row" type="button" data-profile-tag="${escapeHtml(p.tag || '')}">${avatarHtml(p,'home-person-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><em>@${escapeHtml(p.tag || '')}</em></span></button>
       ${bookHtml}
       <div class="home-book-actions">
         ${accessible ? `<button class="primary home-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button><button class="ghost home-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button>` : (book ? '<span class="home-lock-note">This person has not shared this scrapbook with followers.</span>' : '')}
@@ -871,7 +991,7 @@ function renderHome() {
   $('#homeSuggestions').innerHTML = suggestions.length ? suggestions.map(item => {
     const p = item.profile || {};
     const viaNames = (item.via || []).map(v => `@${escapeHtml(v.tag)}`).join(', ');
-    return `<article class="home-suggestion-card" data-tag="${escapeHtml(p.tag || '')}">
+    return `<article class="home-suggestion-card" data-tag="${escapeHtml(p.tag || '')}" data-profile-tag="${escapeHtml(p.tag || '')}">
       ${avatarHtml(p,'home-suggestion-avatar')}
       <div class="home-suggestion-copy"><strong>${escapeHtml(p.displayName || p.tag)}</strong><span>@${escapeHtml(p.tag || '')}</span><small>${item.mutualCount || 1} friend connection${(item.mutualCount || 1) === 1 ? '' : 's'}${viaNames ? ` · through ${viaNames}` : ''}</small></div>
       <button class="primary home-follow-suggestion" type="button">Follow</button>
@@ -881,6 +1001,7 @@ function renderHome() {
   $('#homeShelf').querySelectorAll('.home-open-book').forEach(btn => btn.addEventListener('click', async () => {
     await openHomeScrapbook(btn.dataset.id, btn.dataset.mode || 'book');
   }));
+  wireProfileLinks(homeView);
   $('#homeSuggestions').querySelectorAll('.home-follow-suggestion').forEach(btn => btn.addEventListener('click', async () => {
     const tag = btn.closest('.home-suggestion-card')?.dataset.tag;
     if (!tag) return;
@@ -929,19 +1050,24 @@ function showView(mode) {
   bookView.classList.toggle('hidden', mode !== 'book');
   streamView.classList.toggle('hidden', mode !== 'stream');
   connectionsView.classList.toggle('hidden', mode !== 'connections');
+  personProfileView.classList.toggle('hidden', mode !== 'person');
   $('#homeModeBtn').classList.toggle('active', mode === 'home');
   $('#bookModeBtn').classList.toggle('active', mode === 'book');
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
-  $('#connectionsModeBtn').classList.toggle('active', mode === 'connections');
+  $('#connectionsModeBtn').classList.toggle('active', mode === 'connections' || mode === 'person');
 
   const noBook = !activeScrapbook;
   const noEntries = activeScrapbook && !entries.length;
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
-  $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || (Boolean(activeScrapbook) && !canWrite));
-  emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || (!noBook && !noEntries));
+  $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || (Boolean(activeScrapbook) && !canWrite));
+  emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || (!noBook && !noEntries));
 
   if (mode === 'home') {
     renderHome();
+    return;
+  }
+  if (mode === 'person') {
+    renderPersonProfile();
     return;
   }
   if (noBook && mode !== 'cover' && mode !== 'connections') {
@@ -1629,12 +1755,13 @@ function renderDiscoverResults(people) {
     host.innerHTML = '<p class="helper">No matching profiles found.</p>';
     return;
   }
-  host.innerHTML = people.map(person => `<article class="discover-person" data-tag="${escapeHtml(person.tag)}">
+  host.innerHTML = people.map(person => `<article class="discover-person" data-tag="${escapeHtml(person.tag)}" data-profile-tag="${escapeHtml(person.tag)}">
     ${avatarHtml(person,'small-avatar')}
     <div class="discover-person-copy"><strong>${escapeHtml(person.displayName || person.tag)}</strong><span>@${escapeHtml(person.tag)}</span>${person.bio ? `<small>${escapeHtml(person.bio)}</small>` : ''}</div>
     <div class="discover-badges">${person.isPartner ? '<span>Partner</span>' : ''}${person.followsYou ? '<span>Follows you</span>' : ''}</div>
     <button class="${person.isFollowing ? 'ghost' : 'primary'} follow-toggle" type="button">${person.isFollowing ? 'Following' : 'Follow'}</button>
   </article>`).join('');
+  wireProfileLinks(host);
   host.querySelectorAll('.follow-toggle').forEach(btn => btn.addEventListener('click', async () => {
     const card = btn.closest('.discover-person');
     const tag = card.dataset.tag;

@@ -176,6 +176,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-home-social-20260919');
   await backupNamedJsonDataOnce('pre-guided-onboarding-20260919');
   await backupNamedJsonDataOnce('pre-session-live-refresh-caption-20260919');
+  await backupNamedJsonDataOnce('pre-social-profile-browser-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -419,6 +420,16 @@ function profileFor(social, tag) {
       reminderTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(notify.reminderTime || '')) ? notify.reminderTime : '20:00',
       timezone: String(notify.timezone || '')
     }
+  };
+}
+function publicProfileFor(social, tag) {
+  const p = social.profiles[tag] || { tag, displayName: tag, avatar: '', bio: '' };
+  return {
+    tag,
+    tagLabel: displayTag(tag),
+    displayName: p.displayName || tag,
+    avatar: p.avatar || '',
+    bio: p.bio || ''
   };
 }
 function isFollowing(social, follower, following) {
@@ -741,6 +752,40 @@ async function handleApi(req, res, url) {
     });
   }
 
+  const personProfileMatch = pathname.match(/^\/api\/people\/([^/]+)\/profile$/);
+  if (personProfileMatch && req.method === 'GET') {
+    const target = slugTag(personProfileMatch[1]);
+    if (!target || !(await accountExists(target))) return json(res, 404, { error: 'That profile no longer exists.' });
+
+    const followingTags = [...new Set(social.follows.filter(f => f.follower === target).map(f => f.following))];
+    const followerTags = [...new Set(social.follows.filter(f => f.following === target).map(f => f.follower))];
+    const relationProfile = tag => ({
+      ...publicProfileFor(social, tag),
+      isFollowing: isFollowing(social, user, tag),
+      followsYou: isFollowing(social, tag, user),
+      isPartner: isActivePartner(social, user, tag)
+    });
+
+    const personal = social.scrapbooks.find(b => b.type === 'personal' && b.owner === target);
+    const canOpenPersonal = Boolean(personal && canViewBook(social, personal, user));
+    const personalScrapbook = !personal ? null : canOpenPersonal
+      ? { ...decorateBook(social, personal, user), accessible:true, locked:false }
+      : { type:'personal', owner:target, accessible:false, locked:true };
+
+    return json(res, 200, {
+      profile: publicProfileFor(social, target),
+      isSelf: target === user,
+      isFollowing: target !== user && isFollowing(social, user, target),
+      followsYou: target !== user && isFollowing(social, target, user),
+      isPartner: target !== user && isActivePartner(social, user, target),
+      followerCount: followerTags.length,
+      followingCount: followingTags.length,
+      followers: followerTags.map(relationProfile),
+      following: followingTags.map(relationProfile),
+      personalScrapbook
+    });
+  }
+
   const followMatch = pathname.match(/^\/api\/people\/([^/]+)\/follow$/);
   if (followMatch && req.method === 'POST') {
     const target = slugTag(followMatch[1]);
@@ -762,8 +807,8 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/follows' && req.method === 'GET') {
     return json(res, 200, {
-      following: social.follows.filter(f => f.follower === user).map(f => profileFor(social, f.following)),
-      followers: social.follows.filter(f => f.following === user).map(f => profileFor(social, f.follower))
+      following: social.follows.filter(f => f.follower === user).map(f => publicProfileFor(social, f.following)),
+      followers: social.follows.filter(f => f.following === user).map(f => publicProfileFor(social, f.follower))
     });
   }
 

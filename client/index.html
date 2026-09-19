@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-sessionrefresh1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-socialprofile1" />
 </head>
 <body>
   <div id="app">
@@ -141,6 +141,38 @@
           </div>
           <form id="discoverForm" class="discover-form"><input id="discoverTag" placeholder="Search @tag" autocomplete="off" required /><button class="primary" type="submit">Search</button></form>
           <div id="discoverResults" class="discover-results"></div>
+        </section>
+      </section>
+
+      <section id="personProfileView" class="person-profile-view hidden">
+        <div class="person-profile-toolbar">
+          <button id="personProfileBackBtn" class="ghost" type="button">← Back</button>
+        </div>
+
+        <section class="person-profile-hero">
+          <div id="personProfileIdentity" class="person-profile-identity"></div>
+          <div id="personProfileActions" class="person-profile-actions"></div>
+        </section>
+
+        <section class="person-social-stats" aria-label="Profile connections">
+          <button id="personFollowersBtn" type="button"><b id="personFollowerCount">0</b><span>Followers</span></button>
+          <button id="personFollowingBtn" type="button"><b id="personFollowingCount">0</b><span>Following</span></button>
+        </section>
+
+        <section id="personScrapbookPanel" class="person-scrapbook-panel"></section>
+
+        <section class="person-connections-panel">
+          <div class="person-connections-head">
+            <div>
+              <p class="eyebrow">CONNECTIONS</p>
+              <h3 id="personConnectionsTitle">Followers</h3>
+            </div>
+            <div class="person-list-tabs" role="group" aria-label="Choose people list">
+              <button id="personFollowersTab" class="active" type="button">Followers</button>
+              <button id="personFollowingTab" type="button">Following</button>
+            </div>
+          </div>
+          <div id="personConnectionsList" class="person-connections-list"></div>
         </section>
       </section>
 
@@ -359,6 +391,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-sessionrefresh1" defer></script>
+  <script src="/app.js?v=20260919-socialprofile1" defer></script>
 </body>
 </html>
