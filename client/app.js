@@ -22,6 +22,9 @@ let entries = [];
 let authorProfiles = {};
 let scrapbooks = [];
 let invites = [];
+let following = [];
+let followers = [];
+let partnerTag = null;
 let activeScrapbook = null;
 let spreadIndex = 0;
 let currentMode = 'cover';
@@ -153,9 +156,16 @@ function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
 }
 
+function privacyLabel(value) {
+  return value === 'followers' ? 'Followers Only' : value === 'partner' ? 'Partner Only' : 'You Only';
+}
 function renderScrapbookPicker() {
   const picker = $('#scrapbookPicker');
-  picker.innerHTML = scrapbooks.length ? scrapbooks.map(book => `<option value="${book.id}" ${book.id === activeScrapbook?.id ? 'selected' : ''}>${book.type === 'couple' ? '♡' : '◌'} ${escapeHtml(book.name)}</option>`).join('') : '<option value="">No scrapbook yet</option>';
+  picker.innerHTML = scrapbooks.length ? scrapbooks.map(book => {
+    const icon = book.type === 'couple' ? '♡' : book.type === 'personal' ? '✎' : '◌';
+    const ownerNote = book.type === 'personal' && book.owner !== me?.tag ? ` · @${escapeHtml(book.owner)}` : '';
+    return `<option value="${book.id}" ${book.id === activeScrapbook?.id ? 'selected' : ''}>${icon} ${escapeHtml(book.name)}${ownerNote}</option>`;
+  }).join('') : '<option value="">No scrapbook yet</option>';
   picker.disabled = !scrapbooks.length;
 }
 function updateCover() {
@@ -168,9 +178,14 @@ function updateCover() {
   } else if (activeScrapbook?.type === 'group') {
     $('#coverKind').textContent = 'SHARED SCRAPBOOK';
     $('#coverSubtitle').textContent = 'friends, moments, and stories kept together';
+  } else if (activeScrapbook?.type === 'personal') {
+    $('#coverKind').textContent = 'PERSONAL SCRAPBOOK';
+    $('#coverSubtitle').textContent = activeScrapbook.owner === me?.tag
+      ? `${privacyLabel(activeScrapbook.privacy)} · your memories, your space`
+      : `shared with you by @${activeScrapbook.owner}`;
   } else {
     $('#coverKind').textContent = 'YOUR JOURNAL JOURNEY';
-    $('#coverSubtitle').textContent = 'create a lovers or group scrapbook';
+    $('#coverSubtitle').textContent = 'create a lovers, group, or personal scrapbook';
   }
 }
 function renderProfileChip() {
@@ -231,22 +246,70 @@ async function respondUnbind(approve) {
     showToast(data.unbound ? 'The couple bond is now unbound. Your memories are preserved.' : (approve ? 'Your approval was recorded.' : 'Unbind request closed.'));
   } catch (err) { showToast(err.message); }
 }
+function renderFollowStats() {
+  const el = $('#followStats');
+  if (!el) return;
+  el.innerHTML = `<span><b>${followers.length}</b> followers</span><span><b>${following.length}</b> following</span>`;
+}
+function renderPersonalPrivacy() {
+  const panel = $('#personalPrivacyPanel');
+  if (!activeScrapbook || activeScrapbook.type !== 'personal') {
+    panel.classList.add('hidden'); panel.innerHTML = ''; return;
+  }
+  panel.classList.remove('hidden');
+  if (activeScrapbook.owner !== me.tag) {
+    panel.innerHTML = `<div class="privacy-card readonly"><strong>Read-only personal scrapbook</strong><p>@${escapeHtml(activeScrapbook.owner)} shared this scrapbook through <b>${privacyLabel(activeScrapbook.privacy)}</b>. Only the owner can write or change its privacy.</p></div>`;
+    return;
+  }
+  panel.innerHTML = `<div class="privacy-card"><div><strong>Personal scrapbook privacy</strong><p>Choose exactly who is allowed to read this personal scrapbook.</p></div><select id="personalPrivacySelect">
+    <option value="followers" ${activeScrapbook.privacy==='followers'?'selected':''}>Followers Only</option>
+    <option value="partner" ${activeScrapbook.privacy==='partner'?'selected':''}>Partner Only</option>
+    <option value="private" ${activeScrapbook.privacy==='private'?'selected':''}>You Only</option>
+  </select></div>`;
+  $('#personalPrivacySelect')?.addEventListener('change', async e => {
+    try {
+      const data = await api(`/api/scrapbooks/${activeScrapbook.id}/privacy`, { method:'PUT', body:JSON.stringify({ privacy:e.target.value }) });
+      const idx = scrapbooks.findIndex(b => b.id === activeScrapbook.id);
+      activeScrapbook = data.scrapbook;
+      if (idx >= 0) scrapbooks[idx] = activeScrapbook;
+      updateCover(); renderPersonalPrivacy(); showToast(`Privacy changed to ${privacyLabel(activeScrapbook.privacy)}.`);
+    } catch (err) { showToast(err.message); }
+  });
+}
 function renderConnections() {
+  renderFollowStats();
   if (!activeScrapbook) {
     $('#connectionsTitle').textContent = 'Create your first scrapbook';
-    $('#connectionsSubtitle').textContent = 'Choose Lovers for a private two-person book, or Group for friends and family.';
+    $('#connectionsSubtitle').textContent = 'Choose Lovers, Group, or Personal.';
     $('#inviteForm').classList.add('hidden');
     $('#unbindPanel').classList.add('hidden');
-    $('#peopleMap').innerHTML = '<div class="onboarding-card"><div class="big-heart">♡</div><h3>Your journal can be just two people or a whole circle.</h3><p>Create a scrapbook, then invite someone by their unique @tag.</p><button id="onboardingCreate" class="primary">Create scrapbook</button></div>';
+    $('#personalPrivacyPanel').classList.add('hidden');
+    $('#peopleMap').innerHTML = '<div class="onboarding-card"><div class="big-heart">♡</div><h3>Your journal can be shared or completely personal.</h3><p>Create a Lovers scrapbook, a Group scrapbook, or your own Personal scrapbook.</p><button id="onboardingCreate" class="primary">Create scrapbook</button></div>';
     $('#onboardingCreate')?.addEventListener('click', () => scrapbookDialog.showModal());
     return;
   }
 
   const isCouple = activeScrapbook.type === 'couple';
+  const isPersonal = activeScrapbook.type === 'personal';
   const archived = isCouple && activeScrapbook.bindingStatus === 'unbound';
   const coupleFull = isCouple && activeScrapbook.members.length >= 2;
-  $('#inviteForm').classList.toggle('hidden', archived || coupleFull);
+  $('#inviteForm').classList.toggle('hidden', isPersonal || archived || coupleFull);
   $('#connectionsTitle').textContent = activeScrapbook.name;
+
+  if (isPersonal) {
+    $('#unbindPanel').classList.add('hidden');
+    $('#unbindPanel').innerHTML = '';
+    const owner = activeScrapbook.profiles?.[0] || { tag:activeScrapbook.owner, displayName:activeScrapbook.owner };
+    $('#connectionsSubtitle').textContent = activeScrapbook.owner === me.tag
+      ? 'Your personal journal. You decide who can read it.'
+      : `A personal scrapbook by @${activeScrapbook.owner}. You have read-only access.`;
+    $('#peopleMap').innerHTML = `<div class="personal-owner-card">${avatarHtml(owner,'bound-avatar')}<strong>${escapeHtml(owner.displayName || owner.tag)}</strong><span>@${escapeHtml(owner.tag)}</span><small>${privacyLabel(activeScrapbook.privacy)}</small></div>`;
+    renderPersonalPrivacy();
+    return;
+  }
+
+  $('#personalPrivacyPanel').classList.add('hidden');
+  $('#personalPrivacyPanel').innerHTML = '';
   $('#connectionsSubtitle').textContent = archived
     ? 'This is a preserved lovers archive. The memories remain shared even though the active bond has ended.'
     : (isCouple ? 'A lovers scrapbook only ever binds two profiles.' : 'Your view keeps you at the center, with your scrapbook circle connected around you.');
@@ -257,7 +320,7 @@ function renderConnections() {
     const other = profiles.find(p => p.tag !== me.tag);
     $('#peopleMap').innerHTML = `<div class="couple-bind ${archived ? 'unbound-bind' : ''}">
       <div class="bound-profile">${avatarHtml(mine, 'bound-avatar')}<strong>${escapeHtml(mine.displayName)}</strong><span>@${escapeHtml(mine.tag)}</span></div>
-      <div class="heart-bind"><span>${archived ? '♡' : '♡'}</span><small>${archived ? 'UNBOUND ARCHIVE' : (other ? 'BOUND' : 'WAITING')}</small></div>
+      <div class="heart-bind"><span>♡</span><small>${archived ? 'UNBOUND ARCHIVE' : (other ? 'BOUND' : 'WAITING')}</small></div>
       ${other ? `<div class="bound-profile">${avatarHtml(other, 'bound-avatar')}<strong>${escapeHtml(other.displayName)}</strong><span>@${escapeHtml(other.tag)}</span></div>` : `<div class="bound-profile empty-bound"><span class="avatar bound-avatar">?</span><strong>Your person</strong><span>Invite by @tag</span></div>`}
     </div>`;
     renderUnbindPanel();
@@ -293,6 +356,8 @@ function showView(mode) {
 
   const noBook = !activeScrapbook;
   const noEntries = activeScrapbook && !entries.length;
+  const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
+  $('#newEntryBtn').classList.toggle('hidden', Boolean(activeScrapbook) && !canWrite);
   emptyState.classList.toggle('hidden', mode === 'cover' || mode === 'connections' || (!noBook && !noEntries));
   if (noBook && mode !== 'cover' && mode !== 'connections') {
     bookView.classList.add('hidden'); streamView.classList.add('hidden');
@@ -301,8 +366,9 @@ function showView(mode) {
     $('#emptyAddBtn').textContent = 'Create scrapbook';
   } else if (noEntries && mode !== 'cover' && mode !== 'connections') {
     bookView.classList.add('hidden'); streamView.classList.add('hidden');
-    $('#emptyTitle').textContent = 'The first page is waiting.';
-    $('#emptyText').textContent = 'Write a little piece of today and this scrapbook begins.';
+    $('#emptyTitle').textContent = canWrite ? 'The first page is waiting.' : 'No memories here yet.';
+    $('#emptyText').textContent = canWrite ? 'Write a little piece of today and this scrapbook begins.' : 'This personal scrapbook is read-only for you.';
+    $('#emptyAddBtn').classList.toggle('hidden', !canWrite);
     $('#emptyAddBtn').textContent = 'Write the first memory';
   } else if (mode === 'book') renderBook();
   else if (mode === 'stream') renderTimeline();
@@ -314,6 +380,11 @@ async function refreshEntries() {
   const data = await api(`/api/entries?scrapbookId=${encodeURIComponent(activeScrapbook.id)}`);
   entries = data.entries || [];
   authorProfiles = data.profiles || {};
+  if (data.scrapbook) {
+    activeScrapbook = data.scrapbook;
+    const idx = scrapbooks.findIndex(b => b.id === activeScrapbook.id);
+    if (idx >= 0) scrapbooks[idx] = activeScrapbook;
+  }
   if (currentMode === 'book') renderBook();
   if (currentMode === 'stream') renderTimeline();
 }
@@ -322,10 +393,13 @@ async function loadSession(preferredBookId = null) {
   me = data.profile;
   scrapbooks = data.scrapbooks || [];
   invites = data.invites || [];
+  following = data.following || [];
+  followers = data.followers || [];
+  partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
   if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
-  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); updateCover();
+  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderFollowStats(); updateCover();
   await refreshEntries();
 }
 async function respondInvite(id, accept) {
@@ -353,6 +427,7 @@ function resetEditor(entry = null) {
 }
 function openEditor(id = null) {
   if (!activeScrapbook) { scrapbookDialog.showModal(); return; }
+  if (activeScrapbook.canWrite === false) { showToast('This personal scrapbook is read-only for you.'); return; }
   const entry = id ? entries.find(e => e.id === id) : null;
   if (entry && entry.author !== me.tag) { showToast('Only the writer can edit that memory.'); return; }
   resetEditor(entry || null);
@@ -594,14 +669,28 @@ $('#scrapbookPicker').addEventListener('change', async e => {
   if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
   updateCover(); await refreshEntries(); showView('cover');
 });
-$('#createScrapbookBtn').addEventListener('click', () => scrapbookDialog.showModal());
+function updateScrapbookDialogForType() {
+  const type = $('#scrapbookType').value;
+  const personal = type === 'personal';
+  $('#personalPrivacyWrap').classList.toggle('hidden', !personal);
+  $('#scrapbookHelper').textContent = personal
+    ? 'Personal scrapbooks are written only by you. Privacy controls who may read them.'
+    : 'After creating it, invite people from the People view using their @tag.';
+  if (!$('#scrapbookName').value.trim()) {
+    $('#scrapbookName').placeholder = personal ? 'My Personal Scrapbook' : (type === 'couple' ? 'Our Love Story' : 'Our Weekend Crew');
+  }
+}
+$('#createScrapbookBtn').addEventListener('click', () => { updateScrapbookDialogForType(); scrapbookDialog.showModal(); });
+$('#scrapbookType').addEventListener('change', updateScrapbookDialogForType);
 $('#closeScrapbookDialog').addEventListener('click', () => scrapbookDialog.close());
 $('#scrapbookForm').addEventListener('submit', async e => {
   e.preventDefault(); $('#scrapbookError').textContent = '';
   try {
-    const data = await api('/api/scrapbooks', { method:'POST', body:JSON.stringify({ type:$('#scrapbookType').value, name:$('#scrapbookName').value.trim() }) });
+    const type = $('#scrapbookType').value;
+    const data = await api('/api/scrapbooks', { method:'POST', body:JSON.stringify({ type, name:$('#scrapbookName').value.trim(), privacy:$('#personalPrivacy').value }) });
     scrapbookDialog.close(); $('#scrapbookName').value = '';
-    await loadSession(data.scrapbook.id); showView('connections'); showToast('Scrapbook created. Invite someone by @tag.');
+    await loadSession(data.scrapbook.id); showView('connections');
+    showToast(type === 'personal' ? 'Personal scrapbook created.' : 'Scrapbook created. Invite someone by @tag.');
   } catch (err) { $('#scrapbookError').textContent = err.message; }
 });
 $('#inviteForm').addEventListener('submit', async e => {
@@ -610,6 +699,44 @@ $('#inviteForm').addEventListener('submit', async e => {
   try {
     await api(`/api/scrapbooks/${activeScrapbook.id}/invite`, { method:'POST', body:JSON.stringify({ tag:$('#inviteTag').value.trim() }) });
     showToast('Invitation sent.'); $('#inviteTag').value = '';
+  } catch (err) { showToast(err.message); }
+});
+
+function renderDiscoverResults(people) {
+  const host = $('#discoverResults');
+  if (!people?.length) {
+    host.innerHTML = '<p class="helper">No matching profiles found.</p>';
+    return;
+  }
+  host.innerHTML = people.map(person => `<article class="discover-person" data-tag="${escapeHtml(person.tag)}">
+    ${avatarHtml(person,'small-avatar')}
+    <div class="discover-person-copy"><strong>${escapeHtml(person.displayName || person.tag)}</strong><span>@${escapeHtml(person.tag)}</span>${person.bio ? `<small>${escapeHtml(person.bio)}</small>` : ''}</div>
+    <div class="discover-badges">${person.isPartner ? '<span>Partner</span>' : ''}${person.followsYou ? '<span>Follows you</span>' : ''}</div>
+    <button class="${person.isFollowing ? 'ghost' : 'primary'} follow-toggle" type="button">${person.isFollowing ? 'Following' : 'Follow'}</button>
+  </article>`).join('');
+  host.querySelectorAll('.follow-toggle').forEach(btn => btn.addEventListener('click', async () => {
+    const card = btn.closest('.discover-person');
+    const tag = card.dataset.tag;
+    const isFollowingNow = btn.textContent.trim() === 'Following';
+    try {
+      await api(`/api/people/${encodeURIComponent(tag)}/follow`, { method:isFollowingNow ? 'DELETE' : 'POST', body:isFollowingNow ? undefined : '{}' });
+      await loadSession(activeScrapbook?.id);
+      const q = $('#discoverTag').value.trim();
+      if (q) {
+        const data = await api(`/api/people?q=${encodeURIComponent(q)}`);
+        renderDiscoverResults(data.people || []);
+      }
+      showToast(isFollowingNow ? `Unfollowed @${tag}.` : `You are now following @${tag}.`);
+    } catch (err) { showToast(err.message); }
+  }));
+}
+$('#discoverForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('#discoverTag').value.trim();
+  if (!q) return;
+  try {
+    const data = await api(`/api/people?q=${encodeURIComponent(q)}`);
+    renderDiscoverResults(data.people || []);
   } catch (err) { showToast(err.message); }
 });
 
