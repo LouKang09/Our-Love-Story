@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-mobilefmt2" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-canvas1" />
 </head>
 <body>
   <div id="app">
@@ -122,7 +122,7 @@
       </div>
     </main>
 
-    <dialog id="editorDialog" class="editor-dialog">
+    <dialog id="editorDialog" class="editor-dialog canvas-mode">
       <form id="entryForm" class="editor-card">
         <div class="editor-head">
           <div><p class="eyebrow">JOURNAL ENTRY</p><h2 id="editorHeading">Write today down</h2></div>
@@ -132,6 +132,46 @@
           <label>Date<input id="entryDate" type="date" required /></label>
           <label>Title<input id="entryTitle" maxlength="120" placeholder="The little thing I never want to forget" required /></label>
         </div>
+        <section class="canvas-builder">
+          <div class="canvas-builder-head">
+            <div>
+              <p class="eyebrow">DESIGN YOUR PAGE</p>
+              <h3>Place photos first, then add movable text boxes.</h3>
+              <p class="helper">Photos and text are independent objects. Drag them anywhere, resize them, and what you design here is what gets posted.</p>
+            </div>
+            <div class="canvas-add-actions">
+              <label class="primary canvas-add-photo">＋ Add photos<input id="canvasPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden /></label>
+              <button id="canvasAddTextBtn" class="ghost" type="button">＋ Add text</button>
+            </div>
+          </div>
+
+          <div id="canvasTextInspector" class="canvas-text-inspector hidden">
+            <strong>Text box</strong>
+            <select id="canvasFontSelect" aria-label="Text font">
+              <option value="serif">Journal Serif</option>
+              <option value="sans">Clean Sans</option>
+              <option value="hand">Handwritten</option>
+              <option value="mono">Typewriter</option>
+            </select>
+            <label class="canvas-size-control">Size
+              <input id="canvasFontSize" type="range" min="12" max="42" step="1" value="18" />
+              <span id="canvasFontSizeValue">18px</span>
+            </label>
+            <button id="canvasBoldBtn" class="rich-tool rich-bold" type="button" title="Bold">B</button>
+            <button id="canvasItalicBtn" class="rich-tool rich-italic" type="button" title="Italic">I</button>
+            <button id="canvasBringFrontBtn" class="ghost" type="button">Bring front</button>
+            <button id="canvasDeleteItemBtn" class="danger" type="button">Remove</button>
+          </div>
+
+          <div id="scrapCanvas" class="scrap-canvas" aria-label="Scrapbook page canvas">
+            <div id="canvasEmptyHint" class="canvas-empty-hint">
+              <span>♡</span>
+              <strong>Start with a photo or a text box.</strong>
+              <small>Everything here can be moved and resized.</small>
+            </div>
+          </div>
+        </section>
+
         <section class="rich-field">
           <div class="rich-field-label">What happened today?</div>
           <div id="richToolbar" class="rich-toolbar" role="toolbar" aria-label="Text formatting">
@@ -240,6 +280,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-mobilefmt2" defer></script>
+  <script src="/app.js?v=20260919-canvas1" defer></script>
 </body>
 </html>

@@ -30,6 +30,9 @@ let spreadIndex = 0;
 let currentMode = 'cover';
 let editingId = null;
 let editingPhotos = [];
+let editingCanvasItems = [];
+let selectedCanvasItemId = null;
+let savedCanvasTextRange = null;
 let me = null;
 let pendingProfileAvatar = '';
 let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.' };
@@ -113,6 +116,37 @@ function photoHtml(photo, interactive = false) {
 function bodyHtml(entry, interactive = false) {
   return `${(entry.photos || []).map(p => photoHtml(p, interactive)).join('')}<div class="rich-copy">${richTextHtml(entry)}</div>`;
 }
+
+function canvasFontClass(font) {
+  return ['serif','sans','hand','mono'].includes(font) ? `canvas-font-${font}` : 'canvas-font-serif';
+}
+function canvasItemStyle(item) {
+  const x = Math.max(0, Math.min(94, Number(item.x) || 0));
+  const y = Math.max(0, Math.min(94, Number(item.y) || 0));
+  const w = Math.max(12, Math.min(96, Number(item.w) || 35));
+  const h = Math.max(8, Math.min(90, Number(item.h) || 20));
+  const z = Math.max(1, Math.min(999, Number(item.z) || 1));
+  return `left:${x}%;top:${y}%;width:${w}%;height:${h}%;z-index:${z}`;
+}
+function savedCanvasHtml(entry) {
+  const items = Array.isArray(entry?.canvasItems) ? [...entry.canvasItems].sort((a,b)=>(a.z||0)-(b.z||0)) : [];
+  if (!items.length) return '';
+  return `<div class="saved-canvas">${items.map(item => {
+    if (item.type === 'photo') {
+      return `<figure class="saved-canvas-item saved-photo-item" style="${canvasItemStyle(item)}"><img src="${escapeHtml(item.src)}" alt="Scrapbook photo" loading="lazy" />${item.caption ? `<figcaption>${escapeHtml(item.caption)}</figcaption>` : ''}</figure>`;
+    }
+    const fontClass = canvasFontClass(item.font);
+    const weight = item.bold ? 'font-weight:700;' : '';
+    const style = item.italic ? 'font-style:italic;' : '';
+    const size = Math.max(12, Math.min(42, Number(item.size) || 18));
+    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size};${weight}${style}"><div class="saved-text-content">${String(item.html || '')}</div></div>`;
+  }).join('')}</div>`;
+}
+function entryContentHtml(entry) {
+  return Array.isArray(entry?.canvasItems) && entry.canvasItems.length
+    ? savedCanvasHtml(entry)
+    : `<div class="journal-flow">${bodyHtml(entry)}</div>`;
+}
 function authorHtml(entry) {
   const p = authorProfiles[entry.author] || activeScrapbook?.profiles?.find(x => x.tag === entry.author) || { tag: entry.author, displayName: entry.author };
   return `<span class="author-line">${avatarHtml(p, 'tiny-avatar')}<span>${escapeHtml(p.displayName || p.tag)} <small>@${escapeHtml(p.tag || entry.author)}</small></span></span>`;
@@ -124,7 +158,7 @@ function pageHtml(entry) {
     <div class="entry-date">${formatDate(entry.date)}</div>
     <h2>${escapeHtml(entry.title)}</h2>
     <div class="entry-meta">${authorHtml(entry)}</div>
-    <div class="entry-body journal-flow">${bodyHtml(entry)}</div>
+    <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
     ${editable ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this page</button></div>` : ''}
   </div>`;
 }
@@ -161,7 +195,7 @@ function renderTimeline() {
       <div class="entry-date">${formatDate(entry.date)}</div>
       <h2>${escapeHtml(entry.title)}</h2>
       <div class="entry-meta">${authorHtml(entry)}</div>
-      <div class="entry-body journal-flow">${bodyHtml(entry)}</div>
+      <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
       ${me && entry.author === me.tag ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button></div>` : ''}
     </div>
   </article>`).join('');
@@ -426,20 +460,71 @@ async function respondInvite(id, accept) {
   } catch (err) { showToast(err.message); }
 }
 
+function maxCanvasZ() {
+  return editingCanvasItems.reduce((max,item)=>Math.max(max,Number(item.z)||0),0);
+}
+function clampCanvasItem(item) {
+  item.w = Math.max(item.type === 'text' ? 18 : 14, Math.min(96, Number(item.w) || (item.type === 'text' ? 55 : 34)));
+  item.h = Math.max(item.type === 'text' ? 8 : 10, Math.min(90, Number(item.h) || (item.type === 'text' ? 18 : 26)));
+  item.x = Math.max(0, Math.min(100 - item.w, Number(item.x) || 0));
+  item.y = Math.max(0, Math.min(100 - item.h, Number(item.y) || 0));
+  item.z = Math.max(1, Math.min(999, Number(item.z) || 1));
+  return item;
+}
+function legacyEntryToCanvas(entry) {
+  if (!entry) return [];
+  if (Array.isArray(entry.canvasItems) && entry.canvasItems.length) {
+    return entry.canvasItems.map(item => clampCanvasItem({...item}));
+  }
+  const items = [];
+  const photos = Array.isArray(entry.photos) ? entry.photos : [];
+  photos.forEach((p,i) => {
+    const pos = normalizedPhotoPosition(p);
+    items.push(clampCanvasItem({
+      id:p.id || crypto.randomUUID?.() || `photo-${Date.now()}-${i}`,
+      type:'photo',
+      src:p.src,
+      caption:p.caption || '',
+      x:Math.max(0,Math.min(64,pos.xPct)),
+      y:Math.max(2,Math.min(68,4 + i*10 + pos.yPx/16)),
+      w:Math.max(20,Math.min(48,pos.width || 34)),
+      h:26,
+      z:i+1
+    }));
+  });
+  const html = entry.richText ? entry.richText : (entry.text ? plainTextHtml(entry.text) : '');
+  if (html.trim()) {
+    const y = Math.min(70, photos.length ? 12 + photos.length*9 : 8);
+    items.push(clampCanvasItem({
+      id:crypto.randomUUID?.() || `text-${Date.now()}`,
+      type:'text',
+      html,
+      x:7,
+      y,
+      w:86,
+      h:24,
+      z:items.length+1,
+      font:'serif',
+      size:18,
+      bold:false,
+      italic:false
+    }));
+  }
+  return items;
+}
 function resetEditor(entry = null) {
   editingId = entry?.id || null;
-  editingPhotos = (entry?.photos || []).map(p => {
-    const pos = normalizedPhotoPosition(p);
-    return { ...p, width:pos.width, xPct:pos.xPct, yPx:pos.yPx, offsetY:pos.yPx, side:pos.side };
-  });
-  $('#editorHeading').textContent = entry ? 'Edit this memory' : 'Write today down';
+  editingPhotos = (entry?.photos || []).map(p => ({...p}));
+  editingCanvasItems = legacyEntryToCanvas(entry);
+  selectedCanvasItemId = null;
+  savedCanvasTextRange = null;
+  $('#editorHeading').textContent = entry ? 'Edit this memory' : 'Design this memory';
   $('#entryDate').value = entry?.date || new Date().toISOString().slice(0,10);
   $('#entryTitle').value = entry?.title || '';
   $('#entryText').innerHTML = entry?.richText ? entry.richText : (entry?.text ? plainTextHtml(entry.text) : '');
-  savedRichRange = null;
   $('#deleteEntryBtn').classList.toggle('hidden', !entry);
   $('#editorError').textContent = '';
-  renderPhotoControls(); renderPreview();
+  renderCanvasEditor();
 }
 function openEditor(id = null) {
   if (!activeScrapbook) { scrapbookDialog.showModal(); return; }
@@ -448,135 +533,270 @@ function openEditor(id = null) {
   if (entry && entry.author !== me.tag) { showToast('Only the writer can edit that memory.'); return; }
   resetEditor(entry || null);
   editorDialog.showModal();
-  setTimeout(() => $('#entryTitle').focus(), 50);
+  setTimeout(() => $('#entryTitle').focus(), 80);
 }
-function closeEditor() { if (editorDialog.open) editorDialog.close(); }
+function closeEditor() {
+  selectedCanvasItemId = null;
+  savedCanvasTextRange = null;
+  if (editorDialog.open) editorDialog.close();
+}
+function canvasPlainText() {
+  return editingCanvasItems
+    .filter(item=>item.type==='text')
+    .map(item => {
+      const div=document.createElement('div');
+      div.innerHTML=item.html || '';
+      return div.innerText.trim();
+    })
+    .filter(Boolean)
+    .join('\n\n')
+    .slice(0,20000);
+}
 function currentDraft() {
-  const editor = $('#entryText');
+  const textItems = editingCanvasItems.filter(item=>item.type==='text');
+  const photoItems = editingCanvasItems.filter(item=>item.type==='photo');
   return {
     id: editingId,
     scrapbookId: activeScrapbook?.id || '',
     date: $('#entryDate').value,
     title: $('#entryTitle').value || 'Untitled memory',
-    text: editor.innerText.slice(0, 20000),
-    richText: editor.innerHTML.slice(0, 50000),
-    photos: editingPhotos,
+    text: canvasPlainText(),
+    richText: textItems.map(item=>item.html || '').join('<div><br></div>').slice(0,50000),
+    canvasItems: editingCanvasItems.map(item=>({...item})),
+    photos: photoItems.map(item=>({
+      id:item.id,src:item.src,caption:item.caption || '',
+      side:item.x + item.w/2 >= 50 ? 'right':'left',
+      width:item.w,xPct:item.x,yPx:Math.round(item.y*6),offsetY:Math.round(item.y*6)
+    })),
     author: me?.tag
   };
 }
-function renderPreview() {
-  const draft = currentDraft();
-  preview.innerHTML = `<div class="entry-date">${draft.date ? formatDate(draft.date) : 'Someday'}</div><h2>${escapeHtml(draft.title)}</h2><div class="entry-meta">${me ? avatarHtml(me,'tiny-avatar') + escapeHtml(me.displayName) : ''}</div><div class="entry-body journal-flow preview-flow">${bodyHtml(draft, true)}</div>`;
-  wirePreviewPhotoDrag();
-}
-function applyFigurePosition(figure, photo) {
-  const pos = smartPhotoLayout(photo);
-  figure.classList.toggle('left', pos.side === 'left');
-  figure.classList.toggle('right', pos.side === 'right');
-  figure.classList.toggle('wrap-photo', pos.wraps);
-  figure.classList.toggle('block-photo', !pos.wraps);
-  figure.style.setProperty('--photo-width', `${pos.width}%`);
-  figure.style.setProperty('--photo-offset', `${pos.yPx}px`);
-  figure.style.clear = pos.wraps ? 'none' : 'both';
-  figure.style.cssFloat = pos.wraps ? pos.side : 'none';
-  if (pos.wraps) {
-    if (pos.side === 'left') {
-      figure.style.marginLeft = `${pos.xPct}%`;
-      figure.style.marginRight = '20px';
-    } else {
-      figure.style.marginRight = `${pos.rightGap}%`;
-      figure.style.marginLeft = '20px';
-    }
-  } else {
-    figure.style.marginLeft = `${pos.xPct}%`;
-    figure.style.marginRight = '0';
-  }
-}
-function renderPhotoControls() {
-  if (!editingPhotos.length) {
-    photoControls.innerHTML = '<div class="muted photo-empty">No photos yet. Add one or several and build the page like a real scrapbook.</div>';
-    return;
-  }
-  photoControls.innerHTML = editingPhotos.map((p, i) => {
-    const pos = normalizedPhotoPosition(p);
-    return `<div class="photo-control" data-index="${i}">
-      <img class="control-photo" src="${escapeHtml(p.src)}" alt="Photo ${i+1}" draggable="false" />
-      <div class="photo-row"><button type="button" class="side-btn ${pos.side==='left'?'active':''}" data-side="left">← Left side</button><button type="button" class="side-btn ${pos.side==='right'?'active':''}" data-side="right">Right side →</button></div>
-      <label class="size-label"><span>Size <b class="size-value">${pos.width}%</b></span><input class="size-range" type="range" min="18" max="90" step="1" value="${pos.width}" /></label>
-      <div class="position-row"><span>Position: <b class="position-value">X ${Math.round(pos.xPct)}% · Y ${Math.round(pos.yPx)}px</b></span><button type="button" class="reset-position">Reset</button></div>
-      <input class="caption-input" type="text" maxlength="240" value="${escapeHtml(p.caption || '')}" placeholder="Optional little caption" />
-      <button type="button" class="remove-photo">Remove photo</button>
+function canvasItemHtml(item) {
+  const selected = item.id === selectedCanvasItemId ? ' selected' : '';
+  if (item.type === 'photo') {
+    return `<div class="canvas-item canvas-photo-item${selected}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)}">
+      <button class="canvas-remove-item" type="button" title="Remove photo">×</button>
+      <img src="${escapeHtml(item.src)}" alt="Scrapbook photo" draggable="false" />
+      ${item.caption ? `<div class="canvas-photo-caption">${escapeHtml(item.caption)}</div>` : ''}
+      <span class="canvas-resize-handle" aria-hidden="true"></span>
     </div>`;
-  }).join('');
-
-  photoControls.querySelectorAll('.photo-control').forEach(card => {
-    const i = Number(card.dataset.index);
-    card.querySelectorAll('.side-btn').forEach(btn => btn.addEventListener('click', () => {
-      const width = Number(editingPhotos[i].width) || 42;
-      editingPhotos[i].side = btn.dataset.side;
-      editingPhotos[i].xPct = btn.dataset.side === 'left' ? 0 : Math.max(0, 100 - width);
-      renderPhotoControls(); renderPreview();
-    }));
-    card.querySelector('.size-range').addEventListener('input', e => {
-      const width = Number(e.target.value);
-      editingPhotos[i].width = width;
-      editingPhotos[i].xPct = Math.min(Number(editingPhotos[i].xPct) || 0, Math.max(0, 100 - width));
-      card.querySelector('.size-value').textContent = `${width}%`;
-      renderPreview();
-    });
-    card.querySelector('.caption-input').addEventListener('input', e => { editingPhotos[i].caption = e.target.value; renderPreview(); });
-    card.querySelector('.reset-position').addEventListener('click', () => {
-      const width = Number(editingPhotos[i].width) || 42;
-      const side = editingPhotos[i].side === 'right' ? 'right' : 'left';
-      editingPhotos[i].xPct = side === 'right' ? Math.max(0, 100 - width) : 0;
-      editingPhotos[i].yPx = 0; editingPhotos[i].offsetY = 0;
-      renderPhotoControls(); renderPreview();
-    });
-    card.querySelector('.remove-photo').addEventListener('click', () => { editingPhotos.splice(i,1); renderPhotoControls(); renderPreview(); });
+  }
+  const size=Math.max(12,Math.min(42,Number(item.size)||18));
+  return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
+    <button class="canvas-remove-item" type="button" title="Remove text box">×</button>
+    <div class="canvas-drag-handle" title="Drag text box">✥ Move</div>
+    <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here…">${String(item.html || '')}</div>
+    <span class="canvas-resize-handle" aria-hidden="true"></span>
+  </div>`;
+}
+function renderCanvasEditor() {
+  const canvas=$('#scrapCanvas');
+  const hint=$('#canvasEmptyHint');
+  canvas.querySelectorAll('.canvas-item').forEach(el=>el.remove());
+  const ordered=[...editingCanvasItems].sort((a,b)=>(a.z||0)-(b.z||0));
+  canvas.insertAdjacentHTML('beforeend',ordered.map(canvasItemHtml).join(''));
+  hint.classList.toggle('hidden',ordered.length>0);
+  wireCanvasItems();
+  updateCanvasInspector();
+}
+function selectCanvasItem(id, bringFront=false) {
+  const item=editingCanvasItems.find(x=>x.id===id);
+  if(!item)return;
+  selectedCanvasItemId=id;
+  if(bringFront){
+    item.z=Math.min(999,maxCanvasZ()+1);
+  }
+  renderCanvasEditor();
+}
+function activeCanvasTextItem() {
+  const item=editingCanvasItems.find(x=>x.id===selectedCanvasItemId);
+  return item?.type==='text' ? item : null;
+}
+function updateCanvasInspector() {
+  const inspector=$('#canvasTextInspector');
+  const item=activeCanvasTextItem();
+  inspector.classList.toggle('hidden',!item);
+  if(!item)return;
+  $('#canvasFontSelect').value=item.font || 'serif';
+  $('#canvasFontSize').value=String(item.size || 18);
+  $('#canvasFontSizeValue').textContent=`${item.size || 18}px`;
+  $('#canvasBoldBtn').classList.toggle('active',item.bold===true);
+  $('#canvasItalicBtn').classList.toggle('active',item.italic===true);
+  positionCanvasInspectorMobile();
+}
+function addCanvasText() {
+  const count=editingCanvasItems.filter(i=>i.type==='text').length;
+  const item=clampCanvasItem({
+    id:crypto.randomUUID?.() || `text-${Date.now()}-${Math.random()}`,
+    type:'text',html:'',x:8,y:Math.min(70,8+count*8),w:70,h:18,
+    z:maxCanvasZ()+1,font:'serif',size:18,bold:false,italic:false
+  });
+  editingCanvasItems.push(item);
+  selectedCanvasItemId=item.id;
+  renderCanvasEditor();
+  requestAnimationFrame(()=>{
+    const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
+    el?.focus();
   });
 }
-function wirePreviewPhotoDrag() {
-  preview.querySelectorAll('.preview-draggable').forEach(figure => {
-    const id = figure.dataset.photoId;
-    const index = editingPhotos.findIndex(p => String(p.id) === String(id));
-    if (index < 0) return;
-    let startClientX = 0, startClientY = 0, startX = 0, startY = 0, dragging = false;
-
-    figure.addEventListener('pointerdown', e => {
-      if (e.target.closest('figcaption')) return;
-      const pos = normalizedPhotoPosition(editingPhotos[index]);
-      dragging = true;
-      startClientX = e.clientX; startClientY = e.clientY;
-      startX = pos.xPct; startY = pos.yPx;
-      figure.classList.add('dragging');
-      figure.setPointerCapture(e.pointerId);
+function canvasTextSelection() {
+  const item=activeCanvasTextItem();
+  if(!item)return null;
+  const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
+  const sel=window.getSelection();
+  if(!el||!sel||!sel.rangeCount||sel.isCollapsed)return null;
+  const range=sel.getRangeAt(0);
+  return el.contains(range.commonAncestorContainer) ? range : null;
+}
+function rememberCanvasTextSelection() {
+  const range=canvasTextSelection();
+  if(range)savedCanvasTextRange=range.cloneRange();
+}
+function restoreCanvasTextSelection() {
+  if(!savedCanvasTextRange)return false;
+  const item=activeCanvasTextItem();
+  if(!item)return false;
+  const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
+  if(!el||!el.contains(savedCanvasTextRange.commonAncestorContainer))return false;
+  const sel=window.getSelection();
+  sel.removeAllRanges();sel.addRange(savedCanvasTextRange);
+  return true;
+}
+function applyCanvasInline(command,value=null) {
+  if(!restoreCanvasTextSelection())return false;
+  const sel=window.getSelection();
+  if(!sel||sel.isCollapsed)return false;
+  document.execCommand(command,false,value);
+  const item=activeCanvasTextItem();
+  const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
+  item.html=el?.innerHTML || '';
+  rememberCanvasTextSelection();
+  return true;
+}
+function setCanvasTextFont(value) {
+  const item=activeCanvasTextItem();if(!item)return;
+  const face={serif:'Georgia',sans:'Arial',hand:'Segoe Print',mono:'Courier New'}[value] || 'Georgia';
+  if(!applyCanvasInline('fontName',face)){
+    item.font=value;
+    renderCanvasEditor();
+  }
+}
+function setCanvasTextSize(value) {
+  const item=activeCanvasTextItem();if(!item)return;
+  const size=Math.max(12,Math.min(42,Number(value)||18));
+  const range=canvasTextSelection();
+  if(range){
+    savedCanvasTextRange=range.cloneRange();
+    const level=size<=14?2:size<=18?3:size<=23?4:size<=29?5:size<=35?6:7;
+    if(applyCanvasInline('fontSize',String(level))){
+      $('#canvasFontSizeValue').textContent=`${size}px selection`;
+      return;
+    }
+  }
+  item.size=size;
+  $('#canvasFontSizeValue').textContent=`${size}px`;
+  const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"]`);
+  el?.style.setProperty('--edit-text-size',`${size}px`);
+}
+function toggleCanvasTextStyle(kind) {
+  const item=activeCanvasTextItem();if(!item)return;
+  const command=kind==='bold'?'bold':'italic';
+  if(applyCanvasInline(command)){renderCanvasEditor();return;}
+  item[kind]=!item[kind];
+  renderCanvasEditor();
+}
+function syncCanvasTextHeight(content,itemEl,item) {
+  const canvas=$('#scrapCanvas');
+  const canvasRect=canvas.getBoundingClientRect();
+  if(!canvasRect.height)return;
+  const dragH=itemEl.querySelector('.canvas-drag-handle')?.offsetHeight || 28;
+  const needed=content.scrollHeight+dragH+18;
+  const neededPct=needed/canvasRect.height*100;
+  if(neededPct>item.h){
+    item.h=Math.min(96-item.y,Math.max(item.h,neededPct));
+    itemEl.style.height=`${item.h}%`;
+  }
+}
+function wireCanvasItems() {
+  const canvas=$('#scrapCanvas');
+  const rect=()=>canvas.getBoundingClientRect();
+  canvas.querySelectorAll('.canvas-item').forEach(el=>{
+    const id=el.dataset.canvasId;
+    const item=editingCanvasItems.find(x=>x.id===id);
+    if(!item)return;
+    el.addEventListener('pointerdown',e=>{
+      if(e.target.closest('.canvas-remove-item,.canvas-resize-handle,.canvas-text-content'))return;
+      if(item.type==='text'&&!e.target.closest('.canvas-drag-handle'))return;
+      selectedCanvasItemId=id;
+      item.z=Math.min(999,maxCanvasZ()+1);
+      const r=rect();
+      const sx=e.clientX,sy=e.clientY,ox=item.x,oy=item.y;
+      el.setPointerCapture(e.pointerId);el.classList.add('dragging');
+      const move=ev=>{
+        const dx=(ev.clientX-sx)/r.width*100,dy=(ev.clientY-sy)/r.height*100;
+        item.x=Math.max(0,Math.min(100-item.w,ox+dx));
+        item.y=Math.max(0,Math.min(100-item.h,oy+dy));
+        el.style.left=`${item.x}%`;el.style.top=`${item.y}%`;
+      };
+      const up=ev=>{
+        el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',up);
+        el.classList.remove('dragging');renderCanvasEditor();
+      };
+      el.addEventListener('pointermove',move);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
       e.preventDefault();
     });
-
-    figure.addEventListener('pointermove', e => {
-      if (!dragging) return;
-      const flow = figure.closest('.preview-flow') || preview;
-      const rect = flow.getBoundingClientRect();
-      const photo = editingPhotos[index];
-      const width = Math.max(18, Math.min(90, Number(photo.width) || 42));
-      const dxPct = rect.width ? ((e.clientX - startClientX) / rect.width) * 100 : 0;
-      const maxX = Math.max(0, 100 - width);
-      photo.xPct = Math.max(0, Math.min(maxX, startX + dxPct));
-      photo.yPx = Math.max(0, Math.min(900, startY + (e.clientY - startClientY)));
-      photo.offsetY = photo.yPx;
-      photo.side = photo.xPct + width / 2 >= 50 ? 'right' : 'left';
-      applyFigurePosition(figure, photo);
+    el.addEventListener('click',()=>{selectedCanvasItemId=id;updateCanvasInspector();canvas.querySelectorAll('.canvas-item').forEach(n=>n.classList.toggle('selected',n===el));});
+    el.querySelector('.canvas-remove-item')?.addEventListener('click',e=>{
+      e.stopPropagation();editingCanvasItems=editingCanvasItems.filter(x=>x.id!==id);
+      if(selectedCanvasItemId===id)selectedCanvasItemId=null;renderCanvasEditor();
     });
-
-    const finish = () => {
-      if (!dragging) return;
-      dragging = false;
-      figure.classList.remove('dragging');
-      renderPhotoControls();
-      renderPreview();
-    };
-    figure.addEventListener('pointerup', finish);
-    figure.addEventListener('pointercancel', finish);
+    const handle=el.querySelector('.canvas-resize-handle');
+    handle?.addEventListener('pointerdown',e=>{
+      e.stopPropagation();
+      selectedCanvasItemId=id;
+      const r=rect(),sx=e.clientX,sy=e.clientY,ow=item.w,oh=item.h;
+      handle.setPointerCapture(e.pointerId);el.classList.add('resizing');
+      const move=ev=>{
+        item.w=Math.max(item.type==='text'?18:14,Math.min(100-item.x,ow+(ev.clientX-sx)/r.width*100));
+        item.h=Math.max(item.type==='text'?8:10,Math.min(100-item.y,oh+(ev.clientY-sy)/r.height*100));
+        el.style.width=`${item.w}%`;el.style.height=`${item.h}%`;
+      };
+      const up=()=>{
+        handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);
+        el.classList.remove('resizing');renderCanvasEditor();
+      };
+      handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',up);
+      e.preventDefault();
+    });
+    const content=el.querySelector('.canvas-text-content');
+    if(content){
+      content.addEventListener('focus',()=>{selectedCanvasItemId=id;updateCanvasInspector();});
+      content.addEventListener('input',()=>{
+        item.html=content.innerHTML.slice(0,50000);
+        syncCanvasTextHeight(content,el,item);
+      });
+      content.addEventListener('selectionchange',rememberCanvasTextSelection);
+      content.addEventListener('keyup',rememberCanvasTextSelection);
+      content.addEventListener('touchend',()=>setTimeout(rememberCanvasTextSelection,80));
+      content.addEventListener('paste',ev=>{
+        ev.preventDefault();
+        document.execCommand('insertText',false,ev.clipboardData?.getData('text/plain') || '');
+      });
+    }
+  });
+}
+function positionCanvasInspectorMobile() {
+  const inspector=$('#canvasTextInspector');
+  if(!inspector||inspector.classList.contains('hidden')||!window.matchMedia('(max-width:800px),(pointer:coarse)').matches){
+    if(inspector)inspector.style.top='';
+    return;
+  }
+  const vv=window.visualViewport;
+  const top=vv?vv.offsetTop:0;
+  const height=vv?vv.height:window.innerHeight;
+  requestAnimationFrame(()=>{
+    const h=inspector.offsetHeight||54;
+    inspector.style.top=`${Math.max(top+8,top+height-h-8)}px`;
   });
 }
 
@@ -822,6 +1042,47 @@ window.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') turn('next'); if (e.key === 'ArrowLeft') turn('prev');
 });
 window.addEventListener('resize', () => { if (currentMode === 'book') renderBook(); if (currentMode === 'connections' && activeScrapbook?.type === 'group') renderConnections(); });
+
+$('#canvasAddTextBtn').addEventListener('click', addCanvasText);
+$('#canvasPhotoInput').addEventListener('change', async e => {
+  const files=[...e.target.files].slice(0,Math.max(0,12-editingCanvasItems.filter(i=>i.type==='photo').length));
+  $('#editorError').textContent='';
+  try{
+    for(const [idx,file] of files.entries()){
+      const uploaded=await uploadImage(file);
+      editingCanvasItems.push(clampCanvasItem({
+        id:crypto.randomUUID?.() || `photo-${Date.now()}-${idx}`,
+        type:'photo',src:uploaded.src,caption:'',
+        x:Math.min(58,6+(editingCanvasItems.length%4)*8),
+        y:Math.min(62,7+(editingCanvasItems.length%5)*8),
+        w:36,h:27,z:maxCanvasZ()+1
+      }));
+    }
+    renderCanvasEditor();
+  }catch(err){$('#editorError').textContent=err.message;}
+  e.target.value='';
+});
+$('#canvasFontSelect').addEventListener('change',e=>setCanvasTextFont(e.target.value));
+$('#canvasFontSize').addEventListener('input',e=>setCanvasTextSize(e.target.value));
+['canvasBoldBtn','canvasItalicBtn','canvasBringFrontBtn','canvasDeleteItemBtn'].forEach(id=>{
+  $('#'+id).addEventListener('pointerdown',e=>{rememberCanvasTextSelection(); if(id!=='canvasBringFrontBtn'&&id!=='canvasDeleteItemBtn')e.preventDefault();});
+});
+$('#canvasBoldBtn').addEventListener('click',()=>toggleCanvasTextStyle('bold'));
+$('#canvasItalicBtn').addEventListener('click',()=>toggleCanvasTextStyle('italic'));
+$('#canvasBringFrontBtn').addEventListener('click',()=>{
+  const item=editingCanvasItems.find(x=>x.id===selectedCanvasItemId);if(!item)return;
+  item.z=Math.min(999,maxCanvasZ()+1);renderCanvasEditor();
+});
+$('#canvasDeleteItemBtn').addEventListener('click',()=>{
+  if(!selectedCanvasItemId)return;
+  editingCanvasItems=editingCanvasItems.filter(x=>x.id!==selectedCanvasItemId);
+  selectedCanvasItemId=null;renderCanvasEditor();
+});
+document.addEventListener('selectionchange',()=>{
+  if(activeCanvasTextItem())rememberCanvasTextSelection();
+});
+window.visualViewport?.addEventListener('resize',positionCanvasInspectorMobile);
+window.visualViewport?.addEventListener('scroll',positionCanvasInspectorMobile);
 
 let savedRichRange = null;
 

@@ -154,18 +154,22 @@ async function ensureStorage() {
   }
 }
 
-async function backupJsonDataOnce() {
-  const backupDir = path.join(STORAGE, 'backups', 'pre-richtext-smartwrap-mobile-20260919');
+async function backupNamedJsonDataOnce(name) {
+  const backupDir = path.join(STORAGE, 'backups', name);
   const marker = path.join(backupDir, '.complete');
   try {
     await fsp.access(marker);
     return;
   } catch {}
   await fsp.mkdir(backupDir, { recursive: true });
-  for (const [source, name] of [[DATA_FILE,'journal.json'],[SOCIAL_FILE,'social.json'],[ACCOUNTS_FILE,'accounts.json']]) {
-    try { await fsp.copyFile(source, path.join(backupDir, name)); } catch {}
+  for (const [source, fileName] of [[DATA_FILE,'journal.json'],[SOCIAL_FILE,'social.json'],[ACCOUNTS_FILE,'accounts.json']]) {
+    try { await fsp.copyFile(source, path.join(backupDir, fileName)); } catch {}
   }
   await fsp.writeFile(marker, new Date().toISOString(), 'utf8');
+}
+async function backupJsonDataOnce() {
+  await backupNamedJsonDataOnce('pre-richtext-smartwrap-mobile-20260919');
+  await backupNamedJsonDataOnce('pre-canvas-editor-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -332,6 +336,43 @@ function plainTextFromRichHtml(html) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+function cleanCanvasItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  const type = item.type === 'text' ? 'text' : item.type === 'photo' ? 'photo' : '';
+  if (!type) return null;
+  const common = {
+    id: String(item.id || crypto.randomUUID()).slice(0,120),
+    type,
+    x: Math.max(0, Math.min(94, Number(item.x) || 0)),
+    y: Math.max(0, Math.min(94, Number(item.y) || 0)),
+    w: Math.max(type === 'text' ? 18 : 14, Math.min(96, Number(item.w) || (type === 'text' ? 55 : 34))),
+    h: Math.max(type === 'text' ? 8 : 10, Math.min(90, Number(item.h) || (type === 'text' ? 18 : 26))),
+    z: Math.max(1, Math.min(999, Math.round(Number(item.z) || 1)))
+  };
+  if (common.x + common.w > 100) common.x = Math.max(0, 100 - common.w);
+  if (common.y + common.h > 100) common.y = Math.max(0, 100 - common.h);
+
+  if (type === 'photo') {
+    const src = String(item.src || '');
+    if (!src.startsWith('/uploads/')) return null;
+    return {
+      ...common,
+      src,
+      caption: String(item.caption || '').slice(0,240)
+    };
+  }
+
+  const font = ['serif','sans','hand','mono'].includes(item.font) ? item.font : 'serif';
+  return {
+    ...common,
+    html: sanitizeRichText(item.html || ''),
+    font,
+    size: Math.max(12, Math.min(42, Number(item.size) || 18)),
+    bold: item.bold === true,
+    italic: item.italic === true
+  };
+}
+
 function cleanEntry(input, author, existing = {}) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(input.date || '')) ? input.date : new Date().toISOString().slice(0, 10);
   const hasRichText = input.richText !== undefined;
@@ -345,6 +386,9 @@ function cleanEntry(input, author, existing = {}) {
     text: plain,
     richText,
     photos: Array.isArray(input.photos) ? input.photos.map(cleanPhoto).filter(Boolean).slice(0, 12) : [],
+    canvasItems: Array.isArray(input.canvasItems)
+      ? input.canvasItems.map(cleanCanvasItem).filter(Boolean).slice(0, 40)
+      : (Array.isArray(existing.canvasItems) ? existing.canvasItems : []),
     author: existing.author || author,
     createdAt: existing.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -886,7 +930,10 @@ const server = http.createServer(async (req, res) => {
       const assetPath = `/uploads/${path.basename(pathname)}`;
       const social = await readSocial();
       const entries = await readEntries();
-      const entry = entries.find(e => Array.isArray(e.photos) && e.photos.some(photo => photo?.src === assetPath));
+      const entry = entries.find(e =>
+        (Array.isArray(e.photos) && e.photos.some(photo => photo?.src === assetPath)) ||
+        (Array.isArray(e.canvasItems) && e.canvasItems.some(item => item?.type === 'photo' && item?.src === assetPath))
+      );
       if (entry) {
         const book = social.scrapbooks.find(b => b.id === entry.scrapbookId);
         if (!book || !canViewBook(social, book, viewer)) return forbidden(res, 'You do not have access to this scrapbook photo.');
