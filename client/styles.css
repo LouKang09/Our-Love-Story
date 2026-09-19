@@ -2764,3 +2764,14 @@ input:focus,textarea:focus,select:focus{
     min-width:0;
   }
 }
+
+/* ===== Book cover interaction ===== */
+.book-intro{
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.book-intro:focus-visible{
+  outline:3px solid rgba(146,86,97,.42);
+  outline-offset:8px;
+  border-radius:12px;
+}

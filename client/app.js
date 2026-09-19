@@ -438,8 +438,43 @@ function renderScrapbookPicker() {
   }).join('') : '<option value="">No scrapbook yet</option>';
   picker.disabled = !scrapbooks.length;
 }
+function isBookCoverOpen() {
+  return $('#introBook').classList.contains('open');
+}
+function syncBookCoverControls() {
+  const open = isBookCoverOpen();
+  const button = $('#openBookBtn');
+  const book = $('#introBook');
+  button.textContent = open ? 'Close the book' : 'Open the book';
+  button.setAttribute('aria-expanded', String(open));
+  button.setAttribute('aria-label', open ? 'Close the book' : 'Open the book');
+  book.setAttribute('aria-expanded', String(open));
+  book.setAttribute('aria-label', open ? 'Close the scrapbook' : 'Open the scrapbook');
+  book.title = open ? 'Close the scrapbook' : 'Open the scrapbook';
+}
+function setBookCoverOpen(open) {
+  $('#introBook').classList.toggle('open', open === true);
+  syncBookCoverControls();
+}
+function toggleBookCover() {
+  if (!activeScrapbook) {
+    showView('connections');
+    return;
+  }
+  if (isBookCoverOpen()) {
+    setBookCoverOpen(false);
+    showView('cover');
+    return;
+  }
+  setBookCoverOpen(true);
+  setTimeout(() => {
+    if (isBookCoverOpen()) showView('book');
+  }, 720);
+}
+
 function updateCover() {
   $('#coverTitle').textContent = activeBookLabel();
+  syncBookCoverControls();
   $('#brandTitle').textContent = activeBookLabel();
   if (activeScrapbook?.type === 'couple') {
     const archived = activeScrapbook.bindingStatus === 'unbound';
@@ -876,6 +911,7 @@ async function openHomeScrapbook(id, mode = 'book') {
 
 function showView(mode) {
   currentMode = mode;
+  if (mode === 'book') setBookCoverOpen(true);
   homeView.classList.toggle('hidden', mode !== 'home');
   coverStage.classList.toggle('hidden', mode !== 'cover');
   bookView.classList.toggle('hidden', mode !== 'book');
@@ -1479,10 +1515,13 @@ $('#logoutBtn').addEventListener('click', async () => {
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
   localStorage.removeItem('activeScrapbookId'); location.reload();
 });
-$('#brandButton').addEventListener('click', () => { $('#introBook').classList.remove('open'); showView('cover'); });
-$('#openBookBtn').addEventListener('click', () => {
-  if (!activeScrapbook) { showView('connections'); return; }
-  $('#introBook').classList.add('open'); setTimeout(() => showView('book'), 720);
+$('#brandButton').addEventListener('click', () => { setBookCoverOpen(false); showView('cover'); });
+$('#openBookBtn').addEventListener('click', toggleBookCover);
+$('#introBook').addEventListener('click', toggleBookCover);
+$('#introBook').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  toggleBookCover();
 });
 $('#guideBtn').addEventListener('click', () => startGuide(false));
 $('#homeModeBtn').addEventListener('click', () => showView('home'));
@@ -1495,10 +1534,14 @@ $('#closeEditorBtn').addEventListener('click', closeEditor);
 $('#cancelEditorBtn').addEventListener('click', closeEditor);
 
 $('#scrapbookPicker').addEventListener('change', async e => {
+  const switchingFromOpenBook = currentMode === 'book' || isBookCoverOpen();
   activeScrapbook = scrapbooks.find(b => b.id === e.target.value) || null;
   spreadIndex = 0;
   if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
-  updateCover(); await refreshEntries(); showView('cover');
+  setBookCoverOpen(Boolean(activeScrapbook && switchingFromOpenBook));
+  updateCover();
+  await refreshEntries();
+  showView('cover');
 });
 function updateScrapbookDialogForType() {
   const type = $('#scrapbookType').value;
