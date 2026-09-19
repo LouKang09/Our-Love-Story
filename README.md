@@ -1,111 +1,84 @@
-# Our Private Journal
+# Our Love Story
 
-A private two-person digital scrapbook/journal designed to feel like a real keepsake book.
+A private social scrapbook that can be shared by **two lovers** or by a **group of friends/family**. It keeps the real-journal feel: book opening, page flips, chronological memory stream, photos that wrap with writing, and private shared spaces.
 
-## What is already implemented
+## Main features
 
-- Private two-account login; there is no public sign-up page.
-- Romantic cover-opening introduction.
-- Desktop two-page book spread and mobile single-page book.
-- Animated page-turn effect with arrow buttons and keyboard arrows.
-- Daily journal entries with title, date, text, author, edit, and delete.
-- Multiple photo uploads per entry.
-- Photo sizing from 24%–70% of the writing area.
-- Drag a photo toward the left/right side in the editor to change its placement.
-- Text wraps around photos instead of overlapping them.
-- Continuous **Memory Stream** view, newest journal date first.
-- Responsive phone/tablet layout.
-- Server-side storage for entries and photos.
-- Private photo URLs: uploaded images require an authenticated session.
-- Signed HttpOnly session cookies, SameSite protection, CSP, and no public registration.
+- **Lovers scrapbook** — exactly two people can be bound together.
+- **Group scrapbook** — invite friends, family, barkada, or any private circle.
+- **@tag profiles** — every person has a unique tag for invitations.
+- **Private invitations** — a scrapbook is visible only to its members.
+- **Profiles** — display name, @tag, bio, and profile photo.
+- **People view**
+  - Lovers: two profile photos side by side with a heart binding them.
+  - Groups: the viewer appears in the center with the other members connected around them.
+- **Book mode** — physical-book-style pages and page-turn animation.
+- **Memory Stream** — endless chronological scrolling.
+- **Shared posts** — everyone in the scrapbook can read each other's journal entries.
+- **Author controls** — only the writer of an entry can edit or delete it.
+- **Resizable photos** — image size can be changed from 18% to 90%.
+- **Direct photo dragging** — drag a photo in the live page preview:
+  - left/right changes the side where text wraps
+  - up/down changes its vertical placement
+- **Text wrapping** — photos stay in the document flow instead of covering journal text.
+- **Explicit Log out** button.
+- Responsive desktop, tablet, and mobile layouts.
+
+## Accounts and security
+
+Existing production accounts supplied through `JOURNAL_USERS_HASHED` remain supported and are treated as bootstrap accounts.
+
+New people can create their own profile and unique `@tag` from the sign-up screen. New passwords are never stored as plaintext: the application stores salted **scrypt** password hashes in persistent storage.
+
+Uploaded photos, accounts, profiles, invitations, scrapbook memberships, and journal entries are stored outside Git.
+
+## Existing couple migration
+
+On the first run of this version, the original two bootstrap accounts are automatically placed into the original **Lovers** scrapbook. Existing entries without a scrapbook ID are assigned to that scrapbook, so previous memories are retained rather than reset.
 
 ## Run locally
 
 Requires Node.js 20+.
 
-1. Open a terminal in this folder.
-2. Set environment variables, or use the built-in development demo accounts.
-3. Run:
-
 ```bash
 npm start
 ```
 
-4. Open `http://localhost:3000`.
+Open `http://localhost:3000`.
 
-Development-only demo logins if `JOURNAL_USERS` is not set:
+For local development only, if no production account variables are supplied, the demo accounts remain available:
 
-- `you` / `love123`
-- `girlfriend` / `journal123`
+- `you / love123`
+- `girlfriend / journal123`
 
-Do **not** deploy with those demo credentials.
+## Railway / production
 
-## Private production setup
-
-Set these environment variables in your host:
+Recommended variables:
 
 ```text
-JOURNAL_USERS_HASHED=yourname:<sha256-of-password>,hername:<sha256-of-password>
-SESSION_SECRET=a-long-random-secret-at-least-32-characters
+JOURNAL_USERS_HASHED=yourname:<sha256>,partner:<sha256>
+SESSION_SECRET=a-long-random-secret
 JOURNAL_TITLE=Our Little Book of Us
 JOURNAL_SUBTITLE=Every ordinary day deserves to be remembered.
 NODE_ENV=production
-```
-
-There is intentionally **no registration route**. In production, only accounts supplied in `JOURNAL_USERS_HASHED` can unlock the journal. Railway stores password hashes rather than the plaintext passwords.
-
-## Railway persistence
-
-The app stores journal entries and uploaded photos on disk. For Railway, attach a persistent Volume to the service, mount it at `/data`, and set:
-
-```text
 STORAGE_DIR=/data
 ```
 
-This prevents your journal and photos from disappearing during redeploys.
+Attach a persistent Railway volume to `/data`. The app then stores:
 
-Start command:
+- `journal.json` — scrapbook journal entries
+- `social.json` — profiles, scrapbook membership, and invitations
+- `accounts.json` — scrypt-hashed self-created accounts
+- `uploads/` — private uploaded images
 
-```text
-npm start
-```
+These files are ignored by Git.
 
-The server automatically uses Railway's `PORT` environment variable.
+## Privacy model
+
+There is a public account-creation screen so friends can join the journal journey, but **scrapbook contents are not public**. Someone must be authenticated and be an accepted member of a scrapbook to read its entries.
+
+A Lovers scrapbook is capped at two people. Group scrapbooks can contain multiple invited members. Invitations use exact `@tag` identities and appear when the invited person signs in.
 
 ## Repository security
 
-The included hardened `.gitignore` excludes:
-
-- all real environment files and secrets
-- plaintext journal passwords
-- certificates and private keys
-- journal content and uploaded photos
-- local database files
-- logs, caches and build output
-- IDE and operating-system metadata
-- backups and archives that might contain private memories
-
-Only `.env.example` is committed as a safe configuration template.
-
-## Folder structure
-
-```text
-love-journal/
-  client/
-    index.html
-    styles.css
-    app.js
-  server/
-    server.js
-    storage/
-      uploads/
-        .gitkeep
-  .env.example
-  .gitignore
-  package.json
-  README.md
-```
-
-## Privacy note
-
-The login protects the journal from normal unauthorized browsing and images are not served without a valid session. For a shared private journal on the public internet, keep HTTPS enabled, use unique passwords, keep `SESSION_SECRET` private, and use persistent storage. End-to-end encryption can be added later if you want the hosting layer itself to be unable to read journal content.
+The hardened `.gitignore` excludes real environment files, secrets, credentials, private keys, cloud credentials, journal/social/account data, uploaded photos, databases, logs, caches, backups, archives, and IDE/OS metadata.

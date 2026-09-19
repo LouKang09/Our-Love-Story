@@ -1,8 +1,8 @@
 {
-  "name": "our-private-journal",
-  "version": "1.0.0",
+  "name": "our-love-story",
+  "version": "2.0.0",
   "private": true,
-  "description": "A private two-person digital journal with book and memory-stream views.",
+  "description": "A private social scrapbook for lovers, friends and groups with journal pages, profiles and shared memories.",
   "scripts": {
     "start": "node server/server.js",
     "dev": "node --watch server/server.js"

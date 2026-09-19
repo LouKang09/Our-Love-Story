@@ -12,14 +12,28 @@
     <section id="lockScreen" class="lock-screen">
       <div class="lock-card paper-card">
         <div class="lock-seal">♡</div>
-        <p class="eyebrow">PRIVATE • FOR TWO</p>
+        <p class="eyebrow">PRIVATE SCRAPBOOKS</p>
         <h1 id="lockTitle">Our Little Book of Us</h1>
         <p id="lockSubtitle" class="muted">Every ordinary day deserves to be remembered.</p>
+
+        <div class="auth-tabs" role="tablist">
+          <button id="signInTab" class="active" type="button">Sign in</button>
+          <button id="signUpTab" type="button">Create profile</button>
+        </div>
+
         <form id="loginForm" autocomplete="on">
-          <label>Who are you?<input id="username" name="username" autocomplete="username" placeholder="Your name" required /></label>
-          <label>Your private key<input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required /></label>
-          <button class="primary wide" type="submit">Unlock our journal</button>
+          <label>Your @tag<input id="username" name="username" autocomplete="username" placeholder="@yourtag" required /></label>
+          <label>Password<input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required /></label>
+          <button class="primary wide" type="submit">Open my scrapbook</button>
           <p id="loginError" class="form-error" aria-live="polite"></p>
+        </form>
+
+        <form id="signupForm" class="hidden" autocomplete="on">
+          <label>Display name<input id="signupName" maxlength="60" placeholder="How friends know you" required /></label>
+          <label>Choose an @tag<input id="signupTag" maxlength="24" placeholder="@yourtag" required /></label>
+          <label>Password<input id="signupPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required /></label>
+          <button class="primary wide" type="submit">Start my journal journey</button>
+          <p id="signupError" class="form-error" aria-live="polite"></p>
         </form>
       </div>
     </section>
@@ -27,24 +41,32 @@
     <main id="journalApp" class="hidden">
       <header class="topbar">
         <button id="brandButton" class="brand-button" aria-label="Return to cover"><span>♡</span><strong id="brandTitle">Our Journal</strong></button>
+        <div class="scrapbook-picker-wrap">
+          <select id="scrapbookPicker" aria-label="Choose scrapbook"></select>
+          <button id="createScrapbookBtn" class="small-circle" title="Create scrapbook">＋</button>
+        </div>
         <div class="toolbar">
           <div class="mode-switch" role="group" aria-label="Journal view">
             <button id="bookModeBtn" class="active">Book</button>
             <button id="streamModeBtn">Memory Stream</button>
+            <button id="connectionsModeBtn">People</button>
           </div>
           <button id="newEntryBtn" class="primary">＋ New memory</button>
-          <button id="logoutBtn" class="ghost">Lock</button>
+          <button id="profileBtn" class="profile-chip" type="button"><span id="profileAvatarMini" class="avatar mini-avatar">♡</span><span id="profileChipText">Profile</span></button>
+          <button id="logoutBtn" class="logout-btn" type="button">Log out</button>
         </div>
       </header>
+
+      <section id="inviteBanner" class="invite-banner hidden"></section>
 
       <section id="coverStage" class="cover-stage">
         <div class="book-intro" id="introBook">
           <div class="book-pages"></div>
           <div class="book-cover">
             <div class="cover-ornament">✦</div>
-            <p>OUR PRIVATE JOURNAL</p>
+            <p id="coverKind">PRIVATE SCRAPBOOK</p>
             <h2 id="coverTitle">Our Little Book of Us</h2>
-            <span>kept with love, one day at a time</span>
+            <span id="coverSubtitle">kept with love, one day at a time</span>
             <div class="cover-heart">♡</div>
           </div>
         </div>
@@ -67,17 +89,25 @@
       <section id="streamView" class="stream-view hidden">
         <div class="stream-heading">
           <p class="eyebrow">MEMORY STREAM</p>
-          <h2>Everything, in the order we lived it.</h2>
-          <p>Scroll through your journal continuously. Newer memories appear first.</p>
+          <h2>Everything, in the order you lived it.</h2>
+          <p>Scroll through this scrapbook continuously. Newer memories appear first.</p>
         </div>
         <div id="timeline" class="timeline"></div>
       </section>
 
+      <section id="connectionsView" class="connections-view hidden">
+        <div class="connections-head">
+          <div><p class="eyebrow">WHO SHARES THIS BOOK</p><h2 id="connectionsTitle">Your people</h2><p id="connectionsSubtitle" class="muted"></p></div>
+          <form id="inviteForm" class="invite-form"><input id="inviteTag" placeholder="@friendtag" autocomplete="off" required /><button class="primary" type="submit">Invite</button></form>
+        </div>
+        <div id="peopleMap" class="people-map"></div>
+      </section>
+
       <div id="emptyState" class="empty-state hidden">
         <div>♡</div>
-        <h2>The first page is waiting.</h2>
-        <p>Write a little piece of today and this book begins.</p>
-        <button id="emptyAddBtn" class="primary">Write our first memory</button>
+        <h2 id="emptyTitle">The first page is waiting.</h2>
+        <p id="emptyText">Write a little piece of today and this book begins.</p>
+        <button id="emptyAddBtn" class="primary">Write the first memory</button>
       </div>
     </main>
 
@@ -91,18 +121,21 @@
           <label>Date<input id="entryDate" type="date" required /></label>
           <label>Title<input id="entryTitle" maxlength="120" placeholder="The little thing I never want to forget" required /></label>
         </div>
-        <label>What happened today?<textarea id="entryText" rows="12" maxlength="20000" placeholder="Write as if you're telling each other the story years from now..."></textarea></label>
+        <label>What happened today?<textarea id="entryText" rows="12" maxlength="20000" placeholder="Write it the way you want to remember it..."></textarea></label>
 
         <section class="photo-editor">
           <div class="photo-editor-head">
-            <div><strong>Photos inside this page</strong><span>Drag a photo left or right, resize it, and the writing will wrap around it.</span></div>
+            <div>
+              <strong>Photos inside this page</strong>
+              <span>Resize with the slider. You can also drag a photo directly in the preview: left/right changes its wrap side, up/down changes where it begins in the text.</span>
+            </div>
             <label class="upload-btn">＋ Add photos<input id="photoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden /></label>
           </div>
           <div id="photoControls" class="photo-controls"></div>
         </section>
 
         <section class="live-preview">
-          <div class="preview-label">Page preview</div>
+          <div class="preview-label">Interactive page preview — drag the photos here</div>
           <article id="entryPreview" class="entry-body preview-paper"></article>
         </section>
 
@@ -110,9 +143,35 @@
           <button id="deleteEntryBtn" class="danger hidden" type="button">Delete memory</button>
           <span class="spacer"></span>
           <button id="cancelEditorBtn" class="ghost" type="button">Cancel</button>
-          <button class="primary" type="submit">Save to our journal</button>
+          <button class="primary" type="submit">Save to scrapbook</button>
         </div>
         <p id="editorError" class="form-error" aria-live="polite"></p>
+      </form>
+    </dialog>
+
+    <dialog id="scrapbookDialog" class="small-dialog">
+      <form id="scrapbookForm" class="small-card">
+        <div class="editor-head"><div><p class="eyebrow">NEW SCRAPBOOK</p><h2>Create a shared space</h2></div><button id="closeScrapbookDialog" class="icon-btn" type="button">×</button></div>
+        <label>Kind<select id="scrapbookType"><option value="couple">Lovers — exactly two people</option><option value="group">Group — friends, family, barkada</option></select></label>
+        <label>Scrapbook name<input id="scrapbookName" maxlength="80" placeholder="Our Weekend Crew" required /></label>
+        <p class="helper">After creating it, invite people from the People view using their @tag.</p>
+        <button class="primary wide" type="submit">Create scrapbook</button>
+        <p id="scrapbookError" class="form-error"></p>
+      </form>
+    </dialog>
+
+    <dialog id="profileDialog" class="small-dialog">
+      <form id="profileForm" class="small-card">
+        <div class="editor-head"><div><p class="eyebrow">YOUR PROFILE</p><h2>How you appear here</h2></div><button id="closeProfileDialog" class="icon-btn" type="button">×</button></div>
+        <div class="profile-photo-editor">
+          <span id="profileAvatarLarge" class="avatar large-avatar">♡</span>
+          <label class="upload-btn">Change photo<input id="profilePhotoInput" type="file" accept="image/png,image/jpeg,image/webp" hidden /></label>
+        </div>
+        <label>Display name<input id="profileName" maxlength="60" required /></label>
+        <label>@tag<input id="profileTag" disabled /></label>
+        <label>About you<textarea id="profileBio" rows="4" maxlength="220" placeholder="A tiny note about you..."></textarea></label>
+        <button class="primary wide" type="submit">Save profile</button>
+        <p id="profileError" class="form-error"></p>
       </form>
     </dialog>
 
