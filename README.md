@@ -45,14 +45,14 @@ Do **not** deploy with those demo credentials.
 Set these environment variables in your host:
 
 ```text
-JOURNAL_USERS=yourname:a-strong-private-password,hername:another-private-password
+JOURNAL_USERS_HASHED=yourname:<sha256-of-password>,hername:<sha256-of-password>
 SESSION_SECRET=a-long-random-secret-at-least-32-characters
 JOURNAL_TITLE=Our Little Book of Us
 JOURNAL_SUBTITLE=Every ordinary day deserves to be remembered.
 NODE_ENV=production
 ```
 
-There is intentionally **no registration route**. Only the two accounts supplied in `JOURNAL_USERS` can unlock the journal.
+There is intentionally **no registration route**. In production, only accounts supplied in `JOURNAL_USERS_HASHED` can unlock the journal. Railway stores password hashes rather than the plaintext passwords.
 
 ## Railway persistence
 
@@ -77,6 +77,7 @@ The server automatically uses Railway's `PORT` environment variable.
 The included hardened `.gitignore` excludes:
 
 - all real environment files and secrets
+- plaintext journal passwords
 - certificates and private keys
 - journal content and uploaded photos
 - local database files
