@@ -5210,3 +5210,366 @@ html[data-theme="night"] .profile-image-viewer{
     flex:0 0 auto;
   }
 }
+
+
+/* =========================================================
+   V8 — Night-mode harmony + multi Personal books + privacy
+   ========================================================= */
+
+.person-books-grid{
+  display:grid;
+  gap:18px;
+}
+.person-private-book-notice{
+  opacity:.9;
+}
+.home-personal-books-grid{
+  display:grid;
+  gap:12px;
+  margin-top:12px;
+}
+.home-personal-book-card{
+  display:grid;
+  gap:8px;
+}
+.home-personal-book-card .home-closed-book{
+  width:100%;
+}
+
+/* Personal privacy is now available directly under the app header. */
+.personal-privacy-quick{
+  width:min(1180px,calc(100% - 32px));
+  margin:12px auto 0;
+}
+.privacy-quick-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:15px;
+  background:rgba(255,250,241,.84);
+  box-shadow:0 8px 22px rgba(60,39,36,.05);
+}
+.privacy-quick-copy{
+  min-width:0;
+}
+.privacy-quick-copy strong,
+.privacy-quick-copy span{
+  display:block;
+}
+.privacy-quick-copy strong{
+  color:var(--ink);
+  font:750 11px ui-sans-serif,system-ui,sans-serif;
+}
+.privacy-quick-copy span{
+  margin-top:2px;
+  color:var(--muted);
+  font:9px ui-sans-serif,system-ui,sans-serif;
+}
+.privacy-quick-buttons{
+  display:flex;
+  gap:4px;
+  padding:4px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:rgba(255,255,255,.55);
+}
+.privacy-quick-buttons button{
+  min-height:34px;
+  padding:6px 10px;
+  border:0;
+  border-radius:999px;
+  background:transparent;
+  color:var(--muted);
+  font:750 9px ui-sans-serif,system-ui,sans-serif;
+}
+.privacy-quick-buttons button.active{
+  color:#fff;
+  background:var(--rose);
+}
+.privacy-quick-buttons button:disabled{
+  opacity:.58;
+}
+
+/* Night palette: app chrome goes dark, scrapbook paper stays warm. */
+html[data-theme="night"]{
+  --ink:#f3e9e6;
+  --muted:#bea9a6;
+  --paper:#2b2225;
+  --paper-2:#372c30;
+  --rose:#c8788c;
+  --rose-dark:#eea0b1;
+  --rose-soft:#4b323a;
+  --line:rgba(246,225,222,.14);
+  --shadow:rgba(0,0,0,.38);
+}
+
+html[data-theme="night"] body{
+  color:var(--ink);
+  background:
+    radial-gradient(circle at 12% 8%,rgba(105,77,84,.17),transparent 28%),
+    linear-gradient(145deg,#21191b,#181315 58%,#100d0e);
+}
+
+/* Cards/panels that previously kept light-mode backgrounds. */
+html[data-theme="night"] .topbar,
+html[data-theme="night"] .home-hero,
+html[data-theme="night"] .home-profile-card,
+html[data-theme="night"] .home-shelf-card,
+html[data-theme="night"] .home-search-section,
+html[data-theme="night"] .home-search-person,
+html[data-theme="night"] .home-suggestion-card,
+html[data-theme="night"] .follow-panel,
+html[data-theme="night"] .discover-person,
+html[data-theme="night"] .person-profile-hero,
+html[data-theme="night"] .person-book-layout,
+html[data-theme="night"] .person-social-stats button,
+html[data-theme="night"] .person-connections-panel,
+html[data-theme="night"] .person-list-row,
+html[data-theme="night"] .privacy-card,
+html[data-theme="night"] .personal-owner-card,
+html[data-theme="night"] .privacy-quick-inner,
+html[data-theme="night"] .notification-panel,
+html[data-theme="night"] .messages-shell,
+html[data-theme="night"] .chat-sidebar,
+html[data-theme="night"] .chat-header,
+html[data-theme="night"] .chat-composer,
+html[data-theme="night"] .memory-comment,
+html[data-theme="night"] .comment-form textarea,
+html[data-theme="night"] .chat-member-row{
+  color:var(--ink)!important;
+  border-color:var(--line)!important;
+  background:#2d2427!important;
+}
+html[data-theme="night"] .home-profile-card,
+html[data-theme="night"] .home-search-person,
+html[data-theme="night"] .discover-person,
+html[data-theme="night"] .person-list-row,
+html[data-theme="night"] .chat-member-row{
+  background:#342a2d!important;
+}
+
+/* Strong text contrast in screenshots that previously looked washed out. */
+html[data-theme="night"] .home-hero h2,
+html[data-theme="night"] .home-section h3,
+html[data-theme="night"] .follow-panel h3,
+html[data-theme="night"] .person-profile-hero h2,
+html[data-theme="night"] .person-book-layout h3,
+html[data-theme="night"] .person-connections-panel h3,
+html[data-theme="night"] .privacy-card strong,
+html[data-theme="night"] .personal-owner-card strong,
+html[data-theme="night"] .chat-member-row strong,
+html[data-theme="night"] .editor-head h2,
+html[data-theme="night"] .editor-card label,
+html[data-theme="night"] .small-card label,
+html[data-theme="night"] .editor-card strong,
+html[data-theme="night"] .small-card strong,
+html[data-theme="night"] .rich-field-label{
+  color:var(--ink)!important;
+}
+html[data-theme="night"] .home-hero p,
+html[data-theme="night"] .home-section p,
+html[data-theme="night"] .follow-panel p,
+html[data-theme="night"] .person-profile-identity>div>p,
+html[data-theme="night"] .person-book-copy p,
+html[data-theme="night"] .person-connections-panel p,
+html[data-theme="night"] .privacy-card p,
+html[data-theme="night"] .chat-member-row small,
+html[data-theme="night"] .editor-card .helper,
+html[data-theme="night"] .small-card .helper{
+  color:var(--muted)!important;
+}
+
+/* Dialogs: keep header/body in the same dark family. */
+html[data-theme="night"] .editor-card,
+html[data-theme="night"] .small-card,
+html[data-theme="night"] .editor-head,
+html[data-theme="night"] .editor-actions{
+  color:var(--ink)!important;
+  border-color:var(--line)!important;
+  background:#292124!important;
+}
+html[data-theme="night"] .photo-editor,
+html[data-theme="night"] .photo-control,
+html[data-theme="night"] .rich-toolbar,
+html[data-theme="night"] .canvas-page-options,
+html[data-theme="night"] .upload-btn{
+  color:var(--ink)!important;
+  border-color:var(--line)!important;
+  background:#342a2d!important;
+}
+html[data-theme="night"] .rich-tool{
+  color:var(--ink)!important;
+  border-color:var(--line)!important;
+  background:#211a1c!important;
+}
+
+/* Form controls */
+html[data-theme="night"] input,
+html[data-theme="night"] textarea,
+html[data-theme="night"] select{
+  color:#f6eeeb!important;
+  border-color:rgba(246,225,222,.16)!important;
+  background:#1f191b!important;
+}
+html[data-theme="night"] input::placeholder,
+html[data-theme="night"] textarea::placeholder{
+  color:#927f7c!important;
+}
+
+/* Navigation/actions */
+html[data-theme="night"] .mode-switch,
+html[data-theme="night"] .ghost,
+html[data-theme="night"] .round,
+html[data-theme="night"] .icon-btn,
+html[data-theme="night"] .small-circle,
+html[data-theme="night"] .guide-btn,
+html[data-theme="night"] .notification-btn,
+html[data-theme="night"] .theme-mode-btn,
+html[data-theme="night"] .profile-chip,
+html[data-theme="night"] .cover-theme-wrap{
+  color:var(--ink)!important;
+  border-color:var(--line)!important;
+  background:#382d31!important;
+}
+html[data-theme="night"] .mode-switch button{
+  color:var(--muted)!important;
+}
+html[data-theme="night"] .mode-switch button.active,
+html[data-theme="night"] .chat-list-item.active,
+html[data-theme="night"] .chat-list-item:hover{
+  color:var(--ink)!important;
+  background:#49383e!important;
+}
+
+/* Privacy */
+html[data-theme="night"] .privacy-card.readonly{
+  background:#332a2d!important;
+}
+html[data-theme="night"] .privacy-quick-buttons{
+  border-color:var(--line);
+  background:#211a1c;
+}
+html[data-theme="night"] .privacy-quick-buttons button{
+  color:var(--muted);
+}
+html[data-theme="night"] .privacy-quick-buttons button.active{
+  color:#fff;
+  background:var(--rose);
+}
+
+/* Chat surfaces */
+html[data-theme="night"] .chat-panel{
+  background:
+    linear-gradient(rgba(31,25,27,.84),rgba(31,25,27,.84)),
+    repeating-linear-gradient(0deg,transparent 0 43px,rgba(255,255,255,.035) 44px);
+}
+html[data-theme="night"] .chat-bubble{
+  color:var(--ink);
+  border-color:var(--line);
+  background:#352b2e;
+}
+html[data-theme="night"] .chat-message.mine .chat-bubble{
+  background:#543943;
+}
+html[data-theme="night"] .chat-bubble p{
+  color:var(--ink);
+}
+
+/* Notifications/comments */
+html[data-theme="night"] .notification-item.unread,
+html[data-theme="night"] .notification-mention-excerpt,
+html[data-theme="night"] .comments-empty{
+  background:rgba(103,67,77,.28);
+}
+
+/*
+   Keep scrapbook pages/canvas warm and readable even while the
+   surrounding app is in night mode.
+*/
+html[data-theme="night"] .scrap-canvas,
+html[data-theme="night"] .saved-canvas{
+  color:#352729!important;
+  background-color:#fffaf1!important;
+}
+html[data-theme="night"] .saved-text-item{
+  color:#352729!important;
+}
+html[data-theme="night"] .scrap-canvas-stage{
+  border-color:rgba(246,225,222,.12)!important;
+  background:#171214!important;
+}
+
+/* Book/stream paper remains intentionally paper-like. */
+html[data-theme="night"] .paper-page,
+html[data-theme="night"] .stream-card{
+  color:#352729!important;
+  background:
+    linear-gradient(90deg,rgba(111,82,78,.025),transparent 8%),
+    #fffaf1!important;
+}
+html[data-theme="night"] .paper-page .muted,
+html[data-theme="night"] .stream-card .muted{
+  color:#786663!important;
+}
+
+/* Autocomplete */
+html[data-theme="night"] .mention-suggestions{
+  color:var(--ink);
+  border-color:var(--line);
+  background:#2d2527;
+}
+html[data-theme="night"] .mention-suggestion{
+  color:var(--ink);
+}
+html[data-theme="night"] .mention-suggestion:hover,
+html[data-theme="night"] .mention-suggestion:focus-visible{
+  background:#49363c;
+}
+
+/* Profile image viewer remains intentionally very dark. */
+html[data-theme="night"] .profile-image-viewer{
+  background:rgba(8,6,7,.97);
+}
+
+@media(max-width:700px){
+  .personal-privacy-quick{
+    width:calc(100% - 16px);
+    margin-top:8px;
+  }
+  .privacy-quick-inner{
+    align-items:stretch;
+    flex-direction:column;
+    gap:9px;
+    padding:10px;
+  }
+  .privacy-quick-copy{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .privacy-quick-buttons{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    width:100%;
+    border-radius:12px;
+  }
+  .privacy-quick-buttons button{
+    padding:8px 4px;
+    border-radius:9px;
+  }
+  .person-books-grid,
+  .home-personal-books-grid{
+    gap:12px;
+  }
+}
+
+@media(max-width:800px){
+  html[data-theme="night"] .editor-head,
+  html[data-theme="night"] .editor-actions{
+    background:#292124!important;
+  }
+}

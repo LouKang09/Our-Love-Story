@@ -22,7 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-const GUIDE_VERSION = 7;
+const GUIDE_VERSION = 8;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -239,6 +239,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-realtime-stream-layout-20260920');
   await backupNamedJsonDataOnce('pre-private-group-chat-20260920');
   await backupNamedJsonDataOnce('pre-night-cover-mobilechat-20260920');
+  await backupNamedJsonDataOnce('pre-night-privacy-multipersonal-20260920');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -918,13 +919,23 @@ async function handleApi(req, res, url) {
     const followers = social.follows.filter(f => f.following === user).map(f => publicProfileFor(social, f.follower));
 
     const followingShelf = followingTags.map(tag => {
-      const personal = social.scrapbooks.find(b => b.type === 'personal' && b.owner === tag);
-      const accessible = Boolean(personal && canViewBook(social, personal, user));
+      const personalBooks = social.scrapbooks
+        .filter(book => book.type === 'personal' && book.owner === tag)
+        .sort((a,b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+
+      const scrapbooks = personalBooks
+        .filter(book => canViewBook(social, book, user))
+        .map(book => ({ ...decorateBook(social, book, user), accessible:true, locked:false }));
+
+      const hasLockedPersonalScrapbooks = personalBooks.some(book => !canViewBook(social, book, user));
+
       return {
         profile: publicProfileFor(social, tag),
-        scrapbook: !personal ? null : accessible
-          ? { ...decorateBook(social, personal, user), accessible:true }
-          : { type:'personal', owner:tag, accessible:false, locked:true }
+        scrapbooks,
+        hasLockedPersonalScrapbooks,
+        scrapbook: scrapbooks[0] || (hasLockedPersonalScrapbooks
+          ? { type:'personal', owner:tag, accessible:false, locked:true }
+          : null)
       };
     });
 
@@ -1130,16 +1141,23 @@ async function handleApi(req, res, url) {
       isPartner: isActivePartner(social, user, tag)
     });
 
-    const personal = social.scrapbooks.find(b => b.type === 'personal' && b.owner === target);
-    const canOpenPersonal = Boolean(personal && canViewBook(social, personal, user));
-    const personalScrapbook = !personal ? null : canOpenPersonal
-      ? {
-          ...decorateBook(social, personal, user),
-          profiles: [publicProfileFor(social, target)],
-          accessible:true,
-          locked:false
-        }
-      : { type:'personal', owner:target, accessible:false, locked:true };
+    const personalBooks = social.scrapbooks
+      .filter(book => book.type === 'personal' && book.owner === target)
+      .sort((a,b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+
+    const personalScrapbooks = personalBooks
+      .filter(book => canViewBook(social, book, user))
+      .map(book => ({
+        ...decorateBook(social, book, user),
+        profiles:[publicProfileFor(social, target)],
+        accessible:true,
+        locked:false
+      }));
+
+    const hasLockedPersonalScrapbooks = personalBooks.some(book => !canViewBook(social, book, user));
+    const personalScrapbook = personalScrapbooks[0] || (hasLockedPersonalScrapbooks
+      ? { type:'personal', owner:target, accessible:false, locked:true }
+      : null);
 
     return json(res, 200, {
       profile: publicProfileFor(social, target),
@@ -1151,6 +1169,8 @@ async function handleApi(req, res, url) {
       followingCount: followingTags.length,
       followers: followerTags.map(relationProfile),
       following: followingTags.map(relationProfile),
+      personalScrapbooks,
+      hasLockedPersonalScrapbooks,
       personalScrapbook
     });
   }
@@ -1197,9 +1217,6 @@ async function handleApi(req, res, url) {
     const body = await readBody(req, 128 * 1024);
     const type = body.type === 'couple' ? 'couple' : (body.type === 'personal' ? 'personal' : 'group');
     if (type === 'couple' && userHasOtherCouple(social, user)) return json(res, 409, { error: 'You are already bound in a lovers scrapbook. Leave that binding before creating another.' });
-    if (type === 'personal' && social.scrapbooks.some(b => b.type === 'personal' && b.owner === user)) {
-      return json(res, 409, { error: 'You already have a personal scrapbook.' });
-    }
     const privacy = ['followers','partner','private'].includes(body.privacy) ? body.privacy : 'private';
     const coverTheme = ['rose','midnight','forest','ocean','sunset','classic'].includes(body.coverTheme) ? body.coverTheme : 'rose';
     const defaultName = type === 'couple' ? 'Our Love Story' : (type === 'personal' ? 'My Personal Scrapbook' : 'Our Scrapbook');
@@ -1249,6 +1266,20 @@ async function handleApi(req, res, url) {
     if (!['followers','partner','private'].includes(body.privacy)) return json(res, 400, { error: 'Invalid privacy setting.' });
     book.privacy = body.privacy;
     await writeSocial(social);
+
+    const affected = new Set([book.owner]);
+    social.follows
+      .filter(follow => follow.following === book.owner)
+      .forEach(follow => affected.add(follow.follower));
+    const partner = activePartnerTag(social, book.owner);
+    if (partner) affected.add(partner);
+    emitLiveMany([...affected], 'social', {
+      type:'personal_privacy_changed',
+      scrapbookId:book.id,
+      owner:book.owner,
+      privacy:book.privacy
+    });
+
     return json(res, 200, { scrapbook: decorateBook(social, book, user) });
   }
 

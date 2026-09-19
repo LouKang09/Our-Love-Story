@@ -39,7 +39,7 @@ let pendingChatPreviewUrl = '';
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
-let guideState = { version: 7, seenVersion: 6, required: false };
+let guideState = { version: 8, seenVersion: 7, required: false };
 let activeGuideSteps = [];
 let guideIndex = 0;
 let guideMandatory = false;
@@ -727,6 +727,7 @@ function updateCover() {
   $('#coverTitle').textContent = activeBookLabel();
   applyActiveCoverTheme();
   syncBookCoverControls();
+  renderPersonalPrivacyQuick();
   $('#brandTitle').textContent = activeBookLabel();
   if (activeScrapbook?.type === 'couple') {
     const archived = activeScrapbook.bindingStatus === 'unbound';
@@ -1036,30 +1037,79 @@ function renderFollowStats() {
   el.innerHTML = `<button class="follow-stat-button" type="button" data-list="followers"><b>${followers.length}</b><span>followers</span></button><button class="follow-stat-button" type="button" data-list="following"><b>${following.length}</b><span>following</span></button>`;
   el.querySelectorAll('.follow-stat-button').forEach(btn => btn.addEventListener('click', () => openPersonProfile(me.tag, { list:btn.dataset.list })));
 }
+async function savePersonalPrivacy(privacy) {
+  if (!activeScrapbook || activeScrapbook.type !== 'personal' || activeScrapbook.owner !== me?.tag) return;
+  try {
+    const data = await api(`/api/scrapbooks/${activeScrapbook.id}/privacy`, {
+      method:'PUT',
+      body:JSON.stringify({ privacy })
+    });
+    const idx = scrapbooks.findIndex(book => book.id === activeScrapbook.id);
+    activeScrapbook = data.scrapbook;
+    if (idx >= 0) scrapbooks[idx] = activeScrapbook;
+    renderScrapbookPicker();
+    updateCover();
+    renderPersonalPrivacy();
+    renderPersonalPrivacyQuick();
+    showToast(`Privacy changed to ${privacyLabel(activeScrapbook.privacy)}.`);
+  } catch (err) {
+    showToast(err.message || 'Could not update privacy.');
+    renderPersonalPrivacyQuick();
+  }
+}
+
+function renderPersonalPrivacyQuick() {
+  const panel = $('#personalPrivacyQuick');
+  if (!panel || !activeScrapbook || activeScrapbook.type !== 'personal' || activeScrapbook.owner !== me?.tag) {
+    panel?.classList.add('hidden');
+    if (panel) panel.innerHTML = '';
+    return;
+  }
+
+  const privacy = activeScrapbook.privacy || 'private';
+  panel.classList.remove('hidden');
+  panel.innerHTML = `<div class="privacy-quick-inner">
+    <div class="privacy-quick-copy">
+      <strong>Who can read this scrapbook?</strong>
+      <span>${escapeHtml(privacyLabel(privacy))}</span>
+    </div>
+    <div class="privacy-quick-buttons" role="group" aria-label="Personal scrapbook privacy">
+      <button type="button" data-privacy="private" class="${privacy === 'private' ? 'active' : ''}">You Only</button>
+      <button type="button" data-privacy="followers" class="${privacy === 'followers' ? 'active' : ''}">Followers</button>
+      <button type="button" data-privacy="partner" class="${privacy === 'partner' ? 'active' : ''}">Partner</button>
+    </div>
+  </div>`;
+
+  panel.querySelectorAll('[data-privacy]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const next = button.dataset.privacy;
+      if (!next || next === activeScrapbook.privacy) return;
+      panel.querySelectorAll('[data-privacy]').forEach(item => { item.disabled = true; });
+      await savePersonalPrivacy(next);
+    });
+  });
+}
+
 function renderPersonalPrivacy() {
   const panel = $('#personalPrivacyPanel');
   if (!activeScrapbook || activeScrapbook.type !== 'personal') {
-    panel.classList.add('hidden'); panel.innerHTML = ''; return;
-  }
-  panel.classList.remove('hidden');
-  if (activeScrapbook.owner !== me.tag) {
-    panel.innerHTML = `<div class="privacy-card readonly"><strong>Read-only personal scrapbook</strong><p>@${escapeHtml(activeScrapbook.owner)} shared this scrapbook through <b>${privacyLabel(activeScrapbook.privacy)}</b>. Only the owner can write or change its privacy.</p></div>`;
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
     return;
   }
-  panel.innerHTML = `<div class="privacy-card"><div><strong>Personal scrapbook privacy</strong><p>Choose exactly who is allowed to read this personal scrapbook.</p></div><select id="personalPrivacySelect">
+
+  panel.classList.remove('hidden');
+  if (activeScrapbook.owner !== me.tag) {
+    panel.innerHTML = `<div class="privacy-card readonly"><strong>Read-only Personal scrapbook</strong><p>@${escapeHtml(activeScrapbook.owner)} shared this scrapbook through <b>${escapeHtml(privacyLabel(activeScrapbook.privacy))}</b>. Only the owner can write or change its privacy.</p></div>`;
+    return;
+  }
+
+  panel.innerHTML = `<div class="privacy-card"><div><strong>Personal scrapbook privacy</strong><p>You can also change this directly from the privacy controls under the scrapbook header.</p></div><select id="personalPrivacySelect">
     <option value="followers" ${activeScrapbook.privacy==='followers'?'selected':''}>Followers Only</option>
     <option value="partner" ${activeScrapbook.privacy==='partner'?'selected':''}>Partner Only</option>
     <option value="private" ${activeScrapbook.privacy==='private'?'selected':''}>You Only</option>
   </select></div>`;
-  $('#personalPrivacySelect')?.addEventListener('change', async e => {
-    try {
-      const data = await api(`/api/scrapbooks/${activeScrapbook.id}/privacy`, { method:'PUT', body:JSON.stringify({ privacy:e.target.value }) });
-      const idx = scrapbooks.findIndex(b => b.id === activeScrapbook.id);
-      activeScrapbook = data.scrapbook;
-      if (idx >= 0) scrapbooks[idx] = activeScrapbook;
-      updateCover(); renderPersonalPrivacy(); showToast(`Privacy changed to ${privacyLabel(activeScrapbook.privacy)}.`);
-    } catch (err) { showToast(err.message); }
-  });
+  $('#personalPrivacySelect')?.addEventListener('change', e => savePersonalPrivacy(e.target.value));
 }
 function renderConnections() {
   renderFollowStats();
@@ -1175,6 +1225,14 @@ const GUIDE_STEPS = [
     title:'People connects your scrapbook circle.',
     text:'Search @tags, follow people, invite members to Group or Lovers scrapbooks, manage your Personal scrapbook privacy, and see your relationship connections.',
     prepare:() => showView('connections')
+  },
+  {
+    introducedIn:8,
+    selector:'#scrapbookPicker',
+    eyebrow:'NEW · PERSONAL SCRAPBOOKS',
+    title:'Personal scrapbooks now work better with multiple journals.',
+    text:'A person can own more than one Personal scrapbook. Every scrapbook shared with you now appears on their profile and Home shelf. Owners can also change You Only, Followers Only, or Partner Only directly from the active scrapbook.',
+    prepare:() => showView('home')
   },
   {
     introducedIn:7,
@@ -1463,6 +1521,29 @@ function renderPersonConnections() {
     : `<div class="person-list-empty">No ${personListMode === 'following' ? 'following' : 'followers'} yet.</div>`;
   wireProfileLinks($('#personConnectionsList'));
 }
+function personPersonalBookHtml(book) {
+  if (!book) return '';
+  return `<div class="person-book-layout">
+    <div class="person-book-copy">
+      <p class="eyebrow">PERSONAL SCRAPBOOK</p>
+      <h3>${escapeHtml(book.name || 'Personal Scrapbook')}</h3>
+      <p>${escapeHtml(privacyLabel(book.privacy))} · Shared with you. Open it as a flip book or read it as a continuous Memory Stream.</p>
+      <div class="person-book-actions">
+        <button class="primary person-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button>
+        <button class="ghost person-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button>
+      </div>
+    </div>
+    <button class="person-closed-book person-book-tap" data-id="${escapeHtml(book.id)}" type="button" aria-label="Open ${escapeHtml(book.name || 'Personal scrapbook')}">
+      <div class="person-book-spine"></div>
+      <div class="person-book-face">
+        <span>✦</span>
+        <small>PERSONAL SCRAPBOOK</small>
+        <strong>${escapeHtml(book.name || 'Personal Scrapbook')}</strong>
+        <em>${escapeHtml(privacyLabel(book.privacy))}</em>
+      </div>
+    </button>
+  </div>`;
+}
 function renderPersonProfile() {
   if (!viewedPersonData) return;
   const data = viewedPersonData;
@@ -1486,19 +1567,24 @@ function renderPersonProfile() {
     ? '<button id="personEditOwnProfile" class="ghost" type="button">Edit my profile</button>'
     : `<button class="primary person-message-btn" type="button">Message</button><button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>`;
 
-  const book = data.personalScrapbook;
-  if (!book) {
+  const personalBooks = Array.isArray(data.personalScrapbooks)
+    ? data.personalScrapbooks
+    : (data.personalScrapbook?.accessible ? [data.personalScrapbook] : []);
+  const hasLockedPersonalScrapbooks =
+    data.hasLockedPersonalScrapbooks === true ||
+    Boolean(data.personalScrapbook && data.personalScrapbook.accessible === false);
+
+  if (!personalBooks.length && !hasLockedPersonalScrapbooks) {
     $('#personScrapbookPanel').innerHTML = '<div class="person-no-book"><span>♡</span><strong>No Personal scrapbook yet</strong><p>This profile has not created a Personal scrapbook.</p></div>';
-  } else if (!book.accessible) {
-    $('#personScrapbookPanel').innerHTML = `<div class="person-book-layout">
-      <div class="person-book-copy"><p class="eyebrow">PERSONAL SCRAPBOOK</p><h3>Private scrapbook</h3><p>This scrapbook exists, but its privacy settings do not currently give you access.</p></div>
-      <div class="person-closed-book locked"><div class="person-book-spine"></div><div class="person-book-face"><span>🔒</span><small>PERSONAL SCRAPBOOK</small><strong>Private</strong></div></div>
-    </div>`;
   } else {
-    $('#personScrapbookPanel').innerHTML = `<div class="person-book-layout">
-      <div class="person-book-copy"><p class="eyebrow">PERSONAL SCRAPBOOK</p><h3>${escapeHtml(book.name || 'Personal Scrapbook')}</h3><p>Shared with you. Open it as a flip book or read it as a continuous memory stream.</p><div class="person-book-actions"><button class="primary person-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button><button class="ghost person-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button></div></div>
-      <button class="person-closed-book person-book-tap" data-id="${escapeHtml(book.id)}" type="button" aria-label="Open ${escapeHtml(book.name || 'Personal scrapbook')}"><div class="person-book-spine"></div><div class="person-book-face"><span>✦</span><small>PERSONAL SCRAPBOOK</small><strong>${escapeHtml(book.name || 'Personal Scrapbook')}</strong><em>tap to open</em></div></button>
-    </div>`;
+    const visibleBooks = personalBooks.map(personPersonalBookHtml).join('');
+    const privateNotice = hasLockedPersonalScrapbooks
+      ? `<div class="person-book-layout person-private-book-notice">
+          <div class="person-book-copy"><p class="eyebrow">PERSONAL SCRAPBOOK</p><h3>Private scrapbook</h3><p>This person also has a Personal scrapbook that is not shared with you under its current privacy setting.</p></div>
+          <div class="person-closed-book locked"><div class="person-book-spine"></div><div class="person-book-face"><span>🔒</span><small>PERSONAL SCRAPBOOK</small><strong>Private</strong></div></div>
+        </div>`
+      : '';
+    $('#personScrapbookPanel').innerHTML = `<div class="person-books-grid">${visibleBooks}${privateNotice}</div>`;
   }
 
   wireProfileLinks($('#personProfileIdentity'));
@@ -1561,28 +1647,60 @@ function renderHome() {
   $('#homeFollowingCount').textContent = `${shelf.length} following`;
   $('#homeShelf').innerHTML = shelf.length ? shelf.map(item => {
     const p = item.profile || {};
-    const book = item.scrapbook;
-    const accessible = Boolean(book?.accessible);
-    const title = accessible ? (book.name || 'Personal Scrapbook') : 'Personal Scrapbook';
-    const bookHtml = book
-      ? `<div class="home-closed-book ${accessible ? '' : 'locked'}" data-book-id="${accessible ? escapeHtml(book.id) : ''}">
-          <div class="home-book-spine"></div>
-          <div class="home-book-face">
-            <span class="home-book-mark">${accessible ? '✦' : '🔒'}</span>
-            <small>PERSONAL SCRAPBOOK</small>
-            <strong>${escapeHtml(title)}</strong>
-            <em>${accessible ? 'shared with you' : 'not shared with followers'}</em>
-          </div>
-        </div>`
-      : `<div class="home-closed-book empty-book"><div class="home-book-face"><span class="home-book-mark">♡</span><small>PERSONAL SCRAPBOOK</small><strong>No scrapbook yet</strong><em>Nothing to open right now</em></div></div>`;
-    return `<article class="home-shelf-card">
-      <button class="home-person-row" type="button" data-profile-tag="${escapeHtml(p.tag || '')}">${avatarHtml(p,'home-person-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><em>@${escapeHtml(p.tag || '')}</em></span></button>
-      ${bookHtml}
-      <div class="home-book-actions">
-        ${accessible ? `<button class="primary home-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button><button class="ghost home-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button>` : (book ? '<span class="home-lock-note">This person has not shared this scrapbook with followers.</span>' : '')}
+    const books = Array.isArray(item.scrapbooks)
+      ? item.scrapbooks
+      : (item.scrapbook?.accessible ? [item.scrapbook] : []);
+    const hasLocked =
+      item.hasLockedPersonalScrapbooks === true ||
+      Boolean(item.scrapbook && item.scrapbook.accessible === false);
+
+    const booksHtml = books.map(book => `<div class="home-personal-book-card">
+      <div class="home-closed-book" data-book-id="${escapeHtml(book.id)}">
+        <div class="home-book-spine"></div>
+        <div class="home-book-face">
+          <span class="home-book-mark">✦</span>
+          <small>PERSONAL SCRAPBOOK</small>
+          <strong>${escapeHtml(book.name || 'Personal Scrapbook')}</strong>
+          <em>${escapeHtml(privacyLabel(book.privacy))}</em>
+        </div>
       </div>
+      <div class="home-book-actions">
+        <button class="primary home-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button>
+        <button class="ghost home-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button>
+      </div>
+    </div>`).join('');
+
+    const lockedHtml = hasLocked ? `<div class="home-personal-book-card">
+      <div class="home-closed-book locked">
+        <div class="home-book-spine"></div>
+        <div class="home-book-face">
+          <span class="home-book-mark">🔒</span>
+          <small>PERSONAL SCRAPBOOK</small>
+          <strong>Private scrapbook</strong>
+          <em>Not shared with you</em>
+        </div>
+      </div>
+    </div>` : '';
+
+    const emptyHtml = !books.length && !hasLocked ? `<div class="home-personal-book-card">
+      <div class="home-closed-book empty-book">
+        <div class="home-book-face">
+          <span class="home-book-mark">♡</span>
+          <small>PERSONAL SCRAPBOOK</small>
+          <strong>No scrapbook yet</strong>
+          <em>Nothing to open right now</em>
+        </div>
+      </div>
+    </div>` : '';
+
+    return `<article class="home-shelf-card">
+      <button class="home-person-row" type="button" data-profile-tag="${escapeHtml(p.tag || '')}">
+        ${avatarHtml(p,'home-person-avatar')}
+        <span><strong>${escapeHtml(p.displayName || p.tag)}</strong><em>@${escapeHtml(p.tag || '')}</em></span>
+      </button>
+      <div class="home-personal-books-grid">${booksHtml}${lockedHtml}${emptyHtml}</div>
     </article>`;
-  }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from People and their Personal scrapbook will appear here when they choose to share it with you.</p></div>';
+  }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from People and their Personal scrapbooks will appear here when they choose to share them with you.</p></div>';
 
   const suggestions = Array.isArray(homeData.friendSuggestions) ? homeData.friendSuggestions : [];
   $('#homeSuggestions').innerHTML = suggestions.length ? suggestions.map(item => {
@@ -1950,7 +2068,7 @@ async function loadSession(preferredBookId = null) {
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
   notificationSummary = data.notifications || { count:0, pendingInvites:0 };
   chatUnreadCount = Number(data.messages?.unreadCount) || 0;
-  guideState = data.guide || { version:7, seenVersion:6, required:false };
+  guideState = data.guide || { version:8, seenVersion:7, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
