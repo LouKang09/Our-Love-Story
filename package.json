@@ -1,0 +1,13 @@
+{
+  "name": "our-private-journal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A private two-person digital journal with book and memory-stream views.",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
