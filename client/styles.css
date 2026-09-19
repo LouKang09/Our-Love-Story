@@ -2775,3 +2775,22 @@ input:focus,textarea:focus,select:focus{
   outline-offset:8px;
   border-radius:12px;
 }
+
+/* ===== Explicit close-book control ===== */
+.book-controls{
+  flex-wrap:wrap;
+}
+.close-book-view-btn{
+  margin-left:10px;
+  white-space:nowrap;
+}
+@media(max-width:600px){
+  .book-controls{
+    gap:7px;
+  }
+  .close-book-view-btn{
+    margin-left:0;
+    width:100%;
+    order:4;
+  }
+}

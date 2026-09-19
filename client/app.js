@@ -1525,7 +1525,15 @@ $('#introBook').addEventListener('keydown', e => {
 });
 $('#guideBtn').addEventListener('click', () => startGuide(false));
 $('#homeModeBtn').addEventListener('click', () => showView('home'));
-$('#bookModeBtn').addEventListener('click', () => showView('book'));
+$('#bookModeBtn').addEventListener('click', () => {
+  if (!activeScrapbook) { showView('connections'); return; }
+  setBookCoverOpen(true);
+  showView('book');
+});
+$('#closeBookViewBtn').addEventListener('click', () => {
+  setBookCoverOpen(false);
+  showView('cover');
+});
 $('#streamModeBtn').addEventListener('click', () => showView('stream'));
 $('#connectionsModeBtn').addEventListener('click', () => showView('connections'));
 $('#newEntryBtn').addEventListener('click', () => openEditor());
@@ -1534,11 +1542,10 @@ $('#closeEditorBtn').addEventListener('click', closeEditor);
 $('#cancelEditorBtn').addEventListener('click', closeEditor);
 
 $('#scrapbookPicker').addEventListener('change', async e => {
-  const switchingFromOpenBook = currentMode === 'book' || isBookCoverOpen();
+  setBookCoverOpen(false);
   activeScrapbook = scrapbooks.find(b => b.id === e.target.value) || null;
   spreadIndex = 0;
   if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
-  setBookCoverOpen(Boolean(activeScrapbook && switchingFromOpenBook));
   updateCover();
   await refreshEntries();
   showView('cover');
