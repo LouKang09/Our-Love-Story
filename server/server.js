@@ -3,6 +3,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
+const webpush = require('web-push');
 
 const ROOT = path.resolve(__dirname, '..');
 const PUBLIC = path.join(ROOT, 'client');
@@ -16,7 +17,15 @@ const PROD = process.env.NODE_ENV === 'production';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-only-change-this-before-deploying';
 const JOURNAL_TITLE = process.env.JOURNAL_TITLE || 'Our Little Book of Us';
 const JOURNAL_SUBTITLE = process.env.JOURNAL_SUBTITLE || 'Every ordinary day deserves to be remembered.';
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
+const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
+
+if (PUSH_READY) {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest();
@@ -88,10 +97,12 @@ async function readAccounts() {
 }
 async function writeAccounts(accounts) { await writeJson(ACCOUNTS_FILE, accounts); }
 async function readSocial() {
-  const data = await readJson(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [] });
+  const data = await readJson(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], pushSubscriptions: [], notificationSettings: {} });
   data.profiles ||= {};
   data.scrapbooks = Array.isArray(data.scrapbooks) ? data.scrapbooks : [];
   data.invites = Array.isArray(data.invites) ? data.invites : [];
+  data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
+  data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   return data;
 }
 async function writeSocial(social) { await writeJson(SOCIAL_FILE, social); }
@@ -100,7 +111,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [] });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], pushSubscriptions: [], notificationSettings: {} });
 
   const social = await readSocial();
   const bootstrapTags = [...BOOTSTRAP_USERS.keys()];
@@ -236,12 +247,18 @@ function cleanPhoto(photo) {
   if (!photo || typeof photo !== 'object') return null;
   const src = String(photo.src || '');
   if (!src.startsWith('/uploads/')) return null;
+  const width = Math.max(18, Math.min(90, Number(photo.width) || 42));
+  const legacyX = photo.side === 'right' ? Math.max(0, 100 - width) : 0;
+  const xPct = Math.max(0, Math.min(100 - width, Number.isFinite(Number(photo.xPct)) ? Number(photo.xPct) : legacyX));
+  const yPx = Math.max(0, Math.min(900, Number.isFinite(Number(photo.yPx)) ? Number(photo.yPx) : (Number(photo.offsetY) || 0)));
   return {
     id: String(photo.id || crypto.randomUUID()),
     src,
-    side: photo.side === 'right' ? 'right' : 'left',
-    width: Math.max(18, Math.min(90, Number(photo.width) || 42)),
-    offsetY: Math.max(0, Math.min(420, Number(photo.offsetY) || 0)),
+    side: (xPct + width / 2) >= 50 ? 'right' : 'left',
+    width,
+    xPct,
+    yPx,
+    offsetY: yPx,
     caption: String(photo.caption || '').slice(0, 240)
   };
 }
@@ -261,7 +278,19 @@ function cleanEntry(input, author, existing = {}) {
 }
 function profileFor(social, tag) {
   const p = social.profiles[tag] || { tag, displayName: tag, avatar: '', bio: '' };
-  return { tag, tagLabel: displayTag(tag), displayName: p.displayName || tag, avatar: p.avatar || '', bio: p.bio || '' };
+  const notify = social.notificationSettings?.[tag] || {};
+  return {
+    tag,
+    tagLabel: displayTag(tag),
+    displayName: p.displayName || tag,
+    avatar: p.avatar || '',
+    bio: p.bio || '',
+    notifications: {
+      enabled: notify.enabled === true,
+      reminderTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(notify.reminderTime || '')) ? notify.reminderTime : '20:00',
+      timezone: String(notify.timezone || '')
+    }
+  };
 }
 function bookForUser(social, id, tag) {
   const book = social.scrapbooks.find(b => b.id === id);
@@ -270,13 +299,26 @@ function bookForUser(social, id, tag) {
 }
 function decorateBook(social, book, viewer) {
   return {
-    id: book.id, type: book.type, name: book.name, owner: book.owner, members: book.members,
-    createdAt: book.createdAt, isOwner: book.owner === viewer,
+    id: book.id,
+    type: book.type,
+    name: book.name,
+    owner: book.owner,
+    members: book.members,
+    createdAt: book.createdAt,
+    isOwner: book.owner === viewer,
+    bindingStatus: book.bindingStatus || 'bound',
+    unboundAt: book.unboundAt || null,
+    unbindRequest: book.unbindRequest ? {
+      status: book.unbindRequest.status,
+      requestedBy: book.unbindRequest.requestedBy,
+      approvals: Array.isArray(book.unbindRequest.approvals) ? book.unbindRequest.approvals : [],
+      createdAt: book.unbindRequest.createdAt
+    } : null,
     profiles: book.members.map(tag => profileFor(social, tag))
   };
 }
 function userHasOtherCouple(social, tag, exceptId = null) {
-  return social.scrapbooks.some(b => b.type === 'couple' && b.id !== exceptId && b.members.includes(tag));
+  return social.scrapbooks.some(b => b.type === 'couple' && (b.bindingStatus || 'bound') !== 'unbound' && b.id !== exceptId && b.members.includes(tag));
 }
 
 async function serveFile(res, file) {
@@ -290,7 +332,13 @@ async function serveFile(res, file) {
 
 async function handleApi(req, res, url) {
   const pathname = url.pathname;
-  if (pathname === '/api/config' && req.method === 'GET') return json(res, 200, { title: JOURNAL_TITLE, subtitle: JOURNAL_SUBTITLE, production: PROD });
+  if (pathname === '/api/config' && req.method === 'GET') return json(res, 200, {
+    title: JOURNAL_TITLE,
+    subtitle: JOURNAL_SUBTITLE,
+    production: PROD,
+    pushEnabled: PUSH_READY,
+    pushPublicKey: PUSH_READY ? VAPID_PUBLIC_KEY : ''
+  });
 
   if (pathname === '/api/login' && req.method === 'POST') {
     const body = await readBody(req, 64 * 1024);
@@ -342,6 +390,63 @@ async function handleApi(req, res, url) {
     social.profiles[user] = current;
     await writeSocial(social);
     return json(res, 200, { profile: profileFor(social, user) });
+  }
+
+  if (pathname === '/api/push/subscribe' && req.method === 'POST') {
+    if (!PUSH_READY) return json(res, 503, { error: 'Push notifications are not configured yet.' });
+    const body = await readBody(req, 256 * 1024);
+    const subscription = body.subscription;
+    if (!subscription || typeof subscription.endpoint !== 'string' || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+      return json(res, 400, { error: 'Invalid push subscription.' });
+    }
+    social.pushSubscriptions = social.pushSubscriptions.filter(s => s.endpoint !== subscription.endpoint);
+    social.pushSubscriptions.push({
+      id: crypto.randomUUID(),
+      tag: user,
+      endpoint: subscription.endpoint,
+      subscription: {
+        endpoint: subscription.endpoint,
+        expirationTime: subscription.expirationTime || null,
+        keys: { p256dh: String(subscription.keys.p256dh), auth: String(subscription.keys.auth) }
+      },
+      createdAt: new Date().toISOString()
+    });
+    const current = social.notificationSettings[user] || {};
+    social.notificationSettings[user] = {
+      ...current,
+      enabled: body.enabled !== false,
+      reminderTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.reminderTime || '')) ? body.reminderTime : (current.reminderTime || '20:00'),
+      timezone: String(body.timezone || current.timezone || 'UTC').slice(0, 80)
+    };
+    await writeSocial(social);
+    return json(res, 200, { ok: true, settings: profileFor(social, user).notifications });
+  }
+
+  if (pathname === '/api/push/settings' && req.method === 'PUT') {
+    const body = await readBody(req, 64 * 1024);
+    const current = social.notificationSettings[user] || {};
+    const reminderTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.reminderTime || '')) ? String(body.reminderTime) : (current.reminderTime || '20:00');
+    const timezone = String(body.timezone || current.timezone || 'UTC').slice(0, 80);
+    try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(new Date()); }
+    catch { return json(res, 400, { error: 'Invalid timezone.' }); }
+    social.notificationSettings[user] = {
+      ...current,
+      enabled: body.enabled === true,
+      reminderTime,
+      timezone
+    };
+    await writeSocial(social);
+    return json(res, 200, { settings: profileFor(social, user).notifications });
+  }
+
+  if (pathname === '/api/push/unsubscribe' && req.method === 'POST') {
+    const body = await readBody(req, 64 * 1024);
+    const endpoint = String(body.endpoint || '');
+    social.pushSubscriptions = social.pushSubscriptions.filter(s => !(s.tag === user && (!endpoint || s.endpoint === endpoint)));
+    const current = social.notificationSettings[user] || {};
+    social.notificationSettings[user] = { ...current, enabled: false };
+    await writeSocial(social);
+    return json(res, 200, { ok: true });
   }
 
   if (pathname === '/api/people' && req.method === 'GET') {
@@ -405,6 +510,54 @@ async function handleApi(req, res, url) {
     return json(res, 200, { accepted: true, scrapbook: decorateBook(social, book, user) });
   }
 
+  const unbindRequestMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/unbind\/request$/i);
+  if (unbindRequestMatch && req.method === 'POST') {
+    const book = bookForUser(social, unbindRequestMatch[1], user);
+    if (!book) return forbidden(res);
+    if (book.type !== 'couple' || book.members.length !== 2) return json(res, 409, { error: 'Only a fully bound lovers scrapbook can be unbound.' });
+    if ((book.bindingStatus || 'bound') === 'unbound') return json(res, 409, { error: 'This lovers scrapbook is already unbound.' });
+    if (book.unbindRequest?.status === 'pending') {
+      return json(res, 409, { error: book.unbindRequest.requestedBy === user ? 'Your unbind request is already waiting for your partner.' : 'Your partner already requested an unbind. Please approve or decline it.' });
+    }
+    book.unbindRequest = {
+      id: crypto.randomUUID(),
+      status: 'pending',
+      requestedBy: user,
+      approvals: [user],
+      createdAt: new Date().toISOString()
+    };
+    await writeSocial(social);
+    return json(res, 201, { scrapbook: decorateBook(social, book, user) });
+  }
+
+  const unbindRespondMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/unbind\/respond$/i);
+  if (unbindRespondMatch && req.method === 'POST') {
+    const book = bookForUser(social, unbindRespondMatch[1], user);
+    if (!book) return forbidden(res);
+    const request = book.unbindRequest;
+    if (!request || request.status !== 'pending') return json(res, 404, { error: 'There is no pending unbind request.' });
+    const body = await readBody(req, 64 * 1024);
+    if (body.approve !== true) {
+      book.unbindHistory = Array.isArray(book.unbindHistory) ? book.unbindHistory : [];
+      book.unbindHistory.push({ ...request, status: request.requestedBy === user ? 'cancelled' : 'declined', respondedBy: user, respondedAt: new Date().toISOString() });
+      delete book.unbindRequest;
+      await writeSocial(social);
+      return json(res, 200, { unbound: false, scrapbook: decorateBook(social, book, user) });
+    }
+    request.approvals = Array.isArray(request.approvals) ? request.approvals : [];
+    if (!request.approvals.includes(user)) request.approvals.push(user);
+    const everyoneApproved = book.members.every(tag => request.approvals.includes(tag));
+    if (everyoneApproved) {
+      book.bindingStatus = 'unbound';
+      book.unboundAt = new Date().toISOString();
+      book.unbindHistory = Array.isArray(book.unbindHistory) ? book.unbindHistory : [];
+      book.unbindHistory.push({ ...request, status: 'approved', respondedBy: user, respondedAt: book.unboundAt });
+      delete book.unbindRequest;
+    }
+    await writeSocial(social);
+    return json(res, 200, { unbound: everyoneApproved, scrapbook: decorateBook(social, book, user) });
+  }
+
   if (pathname === '/api/entries' && req.method === 'GET') {
     const scrapbookId = String(url.searchParams.get('scrapbookId') || '');
     const book = bookForUser(social, scrapbookId, user);
@@ -457,6 +610,67 @@ async function handleApi(req, res, url) {
   notFound(res);
 }
 
+function localClock(timezone, now = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone || 'UTC',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(now);
+    const get = type => parts.find(p => p.type === type)?.value || '';
+    return {
+      date: `${get('year')}-${get('month')}-${get('day')}`,
+      minutes: Number(get('hour')) * 60 + Number(get('minute'))
+    };
+  } catch {
+    return null;
+  }
+}
+function reminderMinutes(value) {
+  const match = String(value || '20:00').match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : 20 * 60;
+}
+async function sendDailyReminders() {
+  if (!PUSH_READY) return;
+  const social = await readSocial();
+  const entries = await readEntries();
+  let changed = false;
+  for (const [tag, settings] of Object.entries(social.notificationSettings || {})) {
+    if (!settings?.enabled) continue;
+    const subscriptions = social.pushSubscriptions.filter(s => s.tag === tag);
+    if (!subscriptions.length) continue;
+    const clock = localClock(settings.timezone || 'UTC');
+    if (!clock || clock.minutes < reminderMinutes(settings.reminderTime) || settings.lastSentDate === clock.date) continue;
+    if (entries.some(entry => entry.author === tag && entry.date === clock.date)) continue;
+
+    let sent = false;
+    const payload = JSON.stringify({
+      title: 'Your scrapbook is waiting ♡',
+      body: 'No journey yet today. Add a little memory before the day ends.',
+      url: '/?newMemory=1',
+      tag: 'daily-journey-reminder'
+    });
+    for (const item of [...subscriptions]) {
+      try {
+        await webpush.sendNotification(item.subscription, payload, { TTL: 60 * 60 * 6 });
+        sent = true;
+      } catch (err) {
+        if (err?.statusCode === 404 || err?.statusCode === 410) {
+          social.pushSubscriptions = social.pushSubscriptions.filter(s => s.endpoint !== item.endpoint);
+          changed = true;
+        } else {
+          console.warn('Push reminder failed:', err?.statusCode || err?.message || err);
+        }
+      }
+    }
+    if (sent) {
+      social.notificationSettings[tag] = { ...settings, lastSentDate: clock.date };
+      changed = true;
+    }
+  }
+  if (changed) await writeSocial(social);
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -473,7 +687,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/' || pathname === '/index.html') return serveFile(res, path.join(PUBLIC, 'index.html'));
     const safeName = path.basename(pathname);
-    if (['styles.css','app.js'].includes(safeName)) return serveFile(res, path.join(PUBLIC, safeName));
+    if (['styles.css','app.js','sw.js'].includes(safeName)) return serveFile(res, path.join(PUBLIC, safeName));
     return notFound(res);
   } catch (err) {
     console.error(err);
@@ -484,5 +698,11 @@ const server = http.createServer(async (req, res) => {
 
 ensureStorage().then(() => {
   if (PROD && !process.env.SESSION_SECRET) console.warn('WARNING: SESSION_SECRET is not set.');
-  server.listen(PORT, '0.0.0.0', () => console.log(`Private journal running at http://localhost:${PORT}`));
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Private journal running at http://localhost:${PORT}`);
+    if (PUSH_READY) {
+      setTimeout(() => sendDailyReminders().catch(err => console.error('Initial reminder check failed:', err)), 30 * 1000);
+      setInterval(() => sendDailyReminders().catch(err => console.error('Reminder check failed:', err)), 10 * 60 * 1000);
+    }
+  });
 }).catch(err => { console.error(err); process.exit(1); });
