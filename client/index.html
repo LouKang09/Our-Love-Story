@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-journey3" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-personal1" />
 </head>
 <body>
   <div id="app">
@@ -101,7 +101,17 @@
           <form id="inviteForm" class="invite-form"><input id="inviteTag" placeholder="@friendtag" autocomplete="off" required /><button class="primary" type="submit">Invite</button></form>
         </div>
         <div id="peopleMap" class="people-map"></div>
+        <div id="personalPrivacyPanel" class="personal-privacy-panel hidden"></div>
         <div id="unbindPanel" class="unbind-panel hidden"></div>
+
+        <section class="follow-panel">
+          <div class="follow-panel-head">
+            <div><p class="eyebrow">FOLLOW PEOPLE</p><h3>Find another journal keeper</h3><p class="muted">Following someone can unlock their Personal scrapbook when they choose Followers Only.</p></div>
+            <div id="followStats" class="follow-stats"></div>
+          </div>
+          <form id="discoverForm" class="discover-form"><input id="discoverTag" placeholder="Search @tag" autocomplete="off" required /><button class="primary" type="submit">Search</button></form>
+          <div id="discoverResults" class="discover-results"></div>
+        </section>
       </section>
 
       <div id="emptyState" class="empty-state hidden">
@@ -153,9 +163,16 @@
     <dialog id="scrapbookDialog" class="small-dialog">
       <form id="scrapbookForm" class="small-card">
         <div class="editor-head"><div><p class="eyebrow">NEW SCRAPBOOK</p><h2>Create a shared space</h2></div><button id="closeScrapbookDialog" class="icon-btn" type="button">×</button></div>
-        <label>Kind<select id="scrapbookType"><option value="couple">Lovers — exactly two people</option><option value="group">Group — friends, family, barkada</option></select></label>
+        <label>Kind<select id="scrapbookType"><option value="couple">Lovers — exactly two people</option><option value="group">Group — friends, family, barkada</option><option value="personal">Personal — your own journal</option></select></label>
         <label>Scrapbook name<input id="scrapbookName" maxlength="80" placeholder="Our Weekend Crew" required /></label>
-        <p class="helper">After creating it, invite people from the People view using their @tag.</p>
+        <label id="personalPrivacyWrap" class="hidden">Personal privacy
+          <select id="personalPrivacy">
+            <option value="followers">Followers Only</option>
+            <option value="partner">Partner Only</option>
+            <option value="private">You Only</option>
+          </select>
+        </label>
+        <p id="scrapbookHelper" class="helper">After creating it, invite people from the People view using their @tag.</p>
         <button class="primary wide" type="submit">Create scrapbook</button>
         <p id="scrapbookError" class="form-error"></p>
       </form>
@@ -189,6 +206,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-journey3" defer></script>
+  <script src="/app.js?v=20260919-personal1" defer></script>
 </body>
 </html>
