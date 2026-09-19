@@ -4,6 +4,7 @@ const journalApp = $('#journalApp');
 const coverStage = $('#coverStage');
 const bookView = $('#bookView');
 const streamView = $('#streamView');
+const homeView = $('#homeView');
 const connectionsView = $('#connectionsView');
 const emptyState = $('#emptyState');
 const leftPage = $('#leftPage');
@@ -24,6 +25,7 @@ let scrapbooks = [];
 let invites = [];
 let following = [];
 let followers = [];
+let homeData = { followingShelf: [], friendSuggestions: [] };
 let partnerTag = null;
 let activeScrapbook = null;
 let spreadIndex = 0;
@@ -608,12 +610,96 @@ function renderConnections() {
   </div>`;
 }
 
+function renderHome() {
+  if (!me) return;
+  const profileCard = $('#homeProfileCard');
+  profileCard.innerHTML = `${avatarHtml(me,'home-avatar')}<div><strong>${escapeHtml(me.displayName || me.tag)}</strong><span>@${escapeHtml(me.tag)}</span><small>${followers.length} followers · ${following.length} following</small></div>`;
+
+  const shelf = Array.isArray(homeData.followingShelf) ? homeData.followingShelf : [];
+  $('#homeFollowingCount').textContent = `${shelf.length} following`;
+  $('#homeShelf').innerHTML = shelf.length ? shelf.map(item => {
+    const p = item.profile || {};
+    const book = item.scrapbook;
+    const accessible = Boolean(book?.accessible);
+    const title = accessible ? (book.name || 'Personal Scrapbook') : 'Personal Scrapbook';
+    const bookHtml = book
+      ? `<div class="home-closed-book ${accessible ? '' : 'locked'}" data-book-id="${accessible ? escapeHtml(book.id) : ''}">
+          <div class="home-book-spine"></div>
+          <div class="home-book-face">
+            <span class="home-book-mark">${accessible ? '✦' : '🔒'}</span>
+            <small>PERSONAL SCRAPBOOK</small>
+            <strong>${escapeHtml(title)}</strong>
+            <em>${accessible ? 'shared with you' : 'not shared with followers'}</em>
+          </div>
+        </div>`
+      : `<div class="home-closed-book empty-book"><div class="home-book-face"><span class="home-book-mark">♡</span><small>PERSONAL SCRAPBOOK</small><strong>No scrapbook yet</strong><em>Nothing to open right now</em></div></div>`;
+    return `<article class="home-shelf-card">
+      <div class="home-person-row">${avatarHtml(p,'home-person-avatar')}<div><strong>${escapeHtml(p.displayName || p.tag)}</strong><span>@${escapeHtml(p.tag || '')}</span></div></div>
+      ${bookHtml}
+      <div class="home-book-actions">
+        ${accessible ? `<button class="primary home-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button><button class="ghost home-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button>` : (book ? '<span class="home-lock-note">This person has not shared this scrapbook with followers.</span>' : '')}
+      </div>
+    </article>`;
+  }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from People and their Personal scrapbook will appear here when they choose to share it with you.</p></div>';
+
+  const suggestions = Array.isArray(homeData.friendSuggestions) ? homeData.friendSuggestions : [];
+  $('#homeSuggestions').innerHTML = suggestions.length ? suggestions.map(item => {
+    const p = item.profile || {};
+    const viaNames = (item.via || []).map(v => `@${escapeHtml(v.tag)}`).join(', ');
+    return `<article class="home-suggestion-card" data-tag="${escapeHtml(p.tag || '')}">
+      ${avatarHtml(p,'home-suggestion-avatar')}
+      <div class="home-suggestion-copy"><strong>${escapeHtml(p.displayName || p.tag)}</strong><span>@${escapeHtml(p.tag || '')}</span><small>${item.mutualCount || 1} friend connection${(item.mutualCount || 1) === 1 ? '' : 's'}${viaNames ? ` · through ${viaNames}` : ''}</small></div>
+      <button class="primary home-follow-suggestion" type="button">Follow</button>
+    </article>`;
+  }).join('') : '<p class="home-suggestion-empty">Follow a few people and friends-of-friends suggestions will appear here.</p>';
+
+  $('#homeShelf').querySelectorAll('.home-open-book').forEach(btn => btn.addEventListener('click', async () => {
+    await openHomeScrapbook(btn.dataset.id, btn.dataset.mode || 'book');
+  }));
+  $('#homeSuggestions').querySelectorAll('.home-follow-suggestion').forEach(btn => btn.addEventListener('click', async () => {
+    const tag = btn.closest('.home-suggestion-card')?.dataset.tag;
+    if (!tag) return;
+    btn.disabled = true;
+    try {
+      await api(`/api/people/${encodeURIComponent(tag)}/follow`, { method:'POST', body:'{}' });
+      await loadSession(activeScrapbook?.id || null);
+      showView('home');
+      showToast(`You are now following @${tag}.`);
+    } catch (err) {
+      showToast(err.message);
+      btn.disabled = false;
+    }
+  }));
+}
+async function openHomeScrapbook(id, mode = 'book') {
+  const book = scrapbooks.find(b => b.id === id && b.type === 'personal');
+  if (!book) {
+    showToast('That scrapbook is no longer shared with you.');
+    await loadSession(activeScrapbook?.id || null);
+    showView('home');
+    return;
+  }
+  activeScrapbook = book;
+  spreadIndex = 0;
+  localStorage.setItem('activeScrapbookId', book.id);
+  renderScrapbookPicker();
+  updateCover();
+  await refreshEntries();
+  if (mode === 'stream') showView('stream');
+  else {
+    $('#introBook').classList.add('open');
+    showView('book');
+  }
+}
+
 function showView(mode) {
   currentMode = mode;
+  homeView.classList.toggle('hidden', mode !== 'home');
   coverStage.classList.toggle('hidden', mode !== 'cover');
   bookView.classList.toggle('hidden', mode !== 'book');
   streamView.classList.toggle('hidden', mode !== 'stream');
   connectionsView.classList.toggle('hidden', mode !== 'connections');
+  $('#homeModeBtn').classList.toggle('active', mode === 'home');
   $('#bookModeBtn').classList.toggle('active', mode === 'book');
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
   $('#connectionsModeBtn').classList.toggle('active', mode === 'connections');
@@ -621,12 +707,17 @@ function showView(mode) {
   const noBook = !activeScrapbook;
   const noEntries = activeScrapbook && !entries.length;
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
-  $('#newEntryBtn').classList.toggle('hidden', Boolean(activeScrapbook) && !canWrite);
-  emptyState.classList.toggle('hidden', mode === 'cover' || mode === 'connections' || (!noBook && !noEntries));
+  $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || (Boolean(activeScrapbook) && !canWrite));
+  emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || (!noBook && !noEntries));
+
+  if (mode === 'home') {
+    renderHome();
+    return;
+  }
   if (noBook && mode !== 'cover' && mode !== 'connections') {
     bookView.classList.add('hidden'); streamView.classList.add('hidden');
     $('#emptyTitle').textContent = 'Your first scrapbook starts here.';
-    $('#emptyText').textContent = 'Create a lovers scrapbook for two, or a group scrapbook for your circle.';
+    $('#emptyText').textContent = 'Create a lovers scrapbook, a group scrapbook, or your own Personal scrapbook.';
     $('#emptyAddBtn').textContent = 'Create scrapbook';
   } else if (noEntries && mode !== 'cover' && mode !== 'connections') {
     bookView.classList.add('hidden'); streamView.classList.add('hidden');
@@ -659,11 +750,12 @@ async function loadSession(preferredBookId = null) {
   invites = data.invites || [];
   following = data.following || [];
   followers = data.followers || [];
+  homeData = data.home || { followingShelf: [], friendSuggestions: [] };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
   if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
-  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderFollowStats(); updateCover();
+  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderFollowStats(); renderHome(); updateCover();
   await refreshEntries();
 }
 async function respondInvite(id, accept) {
@@ -1150,6 +1242,35 @@ function setAuthTab(tab) {
 $('#signInTab').addEventListener('click', () => setAuthTab('signin'));
 $('#signUpTab').addEventListener('click', () => setAuthTab('signup'));
 
+let signupTagCheckTimer = null;
+let signupTagCheckSeq = 0;
+$('#signupTag').addEventListener('input', () => {
+  clearTimeout(signupTagCheckTimer);
+  const raw = $('#signupTag').value.trim();
+  const tag = raw.replace(/^@/,'').toLowerCase();
+  const status = $('#signupTagStatus');
+  status.className = 'helper tag-availability';
+  if (!tag) { status.textContent = ''; return; }
+  if (!/^[a-z0-9][a-z0-9_.-]{2,23}$/.test(tag)) {
+    status.textContent = 'Use 3–24 letters, numbers, dots, dashes or underscores.';
+    status.classList.add('unavailable');
+    return;
+  }
+  const seq = ++signupTagCheckSeq;
+  status.textContent = 'Checking @tag…';
+  signupTagCheckTimer = setTimeout(async () => {
+    try {
+      const data = await api(`/api/tag-availability?tag=${encodeURIComponent(tag)}`);
+      if (seq !== signupTagCheckSeq) return;
+      status.textContent = data.available ? `@${tag} is available.` : `@${tag} is already taken.`;
+      status.classList.toggle('available', data.available === true);
+      status.classList.toggle('unavailable', data.available !== true);
+    } catch {
+      if (seq === signupTagCheckSeq) status.textContent = '';
+    }
+  }, 280);
+});
+
 loginForm.addEventListener('submit', async e => {
   e.preventDefault(); $('#loginError').textContent = '';
   try {
@@ -1161,13 +1282,13 @@ signupForm.addEventListener('submit', async e => {
   e.preventDefault(); $('#signupError').textContent = '';
   try {
     await api('/api/signup', { method:'POST', body:JSON.stringify({ displayName:$('#signupName').value.trim(), tag:$('#signupTag').value.trim(), password:$('#signupPassword').value }) });
-    await enterApp(); showView('connections');
+    await enterApp(); showView('home');
   } catch (err) { $('#signupError').textContent = err.message; }
 });
 async function enterApp() {
   await loadSession();
   lockScreen.classList.add('hidden'); journalApp.classList.remove('hidden');
-  showView(activeScrapbook ? 'cover' : 'connections');
+  showView('home');
   maybeOpenReminderComposer();
 }
 $('#logoutBtn').addEventListener('click', async () => {
@@ -1179,6 +1300,7 @@ $('#openBookBtn').addEventListener('click', () => {
   if (!activeScrapbook) { showView('connections'); return; }
   $('#introBook').classList.add('open'); setTimeout(() => showView('book'), 720);
 });
+$('#homeModeBtn').addEventListener('click', () => showView('home'));
 $('#bookModeBtn').addEventListener('click', () => showView('book'));
 $('#streamModeBtn').addEventListener('click', () => showView('stream'));
 $('#connectionsModeBtn').addEventListener('click', () => showView('connections'));

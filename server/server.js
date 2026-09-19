@@ -68,6 +68,7 @@ function parseBootstrapUsers() {
   return users;
 }
 const BOOTSTRAP_USERS = parseBootstrapUsers();
+const PENDING_SIGNUP_TAGS = new Set();
 
 async function readJson(file, fallback) {
   try {
@@ -171,6 +172,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-richtext-smartwrap-mobile-20260919');
   await backupNamedJsonDataOnce('pre-canvas-editor-20260919');
   await backupNamedJsonDataOnce('pre-page-size-lines-20260919');
+  await backupNamedJsonDataOnce('pre-home-social-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -507,6 +509,13 @@ async function handleApi(req, res, url) {
     pushPublicKey: PUSH_READY ? VAPID_PUBLIC_KEY : ''
   });
 
+  if (pathname === '/api/tag-availability' && req.method === 'GET') {
+    const tag = slugTag(url.searchParams.get('tag') || '');
+    if (!validTag(tag)) return json(res, 200, { tag, valid:false, available:false });
+    const reserved = PENDING_SIGNUP_TAGS.has(tag);
+    return json(res, 200, { tag, valid:true, available:!reserved && !(await accountExists(tag)) });
+  }
+
   if (pathname === '/api/login' && req.method === 'POST') {
     const body = await readBody(req, 64 * 1024);
     const tag = slugTag(body.username || body.tag);
@@ -522,14 +531,24 @@ async function handleApi(req, res, url) {
     const password = String(body.password || '');
     if (!validTag(tag)) return json(res, 400, { error: 'Tag must be 3–24 characters using letters, numbers, dot, dash or underscore.' });
     if (password.length < 8) return json(res, 400, { error: 'Use a password with at least 8 characters.' });
-    if (await accountExists(tag)) return json(res, 409, { error: 'That @tag is already taken.' });
-    const accounts = await readAccounts();
-    accounts.push({ tag, passwordHash: await scryptHash(password), createdAt: new Date().toISOString() });
-    await writeAccounts(accounts);
-    const social = await readSocial();
-    social.profiles[tag] = { tag, displayName: displayName || tag, avatar: '', bio: '', createdAt: new Date().toISOString() };
-    await writeSocial(social);
-    return json(res, 201, { tag }, { 'Set-Cookie': sessionCookie(makeSession(tag)) });
+    if (PENDING_SIGNUP_TAGS.has(tag)) return json(res, 409, { error: 'That @tag is already taken.' });
+
+    PENDING_SIGNUP_TAGS.add(tag);
+    try {
+      if (await accountExists(tag)) return json(res, 409, { error: 'That @tag is already taken.' });
+      const accounts = await readAccounts();
+      if (accounts.some(account => slugTag(account.tag) === tag) || BOOTSTRAP_USERS.has(tag)) {
+        return json(res, 409, { error: 'That @tag is already taken.' });
+      }
+      accounts.push({ tag, passwordHash: await scryptHash(password), createdAt: new Date().toISOString() });
+      await writeAccounts(accounts);
+      const social = await readSocial();
+      social.profiles[tag] = { tag, displayName: displayName || tag, avatar: '', bio: '', createdAt: new Date().toISOString() };
+      await writeSocial(social);
+      return json(res, 201, { tag }, { 'Set-Cookie': sessionCookie(makeSession(tag)) });
+    } finally {
+      PENDING_SIGNUP_TAGS.delete(tag);
+    }
   }
 
   if (pathname === '/api/logout' && req.method === 'POST') return json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie() });
@@ -552,8 +571,41 @@ async function handleApi(req, res, url) {
       fromProfile: profileFor(social, i.from),
       scrapbook: social.scrapbooks.find(b => b.id === i.scrapbookId) ? decorateBook(social, social.scrapbooks.find(b => b.id === i.scrapbookId), user) : null
     }));
-    const following = social.follows.filter(f => f.follower === user).map(f => profileFor(social, f.following));
+
+    const followingTags = [...new Set(social.follows.filter(f => f.follower === user).map(f => f.following))];
+    const following = followingTags.map(tag => profileFor(social, tag));
     const followers = social.follows.filter(f => f.following === user).map(f => profileFor(social, f.follower));
+
+    const followingShelf = followingTags.map(tag => {
+      const personal = social.scrapbooks.find(b => b.type === 'personal' && b.owner === tag);
+      const accessible = Boolean(personal && canViewBook(social, personal, user));
+      return {
+        profile: profileFor(social, tag),
+        scrapbook: !personal ? null : accessible
+          ? { ...decorateBook(social, personal, user), accessible:true }
+          : { type:'personal', owner:tag, accessible:false, locked:true }
+      };
+    });
+
+    const knownTags = new Set(await allKnownTags());
+    const direct = new Set(followingTags);
+    const suggestions = new Map();
+    for (const follow of social.follows) {
+      if (!direct.has(follow.follower)) continue;
+      const target = follow.following;
+      if (!target || target === user || direct.has(target) || !knownTags.has(target)) continue;
+      if (!suggestions.has(target)) suggestions.set(target, new Set());
+      suggestions.get(target).add(follow.follower);
+    }
+    const friendSuggestions = [...suggestions.entries()]
+      .sort((a,b) => b[1].size - a[1].size || String(a[0]).localeCompare(String(b[0])))
+      .slice(0, 10)
+      .map(([tag, via]) => ({
+        profile: profileFor(social, tag),
+        mutualCount: via.size,
+        via: [...via].slice(0, 3).map(v => profileFor(social, v))
+      }));
+
     return json(res, 200, {
       authenticated: true,
       profile: profileFor(social, user),
@@ -561,7 +613,11 @@ async function handleApi(req, res, url) {
       invites,
       following,
       followers,
-      partnerTag: activePartnerTag(social, user)
+      partnerTag: activePartnerTag(social, user),
+      home: {
+        followingShelf,
+        friendSuggestions
+      }
     });
   }
 

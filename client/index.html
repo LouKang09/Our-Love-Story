@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-pan3" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-home1" />
 </head>
 <body>
   <div id="app">
@@ -31,6 +31,7 @@
         <form id="signupForm" class="hidden" autocomplete="on">
           <label>Display name<input id="signupName" maxlength="60" placeholder="How friends know you" required /></label>
           <label>Choose an @tag<input id="signupTag" maxlength="24" placeholder="@yourtag" required /></label>
+          <p id="signupTagStatus" class="helper tag-availability" aria-live="polite"></p>
           <label>Password<input id="signupPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required /></label>
           <button class="primary wide" type="submit">Start my journal journey</button>
           <p id="signupError" class="form-error" aria-live="polite"></p>
@@ -47,7 +48,8 @@
         </div>
         <div class="toolbar">
           <div class="mode-switch" role="group" aria-label="Journal view">
-            <button id="bookModeBtn" class="active">Book</button>
+            <button id="homeModeBtn">Home</button>
+            <button id="bookModeBtn">Book</button>
             <button id="streamModeBtn">Memory Stream</button>
             <button id="connectionsModeBtn">People</button>
           </div>
@@ -58,6 +60,32 @@
       </header>
 
       <section id="inviteBanner" class="invite-banner hidden"></section>
+
+      <section id="homeView" class="home-view hidden">
+        <div class="home-hero">
+          <div>
+            <p class="eyebrow">YOUR SCRAPBOOK CIRCLE</p>
+            <h2>Home</h2>
+            <p>Keep up with the people you follow, then open the personal scrapbooks they have chosen to share with you.</p>
+          </div>
+          <div id="homeProfileCard" class="home-profile-card"></div>
+        </div>
+
+        <section class="home-section">
+          <div class="home-section-head">
+            <div><p class="eyebrow">FOLLOWING</p><h3>Closed scrapbooks on your shelf</h3></div>
+            <span id="homeFollowingCount" class="home-count"></span>
+          </div>
+          <div id="homeShelf" class="home-shelf"></div>
+        </section>
+
+        <section class="home-section home-suggestions-section">
+          <div class="home-section-head">
+            <div><p class="eyebrow">FRIENDS OF FRIENDS</p><h3>People you may know</h3></div>
+          </div>
+          <div id="homeSuggestions" class="home-suggestions"></div>
+        </section>
+      </section>
 
       <section id="coverStage" class="cover-stage">
         <div class="book-intro" id="introBook">
@@ -310,6 +338,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-pan3" defer></script>
+  <script src="/app.js?v=20260919-home1" defer></script>
 </body>
 </html>
