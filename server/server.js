@@ -19,15 +19,28 @@ const JOURNAL_SUBTITLE = process.env.JOURNAL_SUBTITLE || 'Every ordinary day des
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 
 function parseUsers() {
-  const raw = process.env.JOURNAL_USERS || (PROD ? '' : 'you:love123,girlfriend:journal123');
   const users = new Map();
-  for (const pair of raw.split(',')) {
+  const hashed = process.env.JOURNAL_USERS_HASHED || '';
+
+  for (const pair of hashed.split(',')) {
     const idx = pair.indexOf(':');
     if (idx <= 0) continue;
     const username = pair.slice(0, idx).trim();
-    const password = pair.slice(idx + 1).trim();
-    if (username && password) users.set(username, password);
+    const hash = pair.slice(idx + 1).trim().toLowerCase();
+    if (username && /^[a-f0-9]{64}$/.test(hash)) users.set(username, Buffer.from(hash, 'hex'));
   }
+
+  if (!users.size && !PROD) {
+    const raw = process.env.JOURNAL_USERS || 'you:love123,girlfriend:journal123';
+    for (const pair of raw.split(',')) {
+      const idx = pair.indexOf(':');
+      if (idx <= 0) continue;
+      const username = pair.slice(0, idx).trim();
+      const password = pair.slice(idx + 1).trim();
+      if (username && password) users.set(username, sha256(password));
+    }
+  }
+
   return users;
 }
 const USERS = parseUsers();
@@ -198,8 +211,8 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req, 64 * 1024);
     const username = String(body.username || '').trim();
     const supplied = String(body.password || '');
-    const expected = USERS.get(username);
-    if (!expected || !safeEqual(expected, supplied)) return json(res, 401, { error: 'That key does not open this journal.' });
+    const expectedHash = USERS.get(username);
+    if (!expectedHash || !crypto.timingSafeEqual(sha256(supplied), expectedHash)) return json(res, 401, { error: 'That key does not open this journal.' });
     return json(res, 200, { username }, { 'Set-Cookie': sessionCookie(makeSession(username)) });
   }
   if (pathname === '/api/logout' && req.method === 'POST') {
@@ -286,7 +299,7 @@ const server = http.createServer(async (req, res) => {
 
 ensureStorage().then(() => {
   if (PROD && !process.env.SESSION_SECRET) console.warn('WARNING: SESSION_SECRET is not set. Set a strong secret before production use.');
-  if (PROD && !USERS.size) console.warn('WARNING: JOURNAL_USERS is empty. Nobody will be able to log in.');
+  if (PROD && !USERS.size) console.warn('WARNING: JOURNAL_USERS_HASHED is empty. Nobody will be able to log in.');
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Private journal running at http://localhost:${PORT}`);
     if (!PROD && !process.env.JOURNAL_USERS) console.log('Demo logins: you / love123  OR  girlfriend / journal123');
