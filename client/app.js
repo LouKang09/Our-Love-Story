@@ -26,6 +26,10 @@ let invites = [];
 let following = [];
 let followers = [];
 let homeData = { followingShelf: [], friendSuggestions: [] };
+let guideState = { version: 1, seenVersion: 1, required: false };
+let guideIndex = 0;
+let guideMandatory = false;
+let guideRunning = false;
 let partnerTag = null;
 let activeScrapbook = null;
 let spreadIndex = 0;
@@ -610,6 +614,184 @@ function renderConnections() {
   </div>`;
 }
 
+const GUIDE_STEPS = [
+  {
+    selector:'#homeModeBtn',
+    eyebrow:'WELCOME HOME',
+    title:'This is your scrapbook home.',
+    text:'Home is your starting point. It shows people you follow, the Personal scrapbooks they share with you, and friends-of-friends you may know.',
+    prepare:() => showView('home')
+  },
+  {
+    selector:'.scrapbook-picker-wrap',
+    eyebrow:'YOUR SCRAPBOOKS',
+    title:'Create or switch books here.',
+    text:'Use the scrapbook selector to move between your Personal, Lovers, and Group scrapbooks. Tap the + button beside it when you want to create a new scrapbook.'
+  },
+  {
+    selector:'.mode-switch',
+    eyebrow:'WAYS TO REMEMBER',
+    title:'Choose how you want to view memories.',
+    text:'Book gives you the page-flip experience. Memory Stream shows memories continuously by date. People manages members, followers, privacy, and invitations.'
+  },
+  {
+    selector:'#newEntryBtn',
+    eyebrow:'WRITE A MEMORY',
+    title:'New Memory opens the scrapbook designer.',
+    text:'Once you have a scrapbook, use New Memory to create a page. You can choose the date and title before designing the page.',
+    prepare:() => {
+      showView('cover');
+      $('#newEntryBtn').classList.remove('hidden');
+    }
+  },
+  {
+    selector:'#newEntryBtn',
+    eyebrow:'DESIGN YOUR PAGE',
+    title:'Photos first, then movable text.',
+    text:'Inside the designer: add photos, drag and resize them, then add one or more text boxes. Text boxes can move independently and use different fonts, sizes, bold, or italic.',
+    tip:'On phones: drag blank paper to pan, pinch with two fingers to zoom, and use Fit whenever you want the whole sheet back in view.'
+  },
+  {
+    selector:'#connectionsModeBtn',
+    eyebrow:'PEOPLE & PRIVACY',
+    title:'People connects your scrapbook circle.',
+    text:'Search @tags, follow people, invite members to Group or Lovers scrapbooks, manage your Personal scrapbook privacy, and see your relationship connections.',
+    prepare:() => showView('connections')
+  },
+  {
+    selector:'#profileBtn',
+    eyebrow:'YOUR PROFILE',
+    title:'Your identity travels with your memories.',
+    text:'Use Profile to update your picture, display name, bio, and notification preferences. Your @tag stays your unique account identity.'
+  },
+  {
+    selector:'#guideBtn',
+    eyebrow:'NEED THIS AGAIN?',
+    title:'The guide is always one tap away.',
+    text:'Tap the ⓘ button anytime to replay this guide. When the scrapbook gets a major new feature, the guide version can update and show you what changed.',
+    prepare:() => showView('home')
+  }
+];
+
+function guideTarget(step) {
+  const el = step?.selector ? document.querySelector(step.selector) : null;
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  if (rect.width < 2 || rect.height < 2) return null;
+  return el;
+}
+function positionGuideSpotlight() {
+  if (!guideRunning) return;
+  const step = GUIDE_STEPS[guideIndex];
+  const target = guideTarget(step);
+  const spot = $('#guideSpotlight');
+  if (!target) {
+    spot.classList.add('guide-no-target');
+    spot.style.cssText = '';
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const pad = window.innerWidth <= 600 ? 5 : 7;
+  spot.classList.remove('guide-no-target');
+  spot.style.left = `${Math.max(4, rect.left - pad)}px`;
+  spot.style.top = `${Math.max(4, rect.top - pad)}px`;
+  spot.style.width = `${Math.min(window.innerWidth - 8, rect.width + pad * 2)}px`;
+  spot.style.height = `${Math.min(window.innerHeight - 8, rect.height + pad * 2)}px`;
+}
+function renderGuideStep() {
+  if (!guideRunning) return;
+  const step = GUIDE_STEPS[guideIndex];
+  step.prepare?.();
+  requestAnimationFrame(() => {
+    const target = guideTarget(step);
+    target?.scrollIntoView?.({ block:'nearest', inline:'nearest', behavior:'smooth' });
+    setTimeout(positionGuideSpotlight, 160);
+  });
+
+  $('#guideStepLabel').textContent = `${guideIndex + 1} of ${GUIDE_STEPS.length}`;
+  $('#guideProgressBar').style.width = `${((guideIndex + 1) / GUIDE_STEPS.length) * 100}%`;
+  $('#guideEyebrow').textContent = step.eyebrow;
+  $('#guideTitle').textContent = step.title;
+  $('#guideText').textContent = step.text;
+  const tip = $('#guideTip');
+  tip.textContent = step.tip || '';
+  tip.classList.toggle('hidden', !step.tip);
+  $('#guideBackBtn').classList.toggle('hidden', guideIndex === 0);
+  $('#guideNextBtn').textContent = guideIndex === GUIDE_STEPS.length - 1 ? 'Start journaling' : 'Next';
+  $('#guideCloseBtn').classList.toggle('hidden', guideMandatory);
+}
+function startGuide(required = false) {
+  if (guideRunning) return;
+  guideMandatory = required === true;
+  guideIndex = 0;
+  guideRunning = true;
+  if (editorDialog.open) editorDialog.close();
+  if (scrapbookDialog.open) scrapbookDialog.close();
+  if (profileDialog.open) profileDialog.close();
+  showView('home');
+  $('#guideOverlay').classList.remove('hidden');
+  document.body.classList.add('guide-active');
+  renderGuideStep();
+}
+async function finishGuide({ completed = true } = {}) {
+  if (!guideRunning) return;
+  const wasMandatory = guideMandatory;
+  if (completed) {
+    try {
+      const result = await api('/api/guide/complete', {
+        method:'POST',
+        body:JSON.stringify({ version: guideState.version || 1 })
+      });
+      guideState = result.guide || { ...guideState, required:false, seenVersion:guideState.version };
+    } catch (err) {
+      if (wasMandatory) {
+        showToast('Please reconnect so the guide can be marked complete.');
+        return;
+      }
+    }
+  }
+  guideRunning = false;
+  guideMandatory = false;
+  $('#guideOverlay').classList.add('hidden');
+  document.body.classList.remove('guide-active');
+  $('#guideSpotlight').style.cssText = '';
+  showView('home');
+  if (wasMandatory) maybeOpenReminderComposer();
+}
+$('#guideNextBtn').addEventListener('click', async () => {
+  if (guideIndex >= GUIDE_STEPS.length - 1) {
+    await finishGuide({ completed:true });
+    return;
+  }
+  guideIndex += 1;
+  renderGuideStep();
+});
+$('#guideBackBtn').addEventListener('click', () => {
+  if (guideIndex <= 0) return;
+  guideIndex -= 1;
+  renderGuideStep();
+});
+$('#guideCloseBtn').addEventListener('click', () => {
+  if (!guideMandatory) finishGuide({ completed:false });
+});
+$('#guideOverlay').addEventListener('pointerdown', e => {
+  if (!e.target.closest('.guide-card')) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+});
+window.addEventListener('resize', () => {
+  if (guideRunning) requestAnimationFrame(positionGuideSpotlight);
+});
+window.addEventListener('scroll', () => {
+  if (guideRunning) requestAnimationFrame(positionGuideSpotlight);
+}, true);
+document.addEventListener('keydown', e => {
+  if (!guideRunning || e.key !== 'Escape') return;
+  e.preventDefault();
+  if (!guideMandatory) finishGuide({ completed:false });
+});
+
 function renderHome() {
   if (!me) return;
   const profileCard = $('#homeProfileCard');
@@ -751,6 +933,7 @@ async function loadSession(preferredBookId = null) {
   following = data.following || [];
   followers = data.followers || [];
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
+  guideState = data.guide || { version:1, seenVersion:1, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
@@ -1289,7 +1472,8 @@ async function enterApp() {
   await loadSession();
   lockScreen.classList.add('hidden'); journalApp.classList.remove('hidden');
   showView('home');
-  maybeOpenReminderComposer();
+  if (guideState.required) setTimeout(() => startGuide(true), 180);
+  else maybeOpenReminderComposer();
 }
 $('#logoutBtn').addEventListener('click', async () => {
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
@@ -1300,6 +1484,7 @@ $('#openBookBtn').addEventListener('click', () => {
   if (!activeScrapbook) { showView('connections'); return; }
   $('#introBook').classList.add('open'); setTimeout(() => showView('book'), 720);
 });
+$('#guideBtn').addEventListener('click', () => startGuide(false));
 $('#homeModeBtn').addEventListener('click', () => showView('home'));
 $('#bookModeBtn').addEventListener('click', () => showView('book'));
 $('#streamModeBtn').addEventListener('click', () => showView('stream'));

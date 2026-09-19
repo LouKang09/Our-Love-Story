@@ -22,6 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
+const GUIDE_VERSION = 1;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -173,6 +174,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-canvas-editor-20260919');
   await backupNamedJsonDataOnce('pre-page-size-lines-20260919');
   await backupNamedJsonDataOnce('pre-home-social-20260919');
+  await backupNamedJsonDataOnce('pre-guided-onboarding-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -543,7 +545,7 @@ async function handleApi(req, res, url) {
       accounts.push({ tag, passwordHash: await scryptHash(password), createdAt: new Date().toISOString() });
       await writeAccounts(accounts);
       const social = await readSocial();
-      social.profiles[tag] = { tag, displayName: displayName || tag, avatar: '', bio: '', createdAt: new Date().toISOString() };
+      social.profiles[tag] = { tag, displayName: displayName || tag, avatar: '', bio: '', guideVersion: 0, createdAt: new Date().toISOString() };
       await writeSocial(social);
       return json(res, 201, { tag }, { 'Set-Cookie': sessionCookie(makeSession(tag)) });
     } finally {
@@ -558,6 +560,18 @@ async function handleApi(req, res, url) {
   const social = await readSocial();
 
   if (pathname === '/api/me' && req.method === 'GET') {
+    const guideProfile = social.profiles[user] || { tag:user, displayName:user, avatar:'', bio:'', createdAt:new Date().toISOString() };
+    let seenGuideVersion = Number(guideProfile.guideVersion);
+    if (!Number.isFinite(seenGuideVersion) || seenGuideVersion < 0) {
+      const existingEntries = await readEntries();
+      const hasPostedMemory = existingEntries.some(entry => entry.author === user);
+      seenGuideVersion = hasPostedMemory ? GUIDE_VERSION : 0;
+      guideProfile.guideVersion = seenGuideVersion;
+      if (hasPostedMemory) guideProfile.guideCompletedAt ||= new Date().toISOString();
+      social.profiles[user] = guideProfile;
+      await writeSocial(social);
+    }
+
     const books = social.scrapbooks
       .filter(b => canViewBook(social, b, user))
       .sort((a,b) => {
@@ -614,9 +628,31 @@ async function handleApi(req, res, url) {
       following,
       followers,
       partnerTag: activePartnerTag(social, user),
+      guide: {
+        version: GUIDE_VERSION,
+        seenVersion: seenGuideVersion,
+        required: seenGuideVersion < GUIDE_VERSION
+      },
       home: {
         followingShelf,
         friendSuggestions
+      }
+    });
+  }
+
+  if (pathname === '/api/guide/complete' && req.method === 'POST') {
+    const body = await readBody(req, 64 * 1024);
+    const requestedVersion = Math.max(0, Math.min(GUIDE_VERSION, Math.floor(Number(body.version) || GUIDE_VERSION)));
+    const current = social.profiles[user] || { tag:user, displayName:user, avatar:'', bio:'', createdAt:new Date().toISOString() };
+    current.guideVersion = Math.max(Number(current.guideVersion) || 0, requestedVersion);
+    current.guideCompletedAt = new Date().toISOString();
+    social.profiles[user] = current;
+    await writeSocial(social);
+    return json(res, 200, {
+      guide: {
+        version: GUIDE_VERSION,
+        seenVersion: current.guideVersion,
+        required: current.guideVersion < GUIDE_VERSION
       }
     });
   }
