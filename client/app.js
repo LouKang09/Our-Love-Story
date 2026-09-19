@@ -39,7 +39,7 @@ let pendingChatPreviewUrl = '';
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
-let guideState = { version: 6, seenVersion: 5, required: false };
+let guideState = { version: 7, seenVersion: 6, required: false };
 let activeGuideSteps = [];
 let guideIndex = 0;
 let guideMandatory = false;
@@ -96,6 +96,39 @@ function showToast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
 }
+function normalizeAppearanceMode(value) {
+  return value === 'night' ? 'night' : 'light';
+}
+function applyAppearanceMode(value) {
+  const mode = normalizeAppearanceMode(value);
+  document.documentElement.dataset.theme = mode;
+  const btn = $('#themeModeBtn');
+  if (btn) {
+    const night = mode === 'night';
+    btn.innerHTML = `<span aria-hidden="true">${night ? '☀' : '☾'}</span>`;
+    btn.setAttribute('aria-label', night ? 'Switch to light mode' : 'Switch to night mode');
+    btn.title = night ? 'Switch to light mode' : 'Switch to night mode';
+    btn.classList.toggle('active', night);
+  }
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mode === 'night' ? '#21191b' : '#6e3d46');
+  return mode;
+}
+function normalizeCoverTheme(value) {
+  return ['rose','midnight','forest','ocean','sunset','classic'].includes(value) ? value : 'rose';
+}
+function applyActiveCoverTheme() {
+  const theme = normalizeCoverTheme(activeScrapbook?.coverTheme);
+  $('#introBook')?.setAttribute('data-cover-theme', theme);
+  const select = $('#coverThemeSelect');
+  const wrap = $('#coverThemeWrap');
+  if (select) {
+    select.value = theme;
+    select.disabled = !activeScrapbook || activeScrapbook.isOwner !== true;
+    select.title = select.disabled ? 'Only the scrapbook owner can change the shared cover.' : 'Change the shared scrapbook cover';
+  }
+  wrap?.classList.toggle('hidden', !activeScrapbook);
+}
+
 function escapeHtml(str = '') {
   return String(str).replace(/[&<>'"]/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[ch]));
 }
@@ -692,6 +725,7 @@ async function toggleBookCover() {
 
 function updateCover() {
   $('#coverTitle').textContent = activeBookLabel();
+  applyActiveCoverTheme();
   syncBookCoverControls();
   $('#brandTitle').textContent = activeBookLabel();
   if (activeScrapbook?.type === 'couple') {
@@ -1141,6 +1175,22 @@ const GUIDE_STEPS = [
     title:'People connects your scrapbook circle.',
     text:'Search @tags, follow people, invite members to Group or Lovers scrapbooks, manage your Personal scrapbook privacy, and see your relationship connections.',
     prepare:() => showView('connections')
+  },
+  {
+    introducedIn:7,
+    selector:'#themeModeBtn',
+    eyebrow:'NEW · NIGHT MODE',
+    title:'The scrapbook can now settle into the dark.',
+    text:'Use the moon or sun button to switch between light and night mode. Your choice follows your account across devices.',
+    prepare:() => showView('home')
+  },
+  {
+    introducedIn:7,
+    selector:'#coverThemeSelect',
+    eyebrow:'NEW · BOOK COVERS & MOBILE CHAT',
+    title:'Make each book feel different—and chats cleaner on phones.',
+    text:'Scrapbook owners can choose a shared cover theme. Group chat member counts are tappable, and phone Messages now open one conversation at a time instead of stacking the list and chat together.',
+    prepare:() => showView('cover')
   },
   {
     introducedIn:6,
@@ -1684,11 +1734,40 @@ function renderChatList() {
   }).join('');
   host.querySelectorAll('.chat-list-item').forEach(btn => btn.addEventListener('click', () => openChat(btn.dataset.chatId)));
 }
+function openChatMembersDialog(chat) {
+  if (!chat || chat.type !== 'group') return;
+  const members = Array.isArray(chat.members) ? chat.members : [];
+  $('#chatMembersTitle').textContent = `${chat.name || 'Group chat'} · ${members.length} member${members.length === 1 ? '' : 's'}`;
+  const host = $('#chatMembersList');
+  host.innerHTML = members.length ? members.map(member => `<button class="chat-member-row" type="button" data-profile-tag="${escapeHtml(member.tag || '')}">
+    ${avatarHtml(member,'chat-member-avatar')}
+    <span><strong>${escapeHtml(member.displayName || member.tag || 'Member')}</strong><small>@${escapeHtml(member.tag || '')}</small></span>
+    ${member.tag === me?.tag ? '<em>You</em>' : ''}
+  </button>`).join('') : '<p class="helper">No members found.</p>';
+  wireProfileLinks(host);
+  host.querySelectorAll('.chat-member-row').forEach(row => row.addEventListener('click', () => {
+    $('#chatMembersDialog').close();
+  }));
+  $('#chatMembersDialog').showModal();
+}
+function closeMobileChat() {
+  messagesView?.classList.remove('chat-open');
+  if (window.matchMedia('(max-width: 800px)').matches) {
+    activeChatId = null;
+    activeChatMessages = [];
+    $('#activeChat')?.classList.add('hidden');
+    $('#chatEmptyState')?.classList.remove('hidden');
+    renderChatList();
+  }
+}
 function renderChatHeader(chat) {
   const host = $('#chatHeader');
   if (!host || !chat) return;
-  host.innerHTML = `<div class="chat-header-identity">${chatAvatarHtml(chat)}<div><p class="eyebrow">${chat.type === 'group' ? 'GROUP SCRAPBOOK CHAT' : 'PRIVATE MESSAGE'}</p><h3>${escapeHtml(chat.name || 'Conversation')}</h3>${chat.type === 'group' ? `<small>${Array.isArray(chat.members) ? chat.members.length : 0} members</small>` : `<button class="chat-profile-link" type="button" data-profile-tag="${escapeHtml(chat.otherProfile?.tag || '')}">@${escapeHtml(chat.otherProfile?.tag || '')}</button>`}</div></div>`;
+  const memberCount = Array.isArray(chat.members) ? chat.members.length : 0;
+  host.innerHTML = `<button class="chat-mobile-back" type="button" aria-label="Back to conversations">←</button><div class="chat-header-identity">${chatAvatarHtml(chat)}<div><p class="eyebrow">${chat.type === 'group' ? 'GROUP SCRAPBOOK CHAT' : 'PRIVATE MESSAGE'}</p><h3>${escapeHtml(chat.name || 'Conversation')}</h3>${chat.type === 'group' ? `<button class="chat-member-count" type="button">${memberCount} member${memberCount === 1 ? '' : 's'} · tap to view</button>` : `<button class="chat-profile-link" type="button" data-profile-tag="${escapeHtml(chat.otherProfile?.tag || '')}">@${escapeHtml(chat.otherProfile?.tag || '')}</button>`}</div></div>`;
   wireProfileLinks(host);
+  host.querySelector('.chat-mobile-back')?.addEventListener('click', closeMobileChat);
+  host.querySelector('.chat-member-count')?.addEventListener('click', () => openChatMembersDialog(chat));
 }
 function renderChatMessages() {
   const host = $('#chatMessages');
@@ -1764,6 +1843,7 @@ async function openChat(chatId) {
   if (!chatId) return;
   activeChatId = chatId;
   if (currentMode !== 'messages') showView('messages');
+  messagesView?.classList.add('chat-open');
   try { await loadChatMessages(chatId); }
   catch (err) { showToast(err.message || 'Could not open that conversation.'); }
 }
@@ -1862,6 +1942,7 @@ async function refreshEntries() {
 async function loadSession(preferredBookId = null) {
   const data = await api('/api/me');
   me = data.profile;
+  applyAppearanceMode(me?.appearanceMode || 'light');
   scrapbooks = data.scrapbooks || [];
   invites = data.invites || [];
   following = data.following || [];
@@ -1869,7 +1950,7 @@ async function loadSession(preferredBookId = null) {
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
   notificationSummary = data.notifications || { count:0, pendingInvites:0 };
   chatUnreadCount = Number(data.messages?.unreadCount) || 0;
-  guideState = data.guide || { version:6, seenVersion:5, required:false };
+  guideState = data.guide || { version:7, seenVersion:6, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
@@ -2451,6 +2532,7 @@ async function enterApp() {
 }
 $('#logoutBtn').addEventListener('click', async () => {
   disconnectLiveEvents();
+  applyAppearanceMode('light');
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
   localStorage.removeItem('activeScrapbookId'); location.reload();
 });
@@ -2477,7 +2559,7 @@ $('#closeBookViewBtn').addEventListener('click', async () => {
 });
 $('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
 $('#connectionsModeBtn').addEventListener('click', () => refreshAndShow('connections'));
-$('#messagesModeBtn').addEventListener('click', () => showView('messages'));
+$('#messagesModeBtn').addEventListener('click', () => { closeMobileChat(); showView('messages'); });
 $('#newEntryBtn').addEventListener('click', () => openEditor());
 $('#emptyAddBtn').addEventListener('click', () => activeScrapbook ? openEditor() : scrapbookDialog.showModal());
 $('#closeEditorBtn').addEventListener('click', closeEditor);
@@ -2514,7 +2596,7 @@ $('#scrapbookForm').addEventListener('submit', async e => {
   e.preventDefault(); $('#scrapbookError').textContent = '';
   try {
     const type = $('#scrapbookType').value;
-    const data = await api('/api/scrapbooks', { method:'POST', body:JSON.stringify({ type, name:$('#scrapbookName').value.trim(), privacy:$('#personalPrivacy').value }) });
+    const data = await api('/api/scrapbooks', { method:'POST', body:JSON.stringify({ type, name:$('#scrapbookName').value.trim(), privacy:$('#personalPrivacy').value, coverTheme:$('#scrapbookCoverTheme').value }) });
     scrapbookDialog.close(); $('#scrapbookName').value = '';
     await loadSession(data.scrapbook.id); showView('connections');
     showToast(type === 'personal' ? 'Personal scrapbook created.' : 'Scrapbook created. Invite someone by @tag.');
@@ -2567,6 +2649,48 @@ $('#discoverForm').addEventListener('submit', async e => {
     renderDiscoverResults(data.people || []);
   } catch (err) { showToast(err.message); }
 });
+
+$('#themeModeBtn').addEventListener('click', async () => {
+  const previous = normalizeAppearanceMode(me?.appearanceMode);
+  const next = previous === 'night' ? 'light' : 'night';
+  applyAppearanceMode(next);
+  if (me) me.appearanceMode = next;
+  try {
+    await api('/api/preferences', { method:'PUT', body:JSON.stringify({ appearanceMode:next }) });
+  } catch (err) {
+    applyAppearanceMode(previous);
+    if (me) me.appearanceMode = previous;
+    showToast(err.message || 'Could not save appearance mode.');
+  }
+});
+$('#coverThemeSelect').addEventListener('change', async e => {
+  if (!activeScrapbook?.id || activeScrapbook.isOwner !== true) {
+    e.currentTarget.value = normalizeCoverTheme(activeScrapbook?.coverTheme);
+    return;
+  }
+  const previous = normalizeCoverTheme(activeScrapbook.coverTheme);
+  const next = normalizeCoverTheme(e.currentTarget.value);
+  activeScrapbook.coverTheme = next;
+  applyActiveCoverTheme();
+  try {
+    const data = await api(`/api/scrapbooks/${encodeURIComponent(activeScrapbook.id)}/cover-theme`, {
+      method:'PUT',
+      body:JSON.stringify({ coverTheme:next })
+    });
+    if (data.scrapbook) {
+      activeScrapbook = data.scrapbook;
+      const idx = scrapbooks.findIndex(book => book.id === activeScrapbook.id);
+      if (idx >= 0) scrapbooks[idx] = activeScrapbook;
+      applyActiveCoverTheme();
+    }
+    showToast('Book cover updated.');
+  } catch (err) {
+    activeScrapbook.coverTheme = previous;
+    applyActiveCoverTheme();
+    showToast(err.message || 'Could not update the book cover.');
+  }
+});
+$('#closeChatMembersDialog').addEventListener('click', () => $('#chatMembersDialog').close());
 
 $('#privateChatForm').addEventListener('submit', async e => {
   e.preventDefault();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-chat6" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-mobiletheme7" />
 </head>
 <body>
   <div id="app">
@@ -69,6 +69,7 @@
             </section>
           </div>
           <button id="guideBtn" class="guide-btn" type="button" title="How to use the scrapbook" aria-label="Open scrapbook guide">ⓘ</button>
+          <button id="themeModeBtn" class="theme-mode-btn" type="button" title="Toggle night mode" aria-label="Switch to night mode"><span aria-hidden="true">☾</span></button>
           <button id="profileBtn" class="profile-chip" type="button"><span id="profileAvatarMini" class="avatar mini-avatar">♡</span><span id="profileChipText">Profile</span></button>
           <button id="logoutBtn" class="logout-btn" type="button">Log out</button>
         </div>
@@ -126,7 +127,19 @@
             <div class="cover-heart">♡</div>
           </div>
         </div>
-        <button id="openBookBtn" class="primary open-book-btn">Open the book</button>
+        <div class="cover-actions">
+          <button id="openBookBtn" class="primary open-book-btn">Open the book</button>
+          <label id="coverThemeWrap" class="cover-theme-wrap">Cover
+            <select id="coverThemeSelect" aria-label="Book cover theme">
+              <option value="rose">Rose</option>
+              <option value="midnight">Midnight</option>
+              <option value="forest">Forest</option>
+              <option value="ocean">Ocean</option>
+              <option value="sunset">Sunset</option>
+              <option value="classic">Classic</option>
+            </select>
+          </label>
+        </div>
       </section>
 
       <section id="bookView" class="book-view hidden" aria-label="Book view">
@@ -414,6 +427,16 @@
         <div class="editor-head"><div><p class="eyebrow">NEW SCRAPBOOK</p><h2>Create a shared space</h2></div><button id="closeScrapbookDialog" class="icon-btn" type="button">×</button></div>
         <label>Kind<select id="scrapbookType"><option value="couple">Lovers — exactly two people</option><option value="group">Group — friends, family, barkada</option><option value="personal">Personal — your own journal</option></select></label>
         <label>Scrapbook name<input id="scrapbookName" maxlength="80" placeholder="Our Weekend Crew" required /></label>
+        <label>Book cover
+          <select id="scrapbookCoverTheme">
+            <option value="rose" selected>Rose</option>
+            <option value="midnight">Midnight</option>
+            <option value="forest">Forest</option>
+            <option value="ocean">Ocean</option>
+            <option value="sunset">Sunset</option>
+            <option value="classic">Classic</option>
+          </select>
+        </label>
         <label id="personalPrivacyWrap" class="hidden">Personal privacy
           <select id="personalPrivacy">
             <option value="private" selected>You Only</option>
@@ -425,6 +448,16 @@
         <button class="primary wide" type="submit">Create scrapbook</button>
         <p id="scrapbookError" class="form-error"></p>
       </form>
+    </dialog>
+
+    <dialog id="chatMembersDialog" class="small-dialog chat-members-dialog">
+      <div class="small-card">
+        <div class="editor-head">
+          <div><p class="eyebrow">GROUP CHAT</p><h2 id="chatMembersTitle">Chat members</h2></div>
+          <button id="closeChatMembersDialog" class="icon-btn" type="button" aria-label="Close members">×</button>
+        </div>
+        <div id="chatMembersList" class="chat-members-list"></div>
+      </div>
     </dialog>
 
     <dialog id="profileDialog" class="small-dialog">
@@ -473,6 +506,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-chat6" defer></script>
+  <script src="/app.js?v=20260920-mobiletheme7" defer></script>
 </body>
 </html>

@@ -22,7 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-const GUIDE_VERSION = 6;
+const GUIDE_VERSION = 7;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -238,6 +238,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-mention-autocomplete-push-20260919');
   await backupNamedJsonDataOnce('pre-realtime-stream-layout-20260920');
   await backupNamedJsonDataOnce('pre-private-group-chat-20260920');
+  await backupNamedJsonDataOnce('pre-night-cover-mobilechat-20260920');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -477,6 +478,7 @@ function profileFor(social, tag) {
     displayName: p.displayName || tag,
     avatar: p.avatar || '',
     bio: p.bio || '',
+    appearanceMode: ['light','night'].includes(p.appearanceMode) ? p.appearanceMode : 'light',
     notifications: {
       enabled: notify.enabled === true,
       reminderTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(notify.reminderTime || '')) ? notify.reminderTime : '20:00',
@@ -780,6 +782,7 @@ function decorateBook(social, book, viewer) {
     id: book.id,
     type: book.type,
     name: book.name,
+    coverTheme: ['rose','midnight','forest','ocean','sunset','classic'].includes(book.coverTheme) ? book.coverTheme : 'rose',
     owner: book.owner,
     members: book.members,
     privacy: book.type === 'personal' ? personalPrivacy(book) : null,
@@ -1006,6 +1009,17 @@ async function handleApi(req, res, url) {
     });
   }
 
+  if (pathname === '/api/preferences' && req.method === 'PUT') {
+    const body = await readBody(req, 64 * 1024);
+    const appearanceMode = ['light','night'].includes(body.appearanceMode) ? body.appearanceMode : null;
+    if (!appearanceMode) return json(res, 400, { error:'Invalid appearance mode.' });
+    const current = social.profiles[user] || { tag:user, displayName:user, avatar:'', bio:'', createdAt:new Date().toISOString() };
+    current.appearanceMode = appearanceMode;
+    social.profiles[user] = current;
+    await writeSocial(social);
+    return json(res, 200, { appearanceMode });
+  }
+
   if (pathname === '/api/profile' && req.method === 'PUT') {
     const body = await readBody(req, 128 * 1024);
     const current = social.profiles[user] || { tag: user, createdAt: new Date().toISOString() };
@@ -1187,11 +1201,13 @@ async function handleApi(req, res, url) {
       return json(res, 409, { error: 'You already have a personal scrapbook.' });
     }
     const privacy = ['followers','partner','private'].includes(body.privacy) ? body.privacy : 'private';
+    const coverTheme = ['rose','midnight','forest','ocean','sunset','classic'].includes(body.coverTheme) ? body.coverTheme : 'rose';
     const defaultName = type === 'couple' ? 'Our Love Story' : (type === 'personal' ? 'My Personal Scrapbook' : 'Our Scrapbook');
     const book = {
       id: crypto.randomUUID(),
       type,
       name: String(body.name || defaultName).trim().slice(0, 80),
+      coverTheme,
       owner: user,
       members: [user],
       privacy: type === 'personal' ? privacy : undefined,
@@ -1208,6 +1224,20 @@ async function handleApi(req, res, url) {
     }
     await writeSocial(social);
     return json(res, 201, { scrapbook: decorateBook(social, book, user) });
+  }
+
+  const coverThemeMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/cover-theme$/i);
+  if (coverThemeMatch && req.method === 'PUT') {
+    const book = social.scrapbooks.find(item => item.id === coverThemeMatch[1]);
+    if (!book || !canViewBook(social, book, user)) return notFound(res);
+    if (book.owner !== user) return forbidden(res, 'Only the scrapbook owner can change the shared cover theme.');
+    const body = await readBody(req, 64 * 1024);
+    const coverTheme = ['rose','midnight','forest','ocean','sunset','classic'].includes(body.coverTheme) ? body.coverTheme : null;
+    if (!coverTheme) return json(res, 400, { error:'Invalid cover theme.' });
+    book.coverTheme = coverTheme;
+    await writeSocial(social);
+    emitLiveMany(realtimeBookViewers(social, book), 'social', { type:'cover_theme_changed', scrapbookId:book.id });
+    return json(res, 200, { scrapbook:decorateBook(social, book, user) });
   }
 
   const privacyMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/privacy$/i);
