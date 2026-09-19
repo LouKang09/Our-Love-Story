@@ -102,6 +102,7 @@ async function readSocial() {
   data.scrapbooks = Array.isArray(data.scrapbooks) ? data.scrapbooks : [];
   data.invites = Array.isArray(data.invites) ? data.invites : [];
   data.follows = Array.isArray(data.follows) ? data.follows : [];
+  data.uploadOwners = data.uploadOwners && typeof data.uploadOwners === 'object' ? data.uploadOwners : {};
   data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   return data;
@@ -727,7 +728,10 @@ async function handleApi(req, res, url) {
     if (bytes.length > 8 * 1024 * 1024) return json(res, 413, { error: 'Each photo must be 8 MB or smaller.' });
     const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
     await fsp.writeFile(path.join(UPLOADS, filename), bytes);
-    return json(res, 201, { src: `/uploads/${filename}` });
+    const src = `/uploads/${filename}`;
+    social.uploadOwners[src] = user;
+    await writeSocial(social);
+    return json(res, 201, { src });
   }
 
   notFound(res);
@@ -805,7 +809,20 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname.startsWith('/api/')) { url.pathname = pathname; return await handleApi(req, res, url); }
     if (pathname.startsWith('/uploads/')) {
-      if (!(await getUser(req))) return json(res, 401, { error: 'Locked' });
+      const viewer = await getUser(req);
+      if (!viewer) return json(res, 401, { error: 'Locked' });
+      const assetPath = `/uploads/${path.basename(pathname)}`;
+      const social = await readSocial();
+      const entries = await readEntries();
+      const entry = entries.find(e => Array.isArray(e.photos) && e.photos.some(photo => photo?.src === assetPath));
+      if (entry) {
+        const book = social.scrapbooks.find(b => b.id === entry.scrapbookId);
+        if (!book || !canViewBook(social, book, viewer)) return forbidden(res, 'You do not have access to this scrapbook photo.');
+      } else {
+        const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
+        const isOwnedPendingUpload = social.uploadOwners?.[assetPath] === viewer;
+        if (!isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
+      }
       return serveFile(res, path.join(UPLOADS, path.basename(pathname)));
     }
     if (pathname === '/' || pathname === '/index.html') return serveFile(res, path.join(PUBLIC, 'index.html'));
