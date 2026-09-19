@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#6e3d46" />
+  <title>Our Little Book of Us</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <section id="lockScreen" class="lock-screen">
+      <div class="lock-card paper-card">
+        <div class="lock-seal">♡</div>
+        <p class="eyebrow">PRIVATE • FOR TWO</p>
+        <h1 id="lockTitle">Our Little Book of Us</h1>
+        <p id="lockSubtitle" class="muted">Every ordinary day deserves to be remembered.</p>
+        <form id="loginForm" autocomplete="on">
+          <label>Who are you?<input id="username" name="username" autocomplete="username" placeholder="Your name" required /></label>
+          <label>Your private key<input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required /></label>
+          <button class="primary wide" type="submit">Unlock our journal</button>
+          <p id="loginError" class="form-error" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+    <main id="journalApp" class="hidden">
+      <header class="topbar">
+        <button id="brandButton" class="brand-button" aria-label="Return to cover"><span>♡</span><strong id="brandTitle">Our Journal</strong></button>
+        <div class="toolbar">
+          <div class="mode-switch" role="group" aria-label="Journal view">
+            <button id="bookModeBtn" class="active">Book</button>
+            <button id="streamModeBtn">Memory Stream</button>
+          </div>
+          <button id="newEntryBtn" class="primary">＋ New memory</button>
+          <button id="logoutBtn" class="ghost">Lock</button>
+        </div>
+      </header>
+
+      <section id="coverStage" class="cover-stage">
+        <div class="book-intro" id="introBook">
+          <div class="book-pages"></div>
+          <div class="book-cover">
+            <div class="cover-ornament">✦</div>
+            <p>OUR PRIVATE JOURNAL</p>
+            <h2 id="coverTitle">Our Little Book of Us</h2>
+            <span>kept with love, one day at a time</span>
+            <div class="cover-heart">♡</div>
+          </div>
+        </div>
+        <button id="openBookBtn" class="primary open-book-btn">Open the book</button>
+      </section>
+
+      <section id="bookView" class="book-view hidden" aria-label="Book view">
+        <div class="book-controls">
+          <button id="prevBtn" class="round" aria-label="Previous pages">←</button>
+          <div id="pageCounter" class="page-counter">Pages 1–2</div>
+          <button id="nextBtn" class="round" aria-label="Next pages">→</button>
+        </div>
+        <div id="bookShell" class="book-shell">
+          <article id="leftPage" class="paper-page left-page"></article>
+          <div class="book-gutter"></div>
+          <article id="rightPage" class="paper-page right-page"></article>
+        </div>
+      </section>
+
+      <section id="streamView" class="stream-view hidden">
+        <div class="stream-heading">
+          <p class="eyebrow">MEMORY STREAM</p>
+          <h2>Everything, in the order we lived it.</h2>
+          <p>Scroll through your journal continuously. Newer memories appear first.</p>
+        </div>
+        <div id="timeline" class="timeline"></div>
+      </section>
+
+      <div id="emptyState" class="empty-state hidden">
+        <div>♡</div>
+        <h2>The first page is waiting.</h2>
+        <p>Write a little piece of today and this book begins.</p>
+        <button id="emptyAddBtn" class="primary">Write our first memory</button>
+      </div>
+    </main>
+
+    <dialog id="editorDialog" class="editor-dialog">
+      <form id="entryForm" class="editor-card">
+        <div class="editor-head">
+          <div><p class="eyebrow">JOURNAL ENTRY</p><h2 id="editorHeading">Write today down</h2></div>
+          <button id="closeEditorBtn" type="button" class="icon-btn" aria-label="Close">×</button>
+        </div>
+        <div class="editor-grid">
+          <label>Date<input id="entryDate" type="date" required /></label>
+          <label>Title<input id="entryTitle" maxlength="120" placeholder="The little thing I never want to forget" required /></label>
+        </div>
+        <label>What happened today?<textarea id="entryText" rows="12" maxlength="20000" placeholder="Write as if you're telling each other the story years from now..."></textarea></label>
+
+        <section class="photo-editor">
+          <div class="photo-editor-head">
+            <div><strong>Photos inside this page</strong><span>Drag a photo left or right, resize it, and the writing will wrap around it.</span></div>
+            <label class="upload-btn">＋ Add photos<input id="photoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden /></label>
+          </div>
+          <div id="photoControls" class="photo-controls"></div>
+        </section>
+
+        <section class="live-preview">
+          <div class="preview-label">Page preview</div>
+          <article id="entryPreview" class="entry-body preview-paper"></article>
+        </section>
+
+        <div class="editor-actions">
+          <button id="deleteEntryBtn" class="danger hidden" type="button">Delete memory</button>
+          <span class="spacer"></span>
+          <button id="cancelEditorBtn" class="ghost" type="button">Cancel</button>
+          <button class="primary" type="submit">Save to our journal</button>
+        </div>
+        <p id="editorError" class="form-error" aria-live="polite"></p>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
