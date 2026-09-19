@@ -22,7 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-const GUIDE_VERSION = 5;
+const GUIDE_VERSION = 6;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -149,6 +149,9 @@ async function readSocial() {
   data.notificationHub = data.notificationHub && typeof data.notificationHub === 'object' ? data.notificationHub : {};
   data.mentions = Array.isArray(data.mentions) ? data.mentions : [];
   data.activityNotifications = Array.isArray(data.activityNotifications) ? data.activityNotifications : [];
+  data.chats = Array.isArray(data.chats) ? data.chats : [];
+  data.chatMessages = Array.isArray(data.chatMessages) ? data.chatMessages : [];
+  data.chatRead = data.chatRead && typeof data.chatRead === 'object' ? data.chatRead : {};
   return data;
 }
 async function writeSocial(social) { await writeJson(SOCIAL_FILE, social); }
@@ -157,7 +160,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [] });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {} });
 
   const social = await readSocial();
   const bootstrapTags = [...BOOTSTRAP_USERS.keys()];
@@ -182,6 +185,17 @@ async function ensureStorage() {
     };
     social.scrapbooks.push(defaultBook);
     changed = true;
+  }
+  for (const book of social.scrapbooks.filter(book => book.type === 'group')) {
+    if (!social.chats.some(chat => chat.type === 'group' && chat.scrapbookId === book.id)) {
+      social.chats.push({
+        id:crypto.randomUUID(),
+        type:'group',
+        scrapbookId:book.id,
+        createdAt:book.createdAt || new Date().toISOString()
+      });
+      changed = true;
+    }
   }
   if (changed) await writeSocial(social);
 
@@ -223,6 +237,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-comments-mentions-layout-20260919');
   await backupNamedJsonDataOnce('pre-mention-autocomplete-push-20260919');
   await backupNamedJsonDataOnce('pre-realtime-stream-layout-20260920');
+  await backupNamedJsonDataOnce('pre-private-group-chat-20260920');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -693,6 +708,71 @@ function canWriteBook(book, viewer) {
   if (book.type === 'personal') return book.owner === viewer;
   return Array.isArray(book.members) && book.members.includes(viewer);
 }
+function chatMembers(social, chat) {
+  if (!chat) return [];
+  if (chat.type === 'private') return [...new Set(Array.isArray(chat.members) ? chat.members.filter(Boolean) : [])];
+  if (chat.type === 'group') {
+    const book = social.scrapbooks.find(item => item.id === chat.scrapbookId && item.type === 'group');
+    return book ? [...new Set(book.members || [])] : [];
+  }
+  return [];
+}
+function canAccessChat(social, chat, user) {
+  return Boolean(user && chatMembers(social, chat).includes(user));
+}
+function chatUnreadCount(social, chat, user) {
+  if (!canAccessChat(social, chat, user)) return 0;
+  const seenMs = Date.parse(social.chatRead?.[user]?.[chat.id] || '') || 0;
+  return social.chatMessages.filter(message =>
+    message.chatId === chat.id &&
+    message.author !== user &&
+    (Date.parse(message.createdAt || '') || 0) > seenMs
+  ).length;
+}
+function decorateChat(social, chat, user) {
+  const members = chatMembers(social, chat);
+  const lastMessage = [...social.chatMessages].reverse().find(message => message.chatId === chat.id) || null;
+  if (chat.type === 'group') {
+    const book = social.scrapbooks.find(item => item.id === chat.scrapbookId);
+    return {
+      id:chat.id,
+      type:'group',
+      scrapbookId:chat.scrapbookId,
+      name:book?.name || 'Group chat',
+      members:members.map(tag => publicProfileFor(social, tag)),
+      unreadCount:chatUnreadCount(social, chat, user),
+      lastMessage:lastMessage ? {
+        id:lastMessage.id,
+        author:lastMessage.author,
+        text:lastMessage.text || '',
+        image:lastMessage.image || '',
+        createdAt:lastMessage.createdAt
+      } : null
+    };
+  }
+  const other = members.find(tag => tag !== user) || user;
+  const profile = publicProfileFor(social, other);
+  return {
+    id:chat.id,
+    type:'private',
+    name:profile.displayName || displayTag(other),
+    otherProfile:profile,
+    members:members.map(tag => publicProfileFor(social, tag)),
+    unreadCount:chatUnreadCount(social, chat, user),
+    lastMessage:lastMessage ? {
+      id:lastMessage.id,
+      author:lastMessage.author,
+      text:lastMessage.text || '',
+      image:lastMessage.image || '',
+      createdAt:lastMessage.createdAt
+    } : null
+  };
+}
+function totalChatUnread(social, user) {
+  return social.chats
+    .filter(chat => canAccessChat(social, chat, user))
+    .reduce((sum, chat) => sum + chatUnreadCount(social, chat, user), 0);
+}
 function decorateBook(social, book, viewer) {
   const viewingAsFollower = book.type === 'personal' && book.owner !== viewer && isFollowing(social, viewer, book.owner);
   const viewingAsPartner = book.type === 'personal' && book.owner !== viewer && isActivePartner(social, viewer, book.owner);
@@ -876,6 +956,9 @@ async function handleApi(req, res, url) {
         count: notificationSnapshot(social, user).unreadCount,
         pendingInvites: notificationSnapshot(social, user).pendingInviteCount
       },
+      messages: {
+        unreadCount: totalChatUnread(social, user)
+      },
       guide: {
         version: GUIDE_VERSION,
         seenVersion: seenGuideVersion,
@@ -1001,8 +1084,14 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/people' && req.method === 'GET') {
     const q = slugTag(url.searchParams.get('q') || '');
-    if (q.length < 1) return json(res, 200, { people: [] });
-    const tags = (await allKnownTags()).filter(t => t !== user && t.includes(q)).slice(0, 12);
+    let tags = (await allKnownTags()).filter(t => t !== user);
+    if (q) tags = tags.filter(t => t.includes(q) || String(publicProfileFor(social, t).displayName || '').toLowerCase().includes(q));
+    tags.sort((a,b) => {
+      const ar = Number(isFollowing(social,user,a) || isFollowing(social,a,user) || isActivePartner(social,user,a));
+      const br = Number(isFollowing(social,user,b) || isFollowing(social,b,user) || isActivePartner(social,user,b));
+      return br - ar || String(publicProfileFor(social,a).displayName || a).localeCompare(String(publicProfileFor(social,b).displayName || b));
+    });
+    tags = tags.slice(0, 12);
     return json(res, 200, {
       people: tags.map(t => ({
         ...publicProfileFor(social, t),
@@ -1109,6 +1198,14 @@ async function handleApi(req, res, url) {
       createdAt: new Date().toISOString()
     };
     social.scrapbooks.push(book);
+    if (type === 'group') {
+      social.chats.push({
+        id:crypto.randomUUID(),
+        type:'group',
+        scrapbookId:book.id,
+        createdAt:new Date().toISOString()
+      });
+    }
     await writeSocial(social);
     return json(res, 201, { scrapbook: decorateBook(social, book, user) });
   }
@@ -1245,6 +1342,112 @@ async function handleApi(req, res, url) {
     }
     await writeSocial(social);
     return json(res, 200, { unbound: everyoneApproved, scrapbook: decorateBook(social, book, user) });
+  }
+
+  if (pathname === '/api/chats' && req.method === 'GET') {
+    const chats = social.chats
+      .filter(chat => canAccessChat(social, chat, user))
+      .map(chat => decorateChat(social, chat, user))
+      .sort((a,b) => String(b.lastMessage?.createdAt || '').localeCompare(String(a.lastMessage?.createdAt || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+    return json(res, 200, { chats, unreadCount:totalChatUnread(social, user) });
+  }
+
+  if (pathname === '/api/chats/private' && req.method === 'POST') {
+    const body = await readBody(req, 64 * 1024);
+    const target = slugTag(body.tag);
+    if (!target || target === user) return json(res, 400, { error:'Choose another person to message.' });
+    if (!(await accountExists(target))) return json(res, 404, { error:`We could not find ${displayTag(target)}.` });
+    let chat = social.chats.find(item =>
+      item.type === 'private' &&
+      Array.isArray(item.members) &&
+      item.members.length === 2 &&
+      item.members.includes(user) &&
+      item.members.includes(target)
+    );
+    if (!chat) {
+      chat = {
+        id:crypto.randomUUID(),
+        type:'private',
+        members:[user,target].sort(),
+        createdAt:new Date().toISOString()
+      };
+      social.chats.push(chat);
+      await writeSocial(social);
+      emitLiveEvent(target, 'chat', { type:'chat_created', chatId:chat.id, from:user });
+    }
+    return json(res, 200, { chat:decorateChat(social, chat, user) });
+  }
+
+  const chatMessagesMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/messages$/i);
+  if (chatMessagesMatch && req.method === 'GET') {
+    const chat = social.chats.find(item => item.id === chatMessagesMatch[1]);
+    if (!chat || !canAccessChat(social, chat, user)) return forbidden(res, 'You do not have access to this chat.');
+    const messages = social.chatMessages
+      .filter(message => message.chatId === chat.id)
+      .slice(-500)
+      .map(message => ({
+        id:message.id,
+        author:message.author,
+        profile:publicProfileFor(social, message.author),
+        text:message.text || '',
+        image:message.image || '',
+        createdAt:message.createdAt
+      }));
+    social.chatRead[user] ||= {};
+    social.chatRead[user][chat.id] = new Date().toISOString();
+    await writeSocial(social);
+    return json(res, 200, { chat:decorateChat(social, chat, user), messages, unreadCount:totalChatUnread(social, user) });
+  }
+
+  if (chatMessagesMatch && req.method === 'POST') {
+    const chat = social.chats.find(item => item.id === chatMessagesMatch[1]);
+    if (!chat || !canAccessChat(social, chat, user)) return forbidden(res, 'You do not have access to this chat.');
+    const body = await readBody(req, 128 * 1024);
+    const text = String(body.text || '').trim().slice(0, 2000);
+    const image = String(body.image || '');
+    if (!text && !image) return json(res, 400, { error:'Write a message or attach a photo.' });
+    if (image) {
+      if (!image.startsWith('/uploads/')) return json(res, 400, { error:'Chat attachments must be uploaded images.' });
+      if (social.uploadOwners?.[image] !== user) return forbidden(res, 'You can only send photos you uploaded.');
+    }
+    const message = {
+      id:crypto.randomUUID(),
+      chatId:chat.id,
+      author:user,
+      text,
+      image,
+      createdAt:new Date().toISOString()
+    };
+    social.chatMessages.push(message);
+    social.chatRead[user] ||= {};
+    social.chatRead[user][chat.id] = message.createdAt;
+    const recipients = chatMembers(social, chat).filter(tag => tag !== user);
+    const actor = publicProfileFor(social, user);
+    for (const target of recipients) {
+      await sendUserPush(social, {
+        to:target,
+        title:chat.type === 'group'
+          ? `${actor.displayName || displayTag(user)} · ${decorateChat(social,chat,target).name}`
+          : `${actor.displayName || displayTag(user)} sent you a message`,
+        body:text || 'Sent a photo',
+        tag:`chat-${chat.id}`,
+        url:`/?messages=${encodeURIComponent(chat.id)}`
+      });
+      emitLiveEvent(target, 'chat', { type:'message', chatId:chat.id, from:user, messageId:message.id });
+    }
+    emitLiveEvent(user, 'chat', { type:'message_sent', chatId:chat.id, from:user, messageId:message.id });
+    await writeSocial(social);
+    return json(res, 201, {
+      message:{
+        id:message.id,
+        author:message.author,
+        profile:publicProfileFor(social,user),
+        text:message.text,
+        image:message.image,
+        createdAt:message.createdAt
+      },
+      unreadCount:totalChatUnread(social,user)
+    });
   }
 
   if (pathname === '/api/entries' && req.method === 'GET') {
@@ -1476,9 +1679,15 @@ const server = http.createServer(async (req, res) => {
         const book = social.scrapbooks.find(b => b.id === entry.scrapbookId);
         if (!book || !canViewBook(social, book, viewer)) return forbidden(res, 'You do not have access to this scrapbook photo.');
       } else {
-        const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
-        const isOwnedPendingUpload = social.uploadOwners?.[assetPath] === viewer;
-        if (!isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
+        const chatMessage = social.chatMessages?.find(message => message?.image === assetPath);
+        if (chatMessage) {
+          const chat = social.chats?.find(item => item.id === chatMessage.chatId);
+          if (!chat || !canAccessChat(social, chat, viewer)) return forbidden(res, 'You do not have access to this chat photo.');
+        } else {
+          const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
+          const isOwnedPendingUpload = social.uploadOwners?.[assetPath] === viewer;
+          if (!isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
+        }
       }
       return serveFile(res, path.join(UPLOADS, path.basename(pathname)));
     }

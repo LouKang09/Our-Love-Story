@@ -6,6 +6,7 @@ const bookView = $('#bookView');
 const streamView = $('#streamView');
 const homeView = $('#homeView');
 const connectionsView = $('#connectionsView');
+const messagesView = $('#messagesView');
 const personProfileView = $('#personProfileView');
 const emptyState = $('#emptyState');
 const leftPage = $('#leftPage');
@@ -29,10 +30,16 @@ let followers = [];
 let homeData = { followingShelf: [], friendSuggestions: [] };
 let notificationSummary = { count: 0, pendingInvites: 0 };
 let notificationItems = [];
+let chats = [];
+let activeChatId = null;
+let activeChatMessages = [];
+let chatUnreadCount = 0;
+let pendingChatFile = null;
+let pendingChatPreviewUrl = '';
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
-let guideState = { version: 5, seenVersion: 4, required: false };
+let guideState = { version: 6, seenVersion: 5, required: false };
 let activeGuideSteps = [];
 let guideIndex = 0;
 let guideMandatory = false;
@@ -65,6 +72,7 @@ let toastTimer;
 let liveEventSource = null;
 let realtimeEntryTimer = null;
 let realtimeSocialTimer = null;
+let realtimeChatTimer = null;
 
 const api = async (url, options = {}) => {
   const res = await fetch(url, {
@@ -165,7 +173,8 @@ function renderMentionSuggestions(input, people, context) {
     ${avatarHtml(person,'mention-suggestion-avatar')}
     <span><strong>${escapeHtml(person.displayName || person.tag)}</strong><small>@${escapeHtml(person.tag || '')}</small></span>
   </button>`).join('');
-  document.body.appendChild(popup);
+  const popupHost = input.closest('dialog[open]') || document.body;
+  popupHost.appendChild(popup);
   input._mentionPopup = popup;
   positionMentionSuggestions(input, popup);
   popup.querySelectorAll('.mention-suggestion').forEach(btn => {
@@ -183,17 +192,15 @@ async function updateMentionSuggestions(input) {
   if (!context) { closeMentionSuggestions(input); return; }
   const seq = ++mentionSuggestSeq;
   let people = connectedMentionPeople(context.query);
-  if (context.query.length >= 1) {
-    try {
-      const data = await api(`/api/people?q=${encodeURIComponent(context.query)}`);
-      if (seq !== mentionSuggestSeq || document.activeElement !== input) return;
-      const merged = new Map();
-      [...people, ...(data.people || [])].forEach(person => {
-        if (person?.tag && person.tag !== me?.tag) merged.set(person.tag, person);
-      });
-      people = [...merged.values()].slice(0,8);
-    } catch {}
-  }
+  try {
+    const data = await api(`/api/people?q=${encodeURIComponent(context.query)}`);
+    if (seq !== mentionSuggestSeq || document.activeElement !== input) return;
+    const merged = new Map();
+    [...people, ...(data.people || [])].forEach(person => {
+      if (person?.tag && person.tag !== me?.tag) merged.set(person.tag, person);
+    });
+    people = [...merged.values()].slice(0,8);
+  } catch {}
   if (seq !== mentionSuggestSeq) return;
   renderMentionSuggestions(input, people, mentionContext(input));
 }
@@ -928,6 +935,10 @@ function connectLiveEvents() {
     refreshNotificationCount();
     scheduleRealtimeSocialRefresh();
   });
+  source.addEventListener('chat', e => {
+    try { refreshChatRealtime(JSON.parse(e.data || '{}')); }
+    catch { refreshChatRealtime({}); }
+  });
   source.onerror = () => {
     // EventSource reconnects automatically. The 60-second polling remains as fallback.
   };
@@ -1130,6 +1141,14 @@ const GUIDE_STEPS = [
     title:'People connects your scrapbook circle.',
     text:'Search @tags, follow people, invite members to Group or Lovers scrapbooks, manage your Personal scrapbook privacy, and see your relationship connections.',
     prepare:() => showView('connections')
+  },
+  {
+    introducedIn:6,
+    selector:'#messagesModeBtn',
+    eyebrow:'NEW · PRIVATE & GROUP CHAT',
+    title:'Messages now live beside your scrapbooks.',
+    text:'Start a private conversation from any profile or by @tag. Every Group scrapbook has an automatic shared chat, and chats can include image attachments.',
+    prepare:() => showView('home')
   },
   {
     introducedIn:5,
@@ -1415,7 +1434,7 @@ function renderPersonProfile() {
 
   $('#personProfileActions').innerHTML = data.isSelf
     ? '<button id="personEditOwnProfile" class="ghost" type="button">Edit my profile</button>'
-    : `<button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>`;
+    : `<button class="primary person-message-btn" type="button">Message</button><button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>`;
 
   const book = data.personalScrapbook;
   if (!book) {
@@ -1435,6 +1454,7 @@ function renderPersonProfile() {
   wireProfileLinks($('#personProfileIdentity'));
   $('#personAvatarZoomBtn')?.addEventListener('click', () => openProfileImageViewer(p));
   $('#personEditOwnProfile')?.addEventListener('click', () => $('#profileBtn').click());
+  $('#personProfileActions .person-message-btn')?.addEventListener('click', () => startPrivateChat(p.tag));
   $('#personProfileActions .person-follow-toggle')?.addEventListener('click', async e => {
     const wasFollowing = data.isFollowing === true;
     e.currentTarget.disabled = true;
@@ -1473,7 +1493,7 @@ $('#personFollowingBtn').addEventListener('click', () => { personListMode='follo
 $('#personFollowersTab').addEventListener('click', () => { personListMode='followers'; renderPersonConnections(); });
 $('#personFollowingTab').addEventListener('click', () => { personListMode='following'; renderPersonConnections(); });
 $('#personProfileBackBtn').addEventListener('click', async () => {
-  const mode = ['home','cover','book','stream','connections'].includes(personProfileReturnMode) ? personProfileReturnMode : 'connections';
+  const mode = ['home','cover','book','stream','connections','messages'].includes(personProfileReturnMode) ? personProfileReturnMode : 'connections';
   if (mode === 'home' || mode === 'connections') await refreshAndShow(mode);
   else showView(mode);
 });
@@ -1621,6 +1641,156 @@ async function openHomeScrapbook(id, mode = 'book') {
   }
 }
 
+function renderMessagesBadge() {
+  const badge = $('#messagesBadge');
+  if (!badge) return;
+  const count = Math.max(0, Number(chatUnreadCount) || 0);
+  badge.textContent = count > 99 ? '99+' : String(count);
+  badge.classList.toggle('hidden', count < 1);
+  $('#messagesModeBtn')?.classList.toggle('has-unread', count > 0);
+}
+function chatWhen(value) {
+  const d = new Date(value || '');
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat(undefined, sameDay
+    ? { hour:'numeric', minute:'2-digit' }
+    : { month:'short', day:'numeric' }).format(d);
+}
+function activeChat() {
+  return chats.find(chat => chat.id === activeChatId) || null;
+}
+function chatAvatarHtml(chat) {
+  if (chat.type === 'private') return avatarHtml(chat.otherProfile || {}, 'chat-list-avatar');
+  const members = Array.isArray(chat.members) ? chat.members.slice(0,3) : [];
+  return `<span class="chat-group-avatar">${members.map((member,i)=>avatarHtml(member,`chat-stack-avatar chat-stack-${i}`)).join('')}<b>👥</b></span>`;
+}
+function renderChatList() {
+  const host = $('#chatList');
+  if (!host) return;
+  if (!chats.length) {
+    host.innerHTML = '<div class="chat-list-empty"><span>💬</span><strong>No conversations yet</strong><p>Start a private message by @tag. Group scrapbook chats will appear here automatically.</p></div>';
+    return;
+  }
+  host.innerHTML = chats.map(chat => {
+    const last = chat.lastMessage;
+    const preview = last ? (last.text || (last.image ? '📷 Photo' : 'New message')) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
+    return `<button class="chat-list-item ${chat.id === activeChatId ? 'active' : ''}" type="button" data-chat-id="${escapeHtml(chat.id)}">
+      ${chatAvatarHtml(chat)}
+      <span class="chat-list-copy"><strong>${escapeHtml(chat.name || 'Conversation')}</strong><small>${escapeHtml(preview)}</small></span>
+      <span class="chat-list-meta">${last ? `<time>${escapeHtml(chatWhen(last.createdAt))}</time>` : ''}${chat.unreadCount ? `<b>${chat.unreadCount > 99 ? '99+' : chat.unreadCount}</b>` : ''}</span>
+    </button>`;
+  }).join('');
+  host.querySelectorAll('.chat-list-item').forEach(btn => btn.addEventListener('click', () => openChat(btn.dataset.chatId)));
+}
+function renderChatHeader(chat) {
+  const host = $('#chatHeader');
+  if (!host || !chat) return;
+  host.innerHTML = `<div class="chat-header-identity">${chatAvatarHtml(chat)}<div><p class="eyebrow">${chat.type === 'group' ? 'GROUP SCRAPBOOK CHAT' : 'PRIVATE MESSAGE'}</p><h3>${escapeHtml(chat.name || 'Conversation')}</h3>${chat.type === 'group' ? `<small>${Array.isArray(chat.members) ? chat.members.length : 0} members</small>` : `<button class="chat-profile-link" type="button" data-profile-tag="${escapeHtml(chat.otherProfile?.tag || '')}">@${escapeHtml(chat.otherProfile?.tag || '')}</button>`}</div></div>`;
+  wireProfileLinks(host);
+}
+function renderChatMessages() {
+  const host = $('#chatMessages');
+  if (!host) return;
+  if (!activeChatMessages.length) {
+    host.innerHTML = '<div class="chat-messages-empty"><span>♡</span><p>This conversation is just getting started.</p></div>';
+    return;
+  }
+  host.innerHTML = activeChatMessages.map(message => {
+    const mine = message.author === me?.tag;
+    const profile = message.profile || {};
+    return `<article class="chat-message ${mine ? 'mine' : 'theirs'}">
+      ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}">${avatarHtml(profile,'chat-message-avatar')}</button>`}
+      <div class="chat-bubble">
+        ${!mine ? `<strong>${escapeHtml(profile.displayName || message.author || '')}</strong>` : ''}
+        ${message.image ? `<img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" />` : ''}
+        ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
+        <time>${escapeHtml(chatWhen(message.createdAt))}</time>
+      </div>
+    </article>`;
+  }).join('');
+  wireProfileLinks(host);
+  requestAnimationFrame(() => { host.scrollTop = host.scrollHeight; });
+}
+function renderPendingChatImage() {
+  const host = $('#chatImagePreview');
+  if (!host) return;
+  if (!pendingChatFile || !pendingChatPreviewUrl) {
+    host.classList.add('hidden');
+    host.innerHTML = '';
+    return;
+  }
+  host.classList.remove('hidden');
+  host.innerHTML = `<div><img src="${pendingChatPreviewUrl}" alt="Photo to send" /><button id="removeChatImageBtn" type="button" aria-label="Remove attached photo">×</button><span>${escapeHtml(pendingChatFile.name || 'Photo')}</span></div>`;
+  $('#removeChatImageBtn')?.addEventListener('click', () => clearPendingChatImage());
+}
+function clearPendingChatImage() {
+  if (pendingChatPreviewUrl) URL.revokeObjectURL(pendingChatPreviewUrl);
+  pendingChatPreviewUrl = '';
+  pendingChatFile = null;
+  if ($('#chatPhotoInput')) $('#chatPhotoInput').value = '';
+  renderPendingChatImage();
+}
+async function loadChats({ preserveActive = true } = {}) {
+  const data = await api('/api/chats');
+  chats = data.chats || [];
+  chatUnreadCount = Number(data.unreadCount) || 0;
+  if (!preserveActive || !chats.some(chat => chat.id === activeChatId)) activeChatId = null;
+  renderMessagesBadge();
+  renderChatList();
+  return chats;
+}
+async function loadChatMessages(chatId = activeChatId) {
+  if (!chatId) return;
+  const data = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`);
+  activeChatId = chatId;
+  activeChatMessages = data.messages || [];
+  chatUnreadCount = Number(data.unreadCount) || 0;
+  const latest = data.chat;
+  const idx = chats.findIndex(chat => chat.id === chatId);
+  if (latest) {
+    if (idx >= 0) chats[idx] = latest;
+    else chats.unshift(latest);
+  }
+  renderMessagesBadge();
+  renderChatList();
+  renderChatHeader(latest || activeChat());
+  renderChatMessages();
+  $('#chatEmptyState')?.classList.add('hidden');
+  $('#activeChat')?.classList.remove('hidden');
+}
+async function openChat(chatId) {
+  if (!chatId) return;
+  activeChatId = chatId;
+  if (currentMode !== 'messages') showView('messages');
+  try { await loadChatMessages(chatId); }
+  catch (err) { showToast(err.message || 'Could not open that conversation.'); }
+}
+async function startPrivateChat(tag) {
+  const clean = String(tag || '').trim().replace(/^@/,'').toLowerCase();
+  if (!clean) return;
+  try {
+    const data = await api('/api/chats/private', { method:'POST', body:JSON.stringify({ tag:clean }) });
+    await loadChats();
+    await openChat(data.chat.id);
+    $('#privateChatTag').value = '';
+  } catch (err) {
+    showToast(err.message || 'Could not start that conversation.');
+  }
+}
+async function refreshChatRealtime(payload = {}) {
+  clearTimeout(realtimeChatTimer);
+  realtimeChatTimer = setTimeout(async () => {
+    try {
+      await loadChats();
+      if (currentMode === 'messages' && activeChatId && payload.chatId === activeChatId && payload.from !== me?.tag) {
+        await loadChatMessages(activeChatId);
+      }
+    } catch {}
+  }, 120);
+}
+
 function showView(mode) {
   currentMode = mode;
   if (mode === 'book') setBookCoverOpen(true);
@@ -1629,17 +1799,19 @@ function showView(mode) {
   bookView.classList.toggle('hidden', mode !== 'book');
   streamView.classList.toggle('hidden', mode !== 'stream');
   connectionsView.classList.toggle('hidden', mode !== 'connections');
+  messagesView.classList.toggle('hidden', mode !== 'messages');
   personProfileView.classList.toggle('hidden', mode !== 'person');
   $('#homeModeBtn').classList.toggle('active', mode === 'home');
   $('#bookModeBtn').classList.toggle('active', mode === 'book');
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
   $('#connectionsModeBtn').classList.toggle('active', mode === 'connections' || mode === 'person');
+  $('#messagesModeBtn').classList.toggle('active', mode === 'messages');
 
   const noBook = !activeScrapbook;
   const noEntries = activeScrapbook && !entries.length;
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
-  $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || (Boolean(activeScrapbook) && !canWrite));
-  emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || (!noBook && !noEntries));
+  $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || mode === 'messages' || (Boolean(activeScrapbook) && !canWrite));
+  emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || mode === 'messages' || (!noBook && !noEntries));
 
   if (mode === 'home') {
     renderHome();
@@ -1649,12 +1821,21 @@ function showView(mode) {
     renderPersonProfile();
     return;
   }
-  if (noBook && mode !== 'cover' && mode !== 'connections') {
+  if (mode === 'messages') {
+    loadChats().then(() => {
+      if (!activeChatId) {
+        $('#chatEmptyState')?.classList.remove('hidden');
+        $('#activeChat')?.classList.add('hidden');
+      }
+    }).catch(() => {});
+    return;
+  }
+  if (noBook && mode !== 'cover' && mode !== 'connections' && mode !== 'messages') {
     bookView.classList.add('hidden'); streamView.classList.add('hidden');
     $('#emptyTitle').textContent = 'Your first scrapbook starts here.';
     $('#emptyText').textContent = 'Create a lovers scrapbook, a group scrapbook, or your own Personal scrapbook.';
     $('#emptyAddBtn').textContent = 'Create scrapbook';
-  } else if (noEntries && mode !== 'cover' && mode !== 'connections') {
+  } else if (noEntries && mode !== 'cover' && mode !== 'connections' && mode !== 'messages') {
     bookView.classList.add('hidden'); streamView.classList.add('hidden');
     $('#emptyTitle').textContent = canWrite ? 'The first page is waiting.' : 'No memories here yet.';
     $('#emptyText').textContent = canWrite ? 'Write a little piece of today and this scrapbook begins.' : 'This personal scrapbook is read-only for you.';
@@ -1687,12 +1868,13 @@ async function loadSession(preferredBookId = null) {
   followers = data.followers || [];
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
   notificationSummary = data.notifications || { count:0, pendingInvites:0 };
-  guideState = data.guide || { version:5, seenVersion:4, required:false };
+  chatUnreadCount = Number(data.messages?.unreadCount) || 0;
+  guideState = data.guide || { version:6, seenVersion:5, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
   if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
-  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderNotificationBadge(); renderFollowStats(); renderHome(); updateCover();
+  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderNotificationBadge(); renderMessagesBadge(); renderFollowStats(); renderHome(); updateCover();
   await refreshEntries();
 }
 let liveRefreshSeq = 0;
@@ -2185,6 +2367,16 @@ function updateNotificationStatus() {
 }
 function maybeOpenReminderComposer() {
   const params = new URLSearchParams(location.search);
+  const messageChatId = params.get('messages');
+  if (messageChatId) {
+    history.replaceState({}, '', location.pathname);
+    setTimeout(async () => {
+      showView('messages');
+      await loadChats();
+      if (chats.some(chat => chat.id === messageChatId)) await openChat(messageChatId);
+    }, 180);
+    return;
+  }
   if (params.get('notifications') === '1') {
     history.replaceState({}, '', location.pathname);
     setTimeout(() => loadNotificationHub({ markRead:true }), 250);
@@ -2285,6 +2477,7 @@ $('#closeBookViewBtn').addEventListener('click', async () => {
 });
 $('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
 $('#connectionsModeBtn').addEventListener('click', () => refreshAndShow('connections'));
+$('#messagesModeBtn').addEventListener('click', () => showView('messages'));
 $('#newEntryBtn').addEventListener('click', () => openEditor());
 $('#emptyAddBtn').addEventListener('click', () => activeScrapbook ? openEditor() : scrapbookDialog.showModal());
 $('#closeEditorBtn').addEventListener('click', closeEditor);
@@ -2373,6 +2566,60 @@ $('#discoverForm').addEventListener('submit', async e => {
     const data = await api(`/api/people?q=${encodeURIComponent(q)}`);
     renderDiscoverResults(data.people || []);
   } catch (err) { showToast(err.message); }
+});
+
+$('#privateChatForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  await startPrivateChat($('#privateChatTag').value);
+});
+$('#chatPhotoInput').addEventListener('change', () => {
+  const file = $('#chatPhotoInput').files?.[0] || null;
+  if (!file) { clearPendingChatImage(); return; }
+  if (!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type)) {
+    showToast('Chat attachments can only be image files.');
+    $('#chatPhotoInput').value = '';
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    showToast('Chat photos must be 8 MB or smaller.');
+    $('#chatPhotoInput').value = '';
+    return;
+  }
+  clearPendingChatImage();
+  pendingChatFile = file;
+  pendingChatPreviewUrl = URL.createObjectURL(file);
+  renderPendingChatImage();
+});
+$('#chatComposer').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!activeChatId) return;
+  const text = $('#chatText').value.trim();
+  if (!text && !pendingChatFile) {
+    showToast('Write a message or attach a photo.');
+    return;
+  }
+  const sendBtn = $('#chatSendBtn');
+  sendBtn.disabled = true;
+  try {
+    let image = '';
+    if (pendingChatFile) {
+      const uploaded = await uploadImage(pendingChatFile);
+      image = uploaded.src || '';
+    }
+    await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, {
+      method:'POST',
+      body:JSON.stringify({ text, image })
+    });
+    $('#chatText').value = '';
+    clearPendingChatImage();
+    await loadChatMessages(activeChatId);
+    await loadChats();
+  } catch (err) {
+    showToast(err.message || 'Could not send that message.');
+  } finally {
+    sendBtn.disabled = false;
+    $('#chatText').focus({ preventScroll:true });
+  }
 });
 
 $('#notificationBtn').addEventListener('click', async () => {

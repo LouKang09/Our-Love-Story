@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-realtime5" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-chat6" />
 </head>
 <body>
   <div id="app">
@@ -52,6 +52,7 @@
             <button id="bookModeBtn">Book</button>
             <button id="streamModeBtn">Memory Stream</button>
             <button id="connectionsModeBtn">People</button>
+            <button id="messagesModeBtn" class="messages-mode-btn">Messages <span id="messagesBadge" class="messages-badge hidden">0</span></button>
           </div>
           <button id="newEntryBtn" class="primary">＋ New memory</button>
           <div id="notificationWrap" class="notification-wrap">
@@ -168,6 +169,43 @@
           <form id="discoverForm" class="discover-form"><input id="discoverTag" placeholder="Search @tag" autocomplete="off" required /><button class="primary" type="submit">Search</button></form>
           <div id="discoverResults" class="discover-results"></div>
         </section>
+      </section>
+
+      <section id="messagesView" class="messages-view hidden">
+        <div class="messages-shell">
+          <aside class="chat-sidebar">
+            <div class="chat-sidebar-head">
+              <div><p class="eyebrow">MESSAGES</p><h2>Conversations</h2></div>
+            </div>
+            <form id="privateChatForm" class="private-chat-form">
+              <input id="privateChatTag" placeholder="Message @tag" autocomplete="off" required />
+              <button class="primary" type="submit">Start</button>
+            </form>
+            <p class="helper chat-helper">Private chats are one-to-one. Every Group scrapbook automatically gets its own shared chat.</p>
+            <div id="chatList" class="chat-list"></div>
+          </aside>
+
+          <section class="chat-panel">
+            <div id="chatEmptyState" class="chat-empty-state">
+              <span>💌</span>
+              <h3>Choose a conversation</h3>
+              <p>Open a private conversation or a Group scrapbook chat.</p>
+            </div>
+            <div id="activeChat" class="active-chat hidden">
+              <header id="chatHeader" class="chat-header"></header>
+              <div id="chatMessages" class="chat-messages"></div>
+              <form id="chatComposer" class="chat-composer">
+                <div id="chatImagePreview" class="chat-image-preview hidden"></div>
+                <textarea id="chatText" rows="2" maxlength="2000" placeholder="Write a message..."></textarea>
+                <div class="chat-compose-actions">
+                  <label class="ghost chat-photo-button">📷 Photo<input id="chatPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
+                  <button id="chatSendBtn" class="primary" type="submit">Send</button>
+                </div>
+                <p class="helper">Chat attachments accept images only.</p>
+              </form>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section id="personProfileView" class="person-profile-view hidden">
@@ -435,6 +473,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-realtime5" defer></script>
+  <script src="/app.js?v=20260920-chat6" defer></script>
 </body>
 </html>
