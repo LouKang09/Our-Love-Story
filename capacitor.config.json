@@ -1,0 +1,14 @@
+{
+  "appId": "com.loukang.ourlovestory",
+  "appName": "Our Love Story",
+  "webDir": "client",
+  "server": {
+    "url": "https://our-love-story-production-47c9.up.railway.app",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#21191b",
+    "zoomEnabled": false
+  }
+}

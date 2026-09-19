@@ -1,16 +1,24 @@
 {
   "name": "our-love-story",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "A private social scrapbook for lovers, friends and groups with journal pages, profiles and shared memories.",
   "scripts": {
     "start": "node server/server.js",
-    "dev": "node --watch server/server.js"
+    "dev": "node --watch server/server.js",
+    "android:add": "npx cap add android",
+    "android:sync": "npx cap sync android",
+    "android:open": "npx cap open android"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/cli": "8.5.2",
+    "@capacitor/core": "8.5.2"
   }
 }

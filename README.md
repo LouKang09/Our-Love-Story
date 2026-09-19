@@ -82,3 +82,26 @@ A Lovers scrapbook is capped at two people. Group scrapbooks can contain multipl
 ## Repository security
 
 The hardened `.gitignore` excludes real environment files, secrets, credentials, private keys, cloud credentials, journal/social/account data, uploaded photos, databases, logs, caches, backups, archives, and IDE/OS metadata.
+
+
+## Android internal test
+
+The repository includes a Capacitor 8 Android trial wrapper for **Our Love Story**.
+
+For this first internal build, the native shell loads the existing production app at:
+
+`https://our-love-story-production-47c9.up.railway.app`
+
+This keeps the current login cookies, Railway backend, uploads, chats, scrapbook data, and live updates working exactly like the web version while the Android shell is evaluated.
+
+### Automated APK
+
+GitHub Actions workflow:
+
+`.github/workflows/android-debug.yml`
+
+Every relevant Android/client configuration change on `main` builds a debug APK and stores it as the workflow artifact:
+
+`our-love-story-android-debug`
+
+This remote-URL wrapper is intentionally an **internal testing configuration**. Before publishing to Google Play, migrate the Android/iOS apps to bundled local web assets with mobile-safe authentication/API handling and native push configuration.
