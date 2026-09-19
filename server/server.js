@@ -22,7 +22,7 @@ const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-production-47c9.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-const GUIDE_VERSION = 1;
+const GUIDE_VERSION = 2;
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -107,6 +107,7 @@ async function readSocial() {
   data.uploadOwners = data.uploadOwners && typeof data.uploadOwners === 'object' ? data.uploadOwners : {};
   data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
+  data.notificationHub = data.notificationHub && typeof data.notificationHub === 'object' ? data.notificationHub : {};
   return data;
 }
 async function writeSocial(social) { await writeJson(SOCIAL_FILE, social); }
@@ -115,7 +116,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {} });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {} });
 
   const social = await readSocial();
   const bootstrapTags = [...BOOTSTRAP_USERS.keys()];
@@ -177,6 +178,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-guided-onboarding-20260919');
   await backupNamedJsonDataOnce('pre-session-live-refresh-caption-20260919');
   await backupNamedJsonDataOnce('pre-social-profile-browser-20260919');
+  await backupNamedJsonDataOnce('pre-notification-hub-profile-zoom-20260919');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -460,6 +462,54 @@ function canViewBook(social, book, viewer) {
   if (privacy === 'partner') return isActivePartner(social, viewer, book.owner);
   return false;
 }
+function notificationSnapshot(social, user) {
+  social.notificationHub ||= {};
+  const hub = social.notificationHub[user] || {};
+  const seenMs = Date.parse(hub.lastSeenAt || '') || 0;
+
+  const inviteItems = social.invites
+    .filter(invite => invite.to === user && invite.status === 'pending')
+    .map(invite => {
+      const book = social.scrapbooks.find(b => b.id === invite.scrapbookId);
+      return {
+        id: `invite:${invite.id}`,
+        inviteId: invite.id,
+        type: invite.type === 'couple' ? 'couple_invite' : 'group_invite',
+        createdAt: invite.createdAt || '',
+        unread: true,
+        actor: publicProfileFor(social, invite.from),
+        scrapbook: book ? {
+          id: book.id,
+          name: book.name,
+          type: book.type
+        } : {
+          id: invite.scrapbookId,
+          name: invite.type === 'couple' ? 'Lovers scrapbook' : 'Group scrapbook',
+          type: invite.type
+        }
+      };
+    });
+
+  const followItems = social.follows
+    .filter(follow => follow.following === user)
+    .map(follow => ({
+      id: `follow:${follow.follower}:${follow.createdAt || ''}`,
+      type: 'follow',
+      createdAt: follow.createdAt || '',
+      unread: (Date.parse(follow.createdAt || '') || 0) > seenMs,
+      actor: publicProfileFor(social, follow.follower)
+    }));
+
+  const items = [...inviteItems, ...followItems]
+    .sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, 60);
+  const unreadFollowers = followItems.filter(item => item.unread).length;
+  return {
+    items,
+    unreadCount: unreadFollowers + inviteItems.length,
+    pendingInviteCount: inviteItems.length
+  };
+}
 function bookForViewer(social, id, tag) {
   const book = social.scrapbooks.find(b => b.id === id);
   return canViewBook(social, book, tag) ? book : null;
@@ -497,8 +547,8 @@ function decorateBook(social, book, viewer) {
       createdAt: book.unbindRequest.createdAt
     } : null,
     profiles: book.type === 'personal'
-      ? [profileFor(social, book.owner)]
-      : book.members.map(tag => profileFor(social, tag))
+      ? [publicProfileFor(social, book.owner)]
+      : book.members.map(tag => publicProfileFor(social, tag))
   };
 }
 function userHasOtherCouple(social, tag, exceptId = null) {
@@ -558,7 +608,10 @@ async function handleApi(req, res, url) {
       accounts.push({ tag, passwordHash: await scryptHash(password), createdAt: new Date().toISOString() });
       await writeAccounts(accounts);
       const social = await readSocial();
-      social.profiles[tag] = { tag, displayName: displayName || tag, avatar: '', bio: '', guideVersion: 0, createdAt: new Date().toISOString() };
+      const createdAt = new Date().toISOString();
+      social.profiles[tag] = { tag, displayName: displayName || tag, avatar: '', bio: '', guideVersion: 0, createdAt };
+      social.notificationHub ||= {};
+      social.notificationHub[tag] = { lastSeenAt: createdAt };
       await writeSocial(social);
       return json(res, 201, { tag }, { 'Set-Cookie': sessionCookie(makeSession(tag)) });
     } finally {
@@ -573,12 +626,17 @@ async function handleApi(req, res, url) {
   const social = await readSocial();
 
   if (pathname === '/api/me' && req.method === 'GET') {
+    social.notificationHub ||= {};
+    if (!social.notificationHub[user]) {
+      social.notificationHub[user] = { lastSeenAt: new Date().toISOString() };
+      await writeSocial(social);
+    }
     const guideProfile = social.profiles[user] || { tag:user, displayName:user, avatar:'', bio:'', createdAt:new Date().toISOString() };
     let seenGuideVersion = Number(guideProfile.guideVersion);
     if (!Number.isFinite(seenGuideVersion) || seenGuideVersion < 0) {
       const existingEntries = await readEntries();
       const hasPostedMemory = existingEntries.some(entry => entry.author === user);
-      seenGuideVersion = hasPostedMemory ? GUIDE_VERSION : 0;
+      seenGuideVersion = hasPostedMemory ? Math.max(1, GUIDE_VERSION - 1) : 0;
       guideProfile.guideVersion = seenGuideVersion;
       if (hasPostedMemory) guideProfile.guideCompletedAt ||= new Date().toISOString();
       social.profiles[user] = guideProfile;
@@ -595,13 +653,13 @@ async function handleApi(req, res, url) {
       .map(b => decorateBook(social, b, user));
     const invites = social.invites.filter(i => i.to === user && i.status === 'pending').map(i => ({
       ...i,
-      fromProfile: profileFor(social, i.from),
+      fromProfile: publicProfileFor(social, i.from),
       scrapbook: social.scrapbooks.find(b => b.id === i.scrapbookId) ? decorateBook(social, social.scrapbooks.find(b => b.id === i.scrapbookId), user) : null
     }));
 
     const followingTags = [...new Set(social.follows.filter(f => f.follower === user).map(f => f.following))];
-    const following = followingTags.map(tag => profileFor(social, tag));
-    const followers = social.follows.filter(f => f.following === user).map(f => profileFor(social, f.follower));
+    const following = followingTags.map(tag => publicProfileFor(social, tag));
+    const followers = social.follows.filter(f => f.following === user).map(f => publicProfileFor(social, f.follower));
 
     const followingShelf = followingTags.map(tag => {
       const personal = social.scrapbooks.find(b => b.type === 'personal' && b.owner === tag);
@@ -641,6 +699,10 @@ async function handleApi(req, res, url) {
       following,
       followers,
       partnerTag: activePartnerTag(social, user),
+      notifications: {
+        count: notificationSnapshot(social, user).unreadCount,
+        pendingInvites: notificationSnapshot(social, user).pendingInviteCount
+      },
       guide: {
         version: GUIDE_VERSION,
         seenVersion: seenGuideVersion,
@@ -667,6 +729,24 @@ async function handleApi(req, res, url) {
         seenVersion: current.guideVersion,
         required: current.guideVersion < GUIDE_VERSION
       }
+    });
+  }
+
+  if (pathname === '/api/notifications' && req.method === 'GET') {
+    return json(res, 200, notificationSnapshot(social, user));
+  }
+
+  if (pathname === '/api/notifications/read' && req.method === 'POST') {
+    social.notificationHub ||= {};
+    social.notificationHub[user] = {
+      ...(social.notificationHub[user] || {}),
+      lastSeenAt: new Date().toISOString()
+    };
+    await writeSocial(social);
+    const snapshot = notificationSnapshot(social, user);
+    return json(res, 200, {
+      unreadCount: snapshot.unreadCount,
+      pendingInviteCount: snapshot.pendingInviteCount
     });
   }
 
@@ -952,7 +1032,7 @@ async function handleApi(req, res, url) {
     const entries = (await readEntries()).filter(e => e.scrapbookId === scrapbookId);
     entries.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
     const profileTags = book.type === 'personal' ? [book.owner] : book.members;
-    const profiles = Object.fromEntries(profileTags.map(tag => [tag, profileFor(social, tag)]));
+    const profiles = Object.fromEntries(profileTags.map(tag => [tag, publicProfileFor(social, tag)]));
     return json(res, 200, { entries, profiles, scrapbook: decorateBook(social, book, user) });
   }
 

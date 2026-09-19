@@ -27,10 +27,12 @@ let invites = [];
 let following = [];
 let followers = [];
 let homeData = { followingShelf: [], friendSuggestions: [] };
+let notificationSummary = { count: 0, pendingInvites: 0 };
+let notificationItems = [];
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
-let guideState = { version: 1, seenVersion: 1, required: false };
+let guideState = { version: 2, seenVersion: 1, required: false };
 let guideIndex = 0;
 let guideMandatory = false;
 let guideRunning = false;
@@ -52,6 +54,11 @@ let selectedCanvasItemId = null;
 let savedCanvasTextRange = null;
 let me = null;
 let pendingProfileAvatar = '';
+let profileViewerScale = 1;
+let profileViewerX = 0;
+let profileViewerY = 0;
+const profileViewerPointers = new Map();
+let profileViewerGesture = null;
 let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.' };
 let toastTimer;
 
@@ -510,17 +517,130 @@ function renderProfileChip() {
   $('#profileChipText').textContent = me.displayName || `@${me.tag}`;
   $('#profileAvatarMini').outerHTML = avatarHtml(me, 'mini-avatar') .replace('class="avatar mini-avatar"', 'id="profileAvatarMini" class="avatar mini-avatar"');
 }
+function renderNotificationBadge() {
+  const badge = $('#notificationBadge');
+  if (!badge) return;
+  const count = Math.max(0, Number(notificationSummary.count) || 0);
+  badge.textContent = count > 99 ? '99+' : String(count);
+  badge.classList.toggle('hidden', count === 0);
+  $('#notificationBtn')?.classList.toggle('has-notifications', count > 0);
+}
+function notificationWhen(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const delta = Math.max(0, Date.now() - date.getTime());
+  const minutes = Math.floor(delta / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+function closeNotificationHub() {
+  $('#notificationPanel')?.classList.add('hidden');
+  $('#notificationBtn')?.setAttribute('aria-expanded','false');
+}
+function renderNotificationHub() {
+  const host = $('#notificationList');
+  if (!host) return;
+  if (!notificationItems.length) {
+    host.innerHTML = '<div class="notification-empty"><span>♡</span><strong>All caught up.</strong><p>New followers and scrapbook invitations will appear here.</p></div>';
+    return;
+  }
+  host.innerHTML = notificationItems.map(item => {
+    const actor = item.actor || {};
+    if (item.type === 'follow') {
+      return `<article class="notification-item ${item.unread ? 'unread' : ''}">
+        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>@${escapeHtml(actor.tag || '')} followed you</small></span>
+        </button>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+      </article>`;
+    }
+    const isCouple = item.type === 'couple_invite';
+    return `<article class="notification-item invite-notification" data-invite-id="${escapeHtml(item.inviteId || '')}">
+      <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+        ${avatarHtml(actor,'notification-avatar')}
+        <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>${isCouple ? 'invited you to a Lovers binding' : 'invited you to a Group scrapbook'}</small></span>
+      </button>
+      <div class="notification-invite-copy"><b>${escapeHtml(item.scrapbook?.name || (isCouple ? 'Lovers scrapbook' : 'Group scrapbook'))}</b><time>${escapeHtml(notificationWhen(item.createdAt))}</time></div>
+      <div class="notification-invite-actions">
+        <button class="ghost notification-decline" type="button">Decline</button>
+        <button class="primary notification-accept" type="button">Accept</button>
+      </div>
+    </article>`;
+  }).join('');
+  host.querySelectorAll('.notification-profile-link').forEach(btn => btn.addEventListener('click', async () => {
+    const tag = btn.dataset.tag;
+    if (!tag) return;
+    closeNotificationHub();
+    await openPersonProfile(tag);
+  }));
+  host.querySelectorAll('.notification-accept').forEach(btn => btn.addEventListener('click', async () => {
+    await respondNotificationInvite(btn.closest('.invite-notification')?.dataset.inviteId, true);
+  }));
+  host.querySelectorAll('.notification-decline').forEach(btn => btn.addEventListener('click', async () => {
+    await respondNotificationInvite(btn.closest('.invite-notification')?.dataset.inviteId, false);
+  }));
+}
+async function loadNotificationHub({ markRead = true } = {}) {
+  try {
+    const data = await api('/api/notifications');
+    notificationItems = data.items || [];
+    notificationSummary = { count:data.unreadCount || 0, pendingInvites:data.pendingInviteCount || 0 };
+    renderNotificationHub();
+    renderNotificationBadge();
+    $('#notificationPanel').classList.remove('hidden');
+    $('#notificationBtn').setAttribute('aria-expanded','true');
+    if (markRead) {
+      const read = await api('/api/notifications/read', { method:'POST', body:'{}' });
+      notificationItems = notificationItems.map(item => item.type === 'follow' ? { ...item, unread:false } : item);
+      notificationSummary = { count:read.unreadCount || 0, pendingInvites:read.pendingInviteCount || 0 };
+      renderNotificationBadge();
+      renderNotificationHub();
+    }
+  } catch (err) {
+    if (err.status === 401) location.reload();
+    else showToast(err.message || 'Could not load notifications.');
+  }
+}
+async function respondNotificationInvite(inviteId, accept) {
+  if (!inviteId) return;
+  try {
+    const currentId = activeScrapbook?.id || null;
+    const data = await api(`/api/invites/${encodeURIComponent(inviteId)}/respond`, {
+      method:'POST',
+      body:JSON.stringify({ accept })
+    });
+    await loadSession(currentId || data.scrapbook?.id || null);
+    await loadNotificationHub({ markRead:false });
+    showToast(accept ? 'Invitation accepted.' : 'Invitation declined.');
+  } catch (err) {
+    showToast(err.message || 'Could not respond to that invitation.');
+    await loadNotificationHub({ markRead:false });
+  }
+}
+async function refreshNotificationCount() {
+  if (journalApp.classList.contains('hidden')) return;
+  try {
+    const data = await api('/api/notifications');
+    notificationSummary = { count:data.unreadCount || 0, pendingInvites:data.pendingInviteCount || 0 };
+    renderNotificationBadge();
+    if (!$('#notificationPanel').classList.contains('hidden')) {
+      notificationItems = data.items || [];
+      renderNotificationHub();
+    }
+  } catch {}
+}
+
 function renderInviteBanner() {
   const banner = $('#inviteBanner');
-  if (!invites.length) { banner.classList.add('hidden'); banner.innerHTML = ''; return; }
-  banner.classList.remove('hidden');
-  banner.innerHTML = invites.map(invite => `<div class="invite-card" data-invite="${invite.id}">
-    ${avatarHtml(invite.fromProfile, 'small-avatar')}
-    <div><strong>${escapeHtml(invite.fromProfile?.displayName || invite.from)}</strong> invited you to <b>${escapeHtml(invite.scrapbook?.name || 'a scrapbook')}</b><small>${invite.type === 'couple' ? 'Lovers binding' : 'Group scrapbook'}</small></div>
-    <button class="primary accept-invite" type="button">Accept</button><button class="ghost decline-invite" type="button">Decline</button>
-  </div>`).join('');
-  banner.querySelectorAll('.accept-invite').forEach(btn => btn.addEventListener('click', () => respondInvite(btn.closest('.invite-card').dataset.invite, true)));
-  banner.querySelectorAll('.decline-invite').forEach(btn => btn.addEventListener('click', () => respondInvite(btn.closest('.invite-card').dataset.invite, false)));
+  banner.classList.add('hidden');
+  banner.innerHTML = '';
 }
 
 function renderUnbindPanel() {
@@ -710,6 +830,13 @@ const GUIDE_STEPS = [
     prepare:() => showView('connections')
   },
   {
+    selector:'#notificationBtn',
+    eyebrow:'STAY IN THE LOOP',
+    title:'The bell keeps your scrapbook circle together.',
+    text:'New followers and Lovers or Group scrapbook invitations appear here. Invitations can be accepted or declined without leaving what you are doing.',
+    prepare:() => { closeNotificationHub(); showView('home'); }
+  },
+  {
     selector:'#profileBtn',
     eyebrow:'YOUR PROFILE',
     title:'Your identity travels with your memories.',
@@ -843,6 +970,48 @@ document.addEventListener('keydown', e => {
   if (!guideMandatory) finishGuide({ completed:false });
 });
 
+function applyProfileImageTransform() {
+  const img = $('#profileImageViewerImg');
+  if (!img) return;
+  img.style.transform = `translate3d(${profileViewerX}px,${profileViewerY}px,0) scale(${profileViewerScale})`;
+  $('#profileImageZoomValue').textContent = `${Math.round(profileViewerScale * 100)}%`;
+}
+function setProfileImageScale(value) {
+  profileViewerScale = Math.max(1, Math.min(5, Number(value) || 1));
+  if (profileViewerScale <= 1.001) {
+    profileViewerScale = 1;
+    profileViewerX = 0;
+    profileViewerY = 0;
+  }
+  applyProfileImageTransform();
+}
+function openProfileImageViewer(profile) {
+  if (!profile?.avatar) return;
+  $('#profileImageViewerImg').src = profile.avatar;
+  $('#profileImageViewerImg').alt = `${profile.displayName || profile.tag || 'Profile'} profile photo`;
+  $('#profileImageViewerTitle').textContent = `${profile.displayName || '@'+profile.tag} · profile photo`;
+  profileViewerScale = 1;
+  profileViewerX = 0;
+  profileViewerY = 0;
+  profileViewerPointers.clear();
+  profileViewerGesture = null;
+  applyProfileImageTransform();
+  $('#profileImageViewer').classList.remove('hidden');
+  document.body.classList.add('profile-image-viewing');
+}
+function closeProfileImageViewer() {
+  $('#profileImageViewer').classList.add('hidden');
+  document.body.classList.remove('profile-image-viewing');
+  profileViewerPointers.clear();
+  profileViewerGesture = null;
+}
+function profileViewerGeometry() {
+  const pts = [...profileViewerPointers.values()];
+  if (pts.length < 2) return null;
+  const a=pts[0], b=pts[1];
+  return { distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)), x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+}
+
 function publicPersonRow(person) {
   return `<button class="person-list-row" type="button" data-profile-tag="${escapeHtml(person.tag || '')}">
     ${avatarHtml(person,'person-list-avatar')}
@@ -880,8 +1049,11 @@ function renderPersonProfile() {
   if (!viewedPersonData) return;
   const data = viewedPersonData;
   const p = data.profile || {};
+  const personAvatarMarkup = !data.isSelf && p.avatar
+    ? `<button id="personAvatarZoomBtn" class="person-avatar-zoom" type="button" aria-label="Enlarge ${escapeHtml(p.displayName || p.tag)} profile photo">${avatarHtml(p,'person-profile-avatar')}<small>Tap to enlarge</small></button>`
+    : avatarHtml(p,'person-profile-avatar');
   $('#personProfileIdentity').innerHTML = `
-    ${avatarHtml(p,'person-profile-avatar')}
+    ${personAvatarMarkup}
     <div>
       <p class="eyebrow">${data.isSelf ? 'YOUR SOCIAL PROFILE' : 'SCRAPBOOK PROFILE'}</p>
       <h2>${escapeHtml(p.displayName || p.tag)}</h2>
@@ -911,6 +1083,7 @@ function renderPersonProfile() {
     </div>`;
   }
 
+  $('#personAvatarZoomBtn')?.addEventListener('click', () => openProfileImageViewer(p));
   $('#personEditOwnProfile')?.addEventListener('click', () => $('#profileBtn').click());
   $('#personProfileActions .person-follow-toggle')?.addEventListener('click', async e => {
     const wasFollowing = data.isFollowing === true;
@@ -1107,12 +1280,13 @@ async function loadSession(preferredBookId = null) {
   following = data.following || [];
   followers = data.followers || [];
   homeData = data.home || { followingShelf: [], friendSuggestions: [] };
-  guideState = data.guide || { version:1, seenVersion:1, required:false };
+  notificationSummary = data.notifications || { count:0, pendingInvites:0 };
+  guideState = data.guide || { version:2, seenVersion:1, required:false };
   partnerTag = data.partnerTag || null;
   const remembered = localStorage.getItem('activeScrapbookId');
   activeScrapbook = scrapbooks.find(b => b.id === preferredBookId) || scrapbooks.find(b => b.id === remembered) || scrapbooks[0] || null;
   if (activeScrapbook) localStorage.setItem('activeScrapbookId', activeScrapbook.id);
-  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderFollowStats(); renderHome(); updateCover();
+  renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderNotificationBadge(); renderFollowStats(); renderHome(); updateCover();
   await refreshEntries();
 }
 let liveRefreshSeq = 0;
@@ -1788,6 +1962,79 @@ $('#discoverForm').addEventListener('submit', async e => {
   } catch (err) { showToast(err.message); }
 });
 
+$('#notificationBtn').addEventListener('click', async () => {
+  if (!$('#notificationPanel').classList.contains('hidden')) { closeNotificationHub(); return; }
+  await loadNotificationHub({ markRead:true });
+});
+$('#notificationCloseBtn').addEventListener('click', closeNotificationHub);
+document.addEventListener('pointerdown', e => {
+  if (!$('#notificationPanel').classList.contains('hidden') && !e.target.closest('#notificationWrap')) closeNotificationHub();
+});
+
+$('#profileImageViewerClose').addEventListener('click', closeProfileImageViewer);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('#profileImageViewer').classList.contains('hidden')) {
+    e.preventDefault();
+    closeProfileImageViewer();
+  }
+});
+$('#profileImageZoomFit').addEventListener('click', () => setProfileImageScale(1));
+$('#profileImageZoomIn').addEventListener('click', () => setProfileImageScale(profileViewerScale * 1.25));
+$('#profileImageZoomOut').addEventListener('click', () => setProfileImageScale(profileViewerScale / 1.25));
+$('#profileImageViewer').addEventListener('pointerdown', e => {
+  if (e.target === $('#profileImageViewer')) closeProfileImageViewer();
+});
+const profileImageStage = $('#profileImageViewerStage');
+profileImageStage.addEventListener('pointerdown', e => {
+  profileViewerPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  try { profileImageStage.setPointerCapture(e.pointerId); } catch {}
+  if (profileViewerPointers.size >= 2) {
+    const g=profileViewerGeometry();
+    profileViewerGesture=g ? {type:'pinch',distance:g.distance,x:g.x,y:g.y,scale:profileViewerScale,panX:profileViewerX,panY:profileViewerY} : null;
+  } else if (profileViewerScale > 1) {
+    profileViewerGesture={type:'pan',x:e.clientX,y:e.clientY,panX:profileViewerX,panY:profileViewerY};
+  }
+  e.preventDefault();
+});
+profileImageStage.addEventListener('pointermove', e => {
+  if (!profileViewerPointers.has(e.pointerId)) return;
+  profileViewerPointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if (profileViewerPointers.size >= 2) {
+    const g=profileViewerGeometry();
+    if (!g) return;
+    if (!profileViewerGesture || profileViewerGesture.type !== 'pinch') {
+      profileViewerGesture={type:'pinch',distance:g.distance,x:g.x,y:g.y,scale:profileViewerScale,panX:profileViewerX,panY:profileViewerY};
+    }
+    const ratio=g.distance/Math.max(1,profileViewerGesture.distance);
+    profileViewerScale=Math.max(1,Math.min(5,profileViewerGesture.scale*ratio));
+    profileViewerX=profileViewerGesture.panX+(g.x-profileViewerGesture.x);
+    profileViewerY=profileViewerGesture.panY+(g.y-profileViewerGesture.y);
+    applyProfileImageTransform();
+    e.preventDefault();
+    return;
+  }
+  if (profileViewerGesture?.type==='pan' && profileViewerScale>1) {
+    profileViewerX=profileViewerGesture.panX+(e.clientX-profileViewerGesture.x);
+    profileViewerY=profileViewerGesture.panY+(e.clientY-profileViewerGesture.y);
+    applyProfileImageTransform();
+    e.preventDefault();
+  }
+});
+const finishProfileViewerPointer=e=>{
+  profileViewerPointers.delete(e.pointerId);
+  if (profileViewerPointers.size===0) profileViewerGesture=null;
+  else if (profileViewerPointers.size===1 && profileViewerScale>1) {
+    const [pt]=profileViewerPointers.values();
+    profileViewerGesture={type:'pan',x:pt.x,y:pt.y,panX:profileViewerX,panY:profileViewerY};
+  }
+};
+profileImageStage.addEventListener('pointerup',finishProfileViewerPointer);
+profileImageStage.addEventListener('pointercancel',finishProfileViewerPointer);
+profileImageStage.addEventListener('wheel',e=>{
+  e.preventDefault();
+  setProfileImageScale(profileViewerScale*(e.deltaY<0?1.12:0.9));
+},{passive:false});
+
 $('#profileBtn').addEventListener('click', () => {
   if (!me) return;
   pendingProfileAvatar = me.avatar || '';
@@ -2085,6 +2332,8 @@ $('#deleteEntryBtn').addEventListener('click', async () => {
     await refreshEntries(); closeEditor(); showToast('Memory deleted.'); showView(currentMode === 'stream' ? 'stream' : 'book');
   } catch (err) { $('#editorError').textContent = err.message; }
 });
+
+setInterval(() => refreshNotificationCount(), 60 * 1000);
 
 (async function boot() {
   try {

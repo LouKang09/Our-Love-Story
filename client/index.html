@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260919-socialprofile1" />
+  <link rel="stylesheet" href="/styles.css?v=20260919-notifyzoom1" />
 </head>
 <body>
   <div id="app">
@@ -54,6 +54,19 @@
             <button id="connectionsModeBtn">People</button>
           </div>
           <button id="newEntryBtn" class="primary">＋ New memory</button>
+          <div id="notificationWrap" class="notification-wrap">
+            <button id="notificationBtn" class="notification-btn" type="button" aria-label="Open notifications" aria-expanded="false">
+              <span class="notification-bell-glyph" aria-hidden="true">🔔</span>
+              <span id="notificationBadge" class="notification-badge hidden">0</span>
+            </button>
+            <section id="notificationPanel" class="notification-panel hidden" aria-label="Notifications">
+              <div class="notification-panel-head">
+                <div><p class="eyebrow">NOTIFICATIONS</p><h3>Your scrapbook circle</h3></div>
+                <button id="notificationCloseBtn" class="icon-btn" type="button" aria-label="Close notifications">×</button>
+              </div>
+              <div id="notificationList" class="notification-list"></div>
+            </section>
+          </div>
           <button id="guideBtn" class="guide-btn" type="button" title="How to use the scrapbook" aria-label="Open scrapbook guide">ⓘ</button>
           <button id="profileBtn" class="profile-chip" type="button"><span id="profileAvatarMini" class="avatar mini-avatar">♡</span><span id="profileChipText">Profile</span></button>
           <button id="logoutBtn" class="logout-btn" type="button">Log out</button>
@@ -389,8 +402,25 @@
       </form>
     </dialog>
 
+    <div id="profileImageViewer" class="profile-image-viewer hidden" role="dialog" aria-modal="true" aria-label="Profile photo viewer">
+      <div class="profile-image-viewer-bar">
+        <strong id="profileImageViewerTitle">Profile photo</strong>
+        <div class="profile-image-viewer-controls">
+          <button id="profileImageZoomOut" type="button" aria-label="Zoom out">−</button>
+          <button id="profileImageZoomFit" type="button">Fit</button>
+          <span id="profileImageZoomValue">100%</span>
+          <button id="profileImageZoomIn" type="button" aria-label="Zoom in">＋</button>
+          <button id="profileImageViewerClose" type="button" aria-label="Close photo viewer">×</button>
+        </div>
+      </div>
+      <div id="profileImageViewerStage" class="profile-image-viewer-stage">
+        <img id="profileImageViewerImg" alt="" draggable="false" />
+      </div>
+      <p class="profile-image-viewer-hint">Pinch with two fingers to zoom · drag when zoomed in</p>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260919-socialprofile1" defer></script>
+  <script src="/app.js?v=20260919-notifyzoom1" defer></script>
 </body>
 </html>
