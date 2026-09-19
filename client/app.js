@@ -1692,21 +1692,28 @@ function renderHome() {
       item.hasLockedPersonalScrapbooks === true ||
       Boolean(item.scrapbook && item.scrapbook.accessible === false);
 
-    const booksHtml = books.map(book => `<div class="home-personal-book-card">
-      <div class="home-closed-book" data-book-id="${escapeHtml(book.id)}">
+    const firstBook = books[0] || null;
+    const booksHtml = firstBook ? `<div class="home-personal-book-card">
+      <div class="home-closed-book" data-book-id="${escapeHtml(firstBook.id)}">
         <div class="home-book-spine"></div>
         <div class="home-book-face">
           <span class="home-book-mark">✦</span>
           <small>PERSONAL SCRAPBOOK</small>
-          <strong>${escapeHtml(book.name || 'Personal Scrapbook')}</strong>
-          <em>${escapeHtml(privacyLabel(book.privacy))}</em>
+          <strong>${escapeHtml(firstBook.name || 'Personal Scrapbook')}</strong>
+          <em>${escapeHtml(privacyLabel(firstBook.privacy))}</em>
         </div>
       </div>
       <div class="home-book-actions">
-        <button class="primary home-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button>
-        <button class="ghost home-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button>
+        <button class="primary home-open-book" data-id="${escapeHtml(firstBook.id)}" data-mode="book" type="button">Open book</button>
+        <button class="ghost home-open-book" data-id="${escapeHtml(firstBook.id)}" data-mode="stream" type="button">Memory stream</button>
       </div>
-    </div>`).join('');
+    </div>` : '';
+
+    const moreBooksHtml = books.length > 1 ? `
+      <button class="ghost home-view-all-books" type="button" data-profile-tag="${escapeHtml(p.tag || '')}" aria-label="View all scrapbooks by ${escapeHtml(p.displayName || p.tag || 'this person')}">
+        <span>View all ${books.length} scrapbooks</span>
+        <small>Tap here to see the rest</small>
+      </button>` : '';
 
     const lockedHtml = hasLocked ? `<div class="home-personal-book-card">
       <div class="home-closed-book locked">
@@ -1736,7 +1743,7 @@ function renderHome() {
         ${avatarHtml(p,'home-person-avatar')}
         <span><strong>${escapeHtml(p.displayName || p.tag)}</strong><em>@${escapeHtml(p.tag || '')}</em></span>
       </button>
-      <div class="home-personal-books-grid">${booksHtml}${lockedHtml}${emptyHtml}</div>
+      <div class="home-personal-books-grid">${booksHtml}${lockedHtml}${emptyHtml}${moreBooksHtml}</div>
     </article>`;
   }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from People and their Personal scrapbooks will appear here when they choose to share them with you.</p></div>';
 
