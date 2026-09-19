@@ -743,3 +743,142 @@ input:focus,textarea:focus,select:focus{
     font-size:12px;
   }
 }
+
+/* ===== Free-drag scrapbook photos ===== */
+.preview-flow{
+  min-height:430px;
+  position:relative;
+  padding:4px;
+  border-radius:10px;
+  background:
+    linear-gradient(rgba(146,86,97,.035),rgba(146,86,97,.035)),
+    repeating-linear-gradient(0deg,transparent 0 39px,rgba(146,86,97,.045) 40px);
+}
+.preview-draggable{
+  user-select:none;
+  -webkit-user-drag:none;
+  will-change:margin;
+}
+.preview-draggable.dragging{
+  transition:none!important;
+  outline:2px dashed rgba(146,86,97,.55);
+  outline-offset:4px;
+}
+.drag-badge{
+  pointer-events:none;
+}
+.memory-photo{
+  box-sizing:border-box;
+}
+.memory-photo.left,
+.memory-photo.right{
+  transition:width .12s ease,margin .08s ease;
+}
+
+/* ===== Mutual unbind ===== */
+.unbind-panel{
+  margin-top:18px;
+}
+.unbind-card{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  padding:18px 20px;
+  border:1px solid rgba(146,86,97,.18);
+  border-radius:14px;
+  background:rgba(255,250,241,.78);
+  box-shadow:0 10px 30px rgba(60,39,36,.07);
+}
+.unbind-card strong{
+  display:block;
+  margin-bottom:4px;
+  font:700 14px ui-sans-serif,system-ui,sans-serif;
+}
+.unbind-card p{
+  margin:0;
+  max-width:650px;
+  color:var(--muted);
+  font:12px/1.55 ui-sans-serif,system-ui,sans-serif;
+}
+.unbind-card.pending{
+  background:#fff8ea;
+  border-color:rgba(168,118,53,.22);
+}
+.unbind-card.archived{
+  background:rgba(238,232,226,.82);
+}
+.unbind-actions{
+  display:flex;
+  gap:8px;
+  flex:0 0 auto;
+}
+.warning-action{
+  color:#8b522c;
+  border-color:rgba(139,82,44,.28);
+}
+.unbound-bind{
+  opacity:.84;
+}
+.unbound-bind .heart-bind span{
+  filter:grayscale(.65);
+}
+
+/* ===== Daily reminder ===== */
+.notification-settings{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:12px 16px;
+  padding:16px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:rgba(255,255,255,.45);
+}
+.notification-settings>div strong{
+  display:block;
+  font:700 14px ui-sans-serif,system-ui,sans-serif;
+}
+.notification-settings>div p{
+  margin:4px 0 0;
+  color:var(--muted);
+  font:12px/1.45 ui-sans-serif,system-ui,sans-serif;
+}
+.notification-settings>label:not(.toggle-row){
+  grid-column:1 / -1;
+}
+.notification-settings>.helper{
+  grid-column:1 / -1;
+}
+.toggle-row{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  white-space:nowrap;
+}
+.toggle-row input{
+  width:20px;
+  height:20px;
+  min-height:20px;
+  accent-color:var(--rose);
+}
+
+@media (max-width:600px){
+  .preview-flow{min-height:360px}
+  .unbind-card{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .unbind-actions{
+    width:100%;
+  }
+  .unbind-actions button{
+    flex:1;
+  }
+  .notification-settings{
+    grid-template-columns:1fr;
+  }
+  .toggle-row{
+    justify-content:flex-start;
+  }
+}
