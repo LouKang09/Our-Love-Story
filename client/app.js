@@ -800,6 +800,12 @@ function positionCanvasInspectorMobile() {
   });
 }
 
+function renderPreview() {
+  if (editorDialog.open) updateCanvasInspector();
+}
+function renderPhotoControls() {
+  // Legacy control retained only for backwards-compatible hidden markup.
+}
 async function fileToDataUrl(file) {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 }
@@ -1062,7 +1068,9 @@ $('#canvasPhotoInput').addEventListener('change', async e => {
   }catch(err){$('#editorError').textContent=err.message;}
   e.target.value='';
 });
+$('#canvasFontSelect').addEventListener('pointerdown',rememberCanvasTextSelection);
 $('#canvasFontSelect').addEventListener('change',e=>setCanvasTextFont(e.target.value));
+$('#canvasFontSize').addEventListener('pointerdown',rememberCanvasTextSelection);
 $('#canvasFontSize').addEventListener('input',e=>setCanvasTextSize(e.target.value));
 ['canvasBoldBtn','canvasItalicBtn','canvasBringFrontBtn','canvasDeleteItemBtn'].forEach(id=>{
   $('#'+id).addEventListener('pointerdown',e=>{rememberCanvasTextSelection(); if(id!=='canvasBringFrontBtn'&&id!=='canvasDeleteItemBtn')e.preventDefault();});
