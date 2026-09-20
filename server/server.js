@@ -119,9 +119,13 @@ async function readJson(file, fallback) {
   }
 }
 async function writeJson(file, data) {
-  const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
-  await fsp.rename(tmp, file);
+  const tmp = `${file}.${process.pid}-${crypto.randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await fsp.writeFile(tmp, JSON.stringify(data, null, 2), 'utf8');
+    await fsp.rename(tmp, file);
+  } finally {
+    await fsp.unlink(tmp).catch(() => {});
+  }
 }
 async function ensureFile(file, initial) {
   try { await fsp.access(file); }
@@ -163,6 +167,17 @@ async function readSocial() {
   return data;
 }
 async function writeSocial(social) { await writeJson(SOCIAL_FILE, social); }
+
+let uploadOwnerWriteQueue = Promise.resolve();
+async function recordUploadOwner(src, user) {
+  const write = uploadOwnerWriteQueue.then(async () => {
+    const latestSocial = await readSocial();
+    latestSocial.uploadOwners[src] = user;
+    await writeSocial(latestSocial);
+  });
+  uploadOwnerWriteQueue = write.catch(() => {});
+  return write;
+}
 
 async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
@@ -1850,8 +1865,9 @@ async function handleApi(req, res, url) {
       ...(Array.isArray(body.images) ? body.images : []),
       body.image || ''
     ].map(value => String(value || '')).filter(Boolean);
-    const images = [...new Set(requestedImages)].slice(0,10);
-    if (requestedImages.length > 10) return json(res, 400, { error:'You can send up to 10 photos at once.' });
+    const uniqueImages = [...new Set(requestedImages)];
+    if (uniqueImages.length > 10) return json(res, 400, { error:'You can send up to 10 photos at once.' });
+    const images = uniqueImages.slice(0,10);
     const image = images[0] || '';
     const audio = String(body.audio || '');
     const replyTo = String(body.replyTo || '');
@@ -2260,8 +2276,7 @@ async function handleApi(req, res, url) {
     const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
     await fsp.writeFile(path.join(UPLOADS, filename), bytes);
     const src = `/uploads/${filename}`;
-    social.uploadOwners[src] = user;
-    await writeSocial(social);
+    await recordUploadOwner(src, user);
     return json(res, 201, { src });
   }
 
