@@ -1472,6 +1472,23 @@ async function handleApi(req, res, url) {
     return json(res, 200, { chat:decorateChat(social, chat, user) });
   }
 
+  const emptyPrivateChatMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)$/i);
+  if (emptyPrivateChatMatch && req.method === 'DELETE') {
+    const chat = social.chats.find(item => item.id === emptyPrivateChatMatch[1]);
+    if (!chat || !canAccessChat(social, chat, user)) return forbidden(res, 'You do not have access to this chat.');
+    if (chat.type !== 'private') return json(res, 409, { error:'Only empty private chats can be discarded.' });
+    const hasMessages = social.chatMessages.some(message => message.chatId === chat.id);
+    if (hasMessages) return json(res, 409, { error:'This conversation already has messages.' });
+    const members = Array.isArray(chat.members) ? [...chat.members] : [];
+    social.chats = social.chats.filter(item => item.id !== chat.id);
+    for (const member of members) {
+      if (social.chatRead?.[member]) delete social.chatRead[member][chat.id];
+      emitLiveEvent(member, 'chat', { type:'chat_removed', chatId:chat.id, from:user });
+    }
+    await writeSocial(social);
+    return json(res, 200, { discarded:true });
+  }
+
   const chatMessagesMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/messages$/i);
   if (chatMessagesMatch && req.method === 'GET') {
     const chat = social.chats.find(item => item.id === chatMessagesMatch[1]);
