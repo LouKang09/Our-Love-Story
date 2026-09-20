@@ -7101,7 +7101,14 @@ html[data-theme="night"] .profile-image-viewer{
     -webkit-user-select:none;
   }
 
-  /* #4: privacy exists inside Book, not Messages or other phone sections. */
+  /* #4: privacy exists inside the phone Book shelf only. */
+  #mobileBookShelf>#personalPrivacyQuick{
+    width:100%!important;
+    margin:0!important;
+  }
+  #mobileBookShelf>#personalPrivacyQuick .privacy-quick-inner{
+    box-shadow:none!important;
+  }
   body:has(#messagesView:not(.hidden)) #personalPrivacyQuick,
   body:has(#homeView:not(.hidden)) #personalPrivacyQuick,
   body:has(#connectionsView:not(.hidden)) #personalPrivacyQuick,
