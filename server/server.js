@@ -430,15 +430,18 @@ function cleanCanvasItem(item) {
     return {
       ...common,
       src,
-      caption: String(item.caption || '').slice(0,240)
+      caption: String(item.caption || '').slice(0,240),
+      aspect: Math.max(0.15, Math.min(8, Number(item.aspect) || 1))
     };
   }
 
-  const font = ['serif','sans','hand','mono'].includes(item.font) ? item.font : 'serif';
+  const font = ['serif','classic','elegant','sans','rounded','casual','hand','script','mono'].includes(item.font) ? item.font : 'serif';
+  const align = ['left','center','right','justify'].includes(item.align) ? item.align : 'left';
   return {
     ...common,
     html: sanitizeRichText(item.html || ''),
     font,
+    align,
     size: Math.max(7, Math.min(42, Number(item.size) || 18)),
     bold: item.bold === true,
     italic: item.italic === true
