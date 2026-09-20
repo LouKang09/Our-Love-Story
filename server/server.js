@@ -1387,6 +1387,9 @@ async function handleApi(req, res, url) {
       book.deleteRequestHistory = Array.isArray(book.deleteRequestHistory) ? book.deleteRequestHistory : [];
       book.deleteRequestHistory.push({ ...request, status:'declined', respondedBy:user, respondedAt:new Date().toISOString() });
       delete book.deleteRequest;
+      social.activityNotifications = social.activityNotifications.filter(item =>
+        !(item.type === 'group_delete_request' && item.scrapbookId === book.id && item.to === user)
+      );
       appendActivityNotification(social, { to:requester, from:user, type:'group_delete_declined', scrapbookId:book.id, scrapbookName:book.name });
       await sendUserPush(social, {
         to:requester,
