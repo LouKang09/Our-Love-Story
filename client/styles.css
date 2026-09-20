@@ -8236,3 +8236,17 @@ html[data-theme="night"] .profile-image-viewer{
     min-height:38px!important;
   }
 }
+
+
+@media(min-width:801px){
+  #chatSendBtn>svg{display:none!important}
+  .desktop-chat-send-label{display:inline!important}
+}
+@media(max-width:800px){
+  #chatSendBtn>svg{display:block!important}
+  #chatReplyPreview:not(.hidden)~textarea,
+  #chatImagePreview:not(.hidden)~textarea,
+  #chatAudioPreview:not(.hidden)~textarea{
+    grid-row:2!important;
+  }
+}
