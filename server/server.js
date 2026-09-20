@@ -250,6 +250,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-night-privacy-multipersonal-20260920');
   await backupNamedJsonDataOnce('pre-bulk-personal-privacy-20260920');
   await backupNamedJsonDataOnce('pre-group-admin-chat-reactions-20260920');
+  await backupNamedJsonDataOnce('pre-comment-replies-audio-chat-20260920');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -321,7 +322,8 @@ function contentType(file) {
   const ext = path.extname(file).toLowerCase();
   return ({
     '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'application/javascript; charset=utf-8',
-    '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.svg':'image/svg+xml', '.ico':'image/x-icon'
+    '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.svg':'image/svg+xml', '.ico':'image/x-icon',
+    '.webm':'audio/webm', '.ogg':'audio/ogg', '.mp3':'audio/mpeg', '.m4a':'audio/mp4', '.mp4':'audio/mp4', '.wav':'audio/wav'
   })[ext] || 'application/octet-stream';
 }
 async function readBody(req, maxBytes = 16 * 1024 * 1024) {
@@ -778,12 +780,14 @@ function decorateChatMessage(social, message, user) {
     profile:publicProfileFor(social, message.author),
     text:message.text || '',
     image:message.image || '',
+    audio:message.audio || '',
     replyTo:replied ? {
       id:replied.id,
       author:replied.author,
       profile:publicProfileFor(social, replied.author),
       text:String(replied.text || '').slice(0,180),
-      image:replied.image || ''
+      image:replied.image || '',
+      audio:replied.audio || ''
     } : null,
     reactions,
     createdAt:message.createdAt
@@ -815,6 +819,7 @@ function decorateChat(social, chat, user) {
         author:lastMessage.author,
         text:lastMessage.text || '',
         image:lastMessage.image || '',
+        audio:lastMessage.audio || '',
         createdAt:lastMessage.createdAt
       } : null
     };
@@ -911,6 +916,7 @@ async function deleteScrapbookCompletely(social, book, actor) {
   }
   for (const message of removedMessages) {
     if (message?.image?.startsWith('/uploads/')) candidateAssets.add(message.image);
+    if (message?.audio?.startsWith('/uploads/')) candidateAssets.add(message.audio);
   }
 
   social.scrapbooks = social.scrapbooks.filter(item => item.id !== book.id);
@@ -930,7 +936,7 @@ async function deleteScrapbookCompletely(social, book, actor) {
       (Array.isArray(entry.photos) && entry.photos.some(photo => photo?.src === src)) ||
       (Array.isArray(entry.canvasItems) && entry.canvasItems.some(item => item?.type === 'photo' && item?.src === src))
     ) ||
-    social.chatMessages.some(message => message?.image === src) ||
+    social.chatMessages.some(message => message?.image === src || message?.audio === src) ||
     Object.values(social.profiles || {}).some(profile => profile?.avatar === src);
 
   const orphanedAssets = [...candidateAssets].filter(src => !assetStillUsed(src));
@@ -1806,13 +1812,18 @@ async function handleApi(req, res, url) {
     const body = await readBody(req, 128 * 1024);
     const text = String(body.text || '').trim().slice(0, 2000);
     const image = String(body.image || '');
+    const audio = String(body.audio || '');
     const replyTo = String(body.replyTo || '');
     const repliedMessage = replyTo ? social.chatMessages.find(item => item.id === replyTo && item.chatId === chat.id) : null;
     if (replyTo && !repliedMessage) return json(res, 400, { error:'That replied message is no longer available.' });
-    if (!text && !image) return json(res, 400, { error:'Write a message or attach a photo.' });
+    if (!text && !image && !audio) return json(res, 400, { error:'Write a message or attach media.' });
     if (image) {
-      if (!image.startsWith('/uploads/')) return json(res, 400, { error:'Chat attachments must be uploaded images.' });
+      if (!image.startsWith('/uploads/')) return json(res, 400, { error:'Chat photos must be uploaded first.' });
       if (social.uploadOwners?.[image] !== user) return forbidden(res, 'You can only send photos you uploaded.');
+    }
+    if (audio) {
+      if (!audio.startsWith('/uploads/')) return json(res, 400, { error:'Chat audio must be uploaded first.' });
+      if (social.uploadOwners?.[audio] !== user) return forbidden(res, 'You can only send audio you recorded.');
     }
     const message = {
       id:crypto.randomUUID(),
@@ -1820,6 +1831,7 @@ async function handleApi(req, res, url) {
       author:user,
       text,
       image,
+      audio,
       replyTo:repliedMessage?.id || null,
       reactions:{},
       createdAt:new Date().toISOString()
@@ -1852,7 +1864,7 @@ async function handleApi(req, res, url) {
           title:chat.type === 'group'
             ? `${actor.displayName || displayTag(user)} · ${decorateChat(social,chat,target).name}`
             : `${actor.displayName || displayTag(user)} sent you a message`,
-          body:text || 'Sent a photo',
+          body:text || (image ? 'Sent a photo' : 'Sent a voice message'),
           tag:`chat-${chat.id}`,
           url:`/?messages=${encodeURIComponent(chat.id)}`
         });
@@ -1929,10 +1941,16 @@ async function handleApi(req, res, url) {
     const text = String(body.text || '').trim().slice(0, 600);
     if (!text) return json(res, 400, { error:'Write something before posting your comment.' });
     entry.comments = Array.isArray(entry.comments) ? entry.comments : [];
+    const requestedParentId = String(body.parentId || '');
+    const requestedParent = requestedParentId ? entry.comments.find(item => item.id === requestedParentId) : null;
+    if (requestedParentId && !requestedParent) return json(res, 400, { error:'That comment is no longer available.' });
+    const parentId = requestedParent ? (requestedParent.parentId || requestedParent.id) : null;
     const comment = {
       id: crypto.randomUUID(),
       author: user,
       text,
+      parentId,
+      reactions:{},
       createdAt: new Date().toISOString()
     };
     entry.comments.push(comment);
@@ -1976,6 +1994,29 @@ async function handleApi(req, res, url) {
     return json(res, 201, { comment, profile:publicProfileFor(social, user) });
   }
 
+  const commentReactionMatch = pathname.match(/^\/api\/entries\/([a-f0-9-]+)\/comments\/([a-f0-9-]+)\/reactions$/i);
+  if (commentReactionMatch && req.method === 'POST') {
+    const entries = await readEntries();
+    const entry = entries.find(item => item.id === commentReactionMatch[1]);
+    if (!entry) return notFound(res);
+    const book = bookForViewer(social, entry.scrapbookId, user);
+    if (!book || !canCommentBook(social, book, user)) return forbidden(res);
+    const comment = (Array.isArray(entry.comments) ? entry.comments : []).find(item => item.id === commentReactionMatch[2]);
+    if (!comment) return notFound(res);
+    const body = await readBody(req, 64 * 1024);
+    const emoji = ['👍','❤️','😂','😮','😢','😡'].includes(String(body.emoji || '')) ? String(body.emoji) : '';
+    if (!emoji) return json(res, 400, { error:'Choose a supported reaction.' });
+    comment.reactions = comment.reactions && typeof comment.reactions === 'object' ? comment.reactions : {};
+    const current = new Set(Array.isArray(comment.reactions[emoji]) ? comment.reactions[emoji] : []);
+    if (current.has(user)) current.delete(user);
+    else current.add(user);
+    if (current.size) comment.reactions[emoji] = [...current];
+    else delete comment.reactions[emoji];
+    await writeEntries(entries);
+    emitLiveMany(realtimeBookViewers(social, book), 'entries', { type:'comment_reaction', scrapbookId:book.id, entryId:entry.id, commentId:comment.id, from:user });
+    return json(res, 200, { ok:true });
+  }
+
   const deleteCommentMatch = pathname.match(/^\/api\/entries\/([a-f0-9-]+)\/comments\/([a-f0-9-]+)$/i);
   if (deleteCommentMatch && req.method === 'DELETE') {
     const entries = await readEntries();
@@ -1987,7 +2028,18 @@ async function handleApi(req, res, url) {
     const comment = comments.find(item => item.id === deleteCommentMatch[2]);
     if (!comment) return notFound(res);
     if (comment.author !== user && book.owner !== user) return forbidden(res, 'Only the comment writer or scrapbook owner can remove this comment.');
-    entry.comments = comments.filter(item => item.id !== comment.id);
+    const deleteIds = new Set([comment.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const item of comments) {
+        if (item.parentId && deleteIds.has(item.parentId) && !deleteIds.has(item.id)) {
+          deleteIds.add(item.id);
+          grew = true;
+        }
+      }
+    }
+    entry.comments = comments.filter(item => !deleteIds.has(item.id));
     await writeEntries(entries);
     emitLiveMany(realtimeBookViewers(social, book), 'entries', { type:'comment_deleted', scrapbookId:book.id, entryId:entry.id, from:user });
     return json(res, 200, { ok:true });
@@ -2018,11 +2070,16 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/upload' && req.method === 'POST') {
     const body = await readBody(req, 14 * 1024 * 1024);
     const dataUrl = String(body.dataUrl || '');
-    const match = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
-    if (!match) return json(res, 400, { error: 'Please choose a PNG, JPG, WEBP, or GIF image.' });
-    const ext = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
+    const imageMatch = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
+    const audioMatch = dataUrl.match(/^data:audio\/(webm|ogg|mpeg|mp3|mp4|m4a|wav|x-m4a);(?:codecs=[^;,]+;)?base64,([A-Za-z0-9+/=]+)$/i);
+    const match = imageMatch || audioMatch;
+    if (!match) return json(res, 400, { error: 'Please choose a supported image or audio recording.' });
+    let ext = match[1].toLowerCase();
+    if (ext === 'jpeg') ext = 'jpg';
+    if (ext === 'mpeg') ext = 'mp3';
+    if (ext === 'x-m4a') ext = 'm4a';
     const bytes = Buffer.from(match[2], 'base64');
-    if (bytes.length > 8 * 1024 * 1024) return json(res, 413, { error: 'Each photo must be 8 MB or smaller.' });
+    if (bytes.length > 8 * 1024 * 1024) return json(res, 413, { error: 'Each attachment must be 8 MB or smaller.' });
     const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
     await fsp.writeFile(path.join(UPLOADS, filename), bytes);
     const src = `/uploads/${filename}`;
