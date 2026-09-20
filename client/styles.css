@@ -7113,7 +7113,7 @@ html[data-theme="night"] .profile-image-viewer{
   /* Exact phone action order is created in JS; keep its left edge aligned
      with the Home / Book / People segmented control. */
   .mobile-header-actions{
-    justify-content:flex-start!important;
+    justify-content:space-between!important;
     padding-inline:0!important;
   }
   .mobile-header-actions .logout-btn{
