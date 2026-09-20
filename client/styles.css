@@ -7710,3 +7710,529 @@ html[data-theme="night"] .profile-image-viewer{
     margin-left:0;
   }
 }
+
+
+/* =========================================================
+   PHONE UI V19 — Messenger-like reply, voice & reaction UX
+   ========================================================= */
+.reaction-viewer{
+  display:none;
+}
+
+@media(max-width:800px){
+  /* Sample-icon layout: +, camera, gallery, mic, message field, send. */
+  .messages-view.chat-open .chat-composer{
+    display:grid!important;
+    grid-template-columns:38px 38px 38px 38px minmax(82px,1fr) 42px!important;
+    grid-template-rows:auto auto!important;
+    gap:6px!important;
+    align-items:center!important;
+    padding:8px 9px calc(8px + env(safe-area-inset-bottom))!important;
+  }
+  .messages-view.chat-open .chat-compose-actions{
+    display:contents!important;
+  }
+  .messages-view.chat-open .chat-composer textarea{
+    grid-column:5!important;
+    grid-row:2!important;
+    min-width:0!important;
+    width:100%!important;
+    min-height:42px!important;
+    height:42px!important;
+    max-height:84px!important;
+    padding:9px 11px!important;
+    border-radius:22px!important;
+  }
+  .messages-view.chat-open .chat-photo-button{grid-column:1!important;grid-row:2!important}
+  .messages-view.chat-open .chat-camera-button{grid-column:2!important;grid-row:2!important}
+  .messages-view.chat-open .chat-gallery-button{grid-column:3!important;grid-row:2!important}
+  .messages-view.chat-open .chat-mic-button{grid-column:4!important;grid-row:2!important}
+  .messages-view.chat-open #chatSendBtn{grid-column:6!important;grid-row:2!important}
+
+  .chat-photo-button,
+  .chat-camera-button,
+  .chat-gallery-button,
+  .chat-mic-button,
+  #chatSendBtn{
+    width:38px!important;
+    min-width:38px!important;
+    height:38px!important;
+    min-height:38px!important;
+    display:grid!important;
+    place-items:center!important;
+    padding:0!important;
+    border:0!important;
+    border-radius:50%!important;
+    background:transparent!important;
+    color:var(--rose)!important;
+    box-shadow:none!important;
+    overflow:visible!important;
+  }
+  .chat-photo-button::before,
+  #chatSendBtn::before{
+    content:none!important;
+    display:none!important;
+  }
+  .chat-photo-button svg,
+  .chat-camera-button svg,
+  .chat-gallery-button svg,
+  .chat-mic-button svg,
+  #chatSendBtn svg{
+    width:25px;
+    height:25px;
+    display:block;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:2.15;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .chat-photo-button svg{
+    width:28px;
+    height:28px;
+  }
+  #chatSendBtn{
+    background:var(--rose)!important;
+    color:#fff!important;
+  }
+  #chatSendBtn svg{
+    width:23px;
+    height:23px;
+    fill:none;
+  }
+  .desktop-chat-send-label{
+    display:none!important;
+  }
+  .chat-mic-button.recording{
+    background:var(--rose)!important;
+    color:#fff!important;
+    animation:chat-record-pulse .75s ease-in-out infinite alternate;
+  }
+  html[data-theme="night"] .chat-camera-button,
+  html[data-theme="night"] .chat-gallery-button,
+  html[data-theme="night"] .chat-mic-button,
+  html[data-theme="night"] .chat-photo-button{
+    background:transparent!important;
+    color:#df8da1!important;
+    border:0!important;
+  }
+
+  #chatReplyPreview,
+  #chatImagePreview,
+  #chatAudioPreview,
+  #chatRecordingOverlay{
+    grid-column:1/-1!important;
+    grid-row:1!important;
+  }
+  #chatReplyPreview:not(.hidden)~textarea,
+  #chatImagePreview:not(.hidden)~textarea,
+  #chatAudioPreview:not(.hidden)~textarea{
+    grid-row:3!important;
+  }
+
+  /* Swipe-to-reply cue appears behind the moving bubble. */
+  .chat-message{
+    position:relative;
+  }
+  .chat-swipe-reply-indicator{
+    position:absolute;
+    top:50%;
+    z-index:0;
+    width:32px;
+    height:32px;
+    display:grid;
+    place-items:center;
+    margin-top:-16px;
+    border-radius:50%;
+    background:rgba(146,86,97,.18);
+    color:var(--rose-dark);
+    font:800 18px/1 ui-sans-serif,system-ui,sans-serif;
+    opacity:0;
+    transform:scale(.72);
+    pointer-events:none;
+    transition:opacity .08s linear,transform .08s linear;
+  }
+  html[data-theme="night"] .chat-swipe-reply-indicator{
+    background:#3a2e32;
+    color:#e79aae;
+  }
+  .chat-bubble{
+    z-index:1;
+  }
+
+  /* Actual reply is a tappable quote; tapping jumps to the source message. */
+  .chat-reply-quote{
+    width:100%;
+    display:grid!important;
+    gap:2px;
+    margin:0 0 7px!important;
+    padding:7px 8px!important;
+    border:0!important;
+    border-left:3px solid rgba(255,255,255,.42)!important;
+    border-radius:8px!important;
+    background:rgba(255,255,255,.09)!important;
+    color:inherit!important;
+    text-align:left!important;
+  }
+  .chat-reply-quote small,
+  .chat-reply-quote span{
+    display:block;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .chat-reply-quote small{
+    font:700 8px/1.3 ui-sans-serif,system-ui,sans-serif!important;
+    opacity:.76;
+  }
+  .chat-reply-quote span{
+    font:10px/1.35 ui-sans-serif,system-ui,sans-serif!important;
+    opacity:.9;
+  }
+  .chat-message-jump .chat-bubble{
+    animation:chat-jump-flash 1.35s ease;
+  }
+  @keyframes chat-jump-flash{
+    0%,100%{box-shadow:0 0 0 0 rgba(220,135,157,0)}
+    25%,60%{box-shadow:0 0 0 4px rgba(220,135,157,.4)}
+  }
+
+  /* Sample-style sent voice pill with custom play/wave/duration controls. */
+  .chat-voice-player{
+    width:min(310px,76vw);
+    display:grid;
+    grid-template-columns:42px minmax(0,1fr) auto;
+    align-items:center;
+    gap:8px;
+    margin:3px 0 7px;
+    padding:8px 10px;
+    border-radius:22px;
+    background:rgba(238,183,198,.24);
+  }
+  .mine .chat-voice-player{
+    background:rgba(255,255,255,.12);
+  }
+  .chat-voice-play{
+    width:38px;
+    height:38px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:rgba(69,51,58,.72);
+    color:#fff;
+    font:800 17px/1 ui-sans-serif,system-ui,sans-serif;
+  }
+  .chat-voice-wave{
+    height:38px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:2px;
+    padding:0;
+    border:0;
+    background:transparent;
+  }
+  .chat-voice-wave i,
+  .pending-voice-wave i,
+  .chat-record-wave i{
+    width:3px;
+    height:var(--h,16px);
+    display:block;
+    flex:1 1 3px;
+    max-width:4px;
+    border-radius:999px;
+    background:rgba(255,255,255,.62);
+    transform:scaleY(calc(.45 + (var(--bar) % 5) * .12));
+    transform-origin:center;
+  }
+  .chat-voice-wave i:nth-child(3n),
+  .pending-voice-wave i:nth-child(3n){height:28px}
+  .chat-voice-wave i:nth-child(4n),
+  .pending-voice-wave i:nth-child(4n){height:20px}
+  .chat-voice-wave i.played,
+  .pending-voice-wave i.played{
+    background:#fff;
+  }
+  .theirs .chat-voice-wave i{
+    background:rgba(222,137,158,.43);
+  }
+  .theirs .chat-voice-wave i.played{
+    background:#d9839a;
+  }
+  .chat-voice-duration{
+    min-width:34px;
+    color:inherit;
+    font:700 10px/1 ui-sans-serif,system-ui,sans-serif;
+    opacity:.86;
+    text-align:right;
+  }
+
+  /* Tap-record preview. */
+  .pending-voice-pill{
+    width:100%;
+    display:grid!important;
+    grid-template-columns:38px minmax(0,1fr) auto 30px!important;
+    align-items:center!important;
+    gap:7px!important;
+    padding:7px 8px!important;
+    border:1px solid var(--line)!important;
+    border-radius:22px!important;
+    background:var(--paper-2)!important;
+  }
+  #pendingVoicePlayBtn{
+    width:34px;
+    height:34px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:var(--rose);
+    color:#fff;
+  }
+  .pending-voice-wave{
+    height:32px;
+    display:flex;
+    align-items:center;
+    gap:2px;
+  }
+  .pending-voice-wave i{
+    background:rgba(146,86,97,.28);
+  }
+  .pending-voice-wave i.played{
+    background:var(--rose);
+  }
+
+  /* Long-press recorder overlays the entire composer like Messenger. */
+  .chat-recording-overlay:not(.hidden){
+    position:absolute!important;
+    inset:0!important;
+    z-index:20!important;
+    display:grid!important;
+    align-items:end!important;
+    padding:8px 9px calc(8px + env(safe-area-inset-bottom))!important;
+    background:var(--paper)!important;
+  }
+  .chat-live-recording{
+    width:100%;
+    display:grid;
+    grid-template-columns:42px minmax(0,1fr);
+    grid-template-areas:
+      "trash pill"
+      "hint hint";
+    gap:5px 8px;
+    align-items:center;
+  }
+  .chat-record-trash{
+    grid-area:trash;
+    width:40px;
+    height:40px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:transparent;
+    color:var(--muted);
+    font-size:22px;
+  }
+  .chat-record-live-pill{
+    grid-area:pill;
+    min-width:0;
+    height:48px;
+    display:grid;
+    grid-template-columns:10px minmax(0,1fr) auto;
+    align-items:center;
+    gap:8px;
+    padding:6px 13px;
+    border-radius:24px;
+    background:var(--rose);
+    color:#fff;
+  }
+  .chat-record-status-dot{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:#fff;
+    animation:voice-dot .7s ease-in-out infinite alternate;
+  }
+  @keyframes voice-dot{from{opacity:.35}to{opacity:1}}
+  .chat-record-wave{
+    height:34px;
+    display:flex;
+    align-items:center;
+    gap:2px;
+  }
+  .chat-record-wave i{
+    height:26px;
+    background:rgba(255,255,255,.88);
+    transform:scaleY(var(--live,.24));
+    transition:transform .05s linear;
+  }
+  #chatRecordTime{
+    font:800 10px/1 ui-sans-serif,system-ui,sans-serif;
+  }
+  #chatRecordHint{
+    grid-area:hint;
+    display:block;
+    color:var(--muted);
+    font:9px/1.3 ui-sans-serif,system-ui,sans-serif;
+    text-align:center;
+  }
+  .chat-recording-overlay.cancel-ready .chat-record-live-pill{
+    background:#8e5965!important;
+  }
+  .chat-recording-overlay.cancel-ready #chatRecordHint{
+    color:#c95766!important;
+    font-weight:800;
+  }
+  html[data-theme="night"] .chat-recording-overlay:not(.hidden){
+    background:#241c1f!important;
+  }
+
+  /* Reaction chips now open a people list. */
+  .reaction-viewer{
+    position:fixed;
+    inset:0;
+    z-index:2147483630;
+    display:flex!important;
+    align-items:flex-end;
+    justify-content:center;
+    padding:14px;
+    background:rgba(0,0,0,.48);
+    backdrop-filter:blur(5px);
+    -webkit-backdrop-filter:blur(5px);
+  }
+  .reaction-viewer-sheet{
+    width:min(520px,100%);
+    max-height:min(68svh,620px);
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr);
+    overflow:hidden;
+    border:1px solid var(--line);
+    border-radius:22px;
+    background:var(--paper);
+    box-shadow:0 18px 55px rgba(0,0,0,.3);
+  }
+  .reaction-viewer-sheet>header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:14px 15px;
+    border-bottom:1px solid var(--line);
+  }
+  .reaction-viewer-sheet>header small,
+  .reaction-viewer-sheet>header strong{
+    display:block;
+  }
+  .reaction-viewer-sheet>header small{
+    color:var(--rose);
+    font:800 8px ui-sans-serif,system-ui,sans-serif;
+    letter-spacing:.12em;
+  }
+  .reaction-viewer-sheet>header strong{
+    margin-top:2px;
+    font:800 15px ui-sans-serif,system-ui,sans-serif;
+  }
+  .reaction-viewer-close{
+    width:36px;
+    height:36px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:var(--paper-2);
+    color:var(--ink);
+    font-size:21px;
+  }
+  .reaction-viewer-list{
+    overflow:auto;
+    padding:8px;
+  }
+  .reaction-viewer-person{
+    width:100%;
+    display:grid;
+    grid-template-columns:42px minmax(0,1fr) auto;
+    align-items:center;
+    gap:10px;
+    padding:8px;
+    border:0;
+    border-radius:12px;
+    background:transparent;
+    color:var(--ink);
+    text-align:left;
+  }
+  .reaction-viewer-person:active{
+    background:var(--paper-2);
+  }
+  .reaction-viewer-avatar{
+    width:42px;
+    height:42px;
+    border-radius:50%;
+    object-fit:cover;
+  }
+  .reaction-viewer-person span{
+    min-width:0;
+  }
+  .reaction-viewer-person strong,
+  .reaction-viewer-person small{
+    display:block;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .reaction-viewer-person strong{font:800 11px ui-sans-serif,system-ui,sans-serif}
+  .reaction-viewer-person small{color:var(--muted);font:9px ui-sans-serif,system-ui,sans-serif}
+  .reaction-viewer-person em{
+    font-style:normal;
+    font-size:20px;
+  }
+
+  /* Comment reactions are gesture-only: Reply remains beside reaction summary. */
+  .comment-actions{
+    gap:5px!important;
+  }
+  .comment-reply-trigger{
+    padding-left:0!important;
+  }
+  .comment-reaction-summary{
+    cursor:pointer;
+  }
+  .comment-main{
+    -webkit-tap-highlight-color:transparent;
+  }
+}
+
+@media(max-width:520px){
+  .messages-view.chat-open .chat-composer{
+    grid-template-columns:34px 34px 34px 34px minmax(70px,1fr) 38px!important;
+    gap:4px!important;
+    padding-inline:6px!important;
+  }
+  .chat-photo-button,
+  .chat-camera-button,
+  .chat-gallery-button,
+  .chat-mic-button{
+    width:34px!important;
+    min-width:34px!important;
+    height:34px!important;
+    min-height:34px!important;
+  }
+  .chat-photo-button svg,
+  .chat-camera-button svg,
+  .chat-gallery-button svg,
+  .chat-mic-button svg{
+    width:22px!important;
+    height:22px!important;
+  }
+  #chatSendBtn{
+    width:38px!important;
+    min-width:38px!important;
+    height:38px!important;
+    min-height:38px!important;
+  }
+}
