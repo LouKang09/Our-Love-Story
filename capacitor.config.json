@@ -14,5 +14,14 @@
   "ios": {
     "backgroundColor": "#faf8f2",
     "contentInset": "automatic"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
   }
 }
