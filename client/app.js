@@ -134,8 +134,10 @@ function closePhoneTransientLayer() {
   const membersDialog = $('#chatMembersDialog');
   if (membersDialog?.open) { membersDialog.close(); return true; }
   if (!$('#notificationPanel')?.classList.contains('hidden')) { closeNotificationHub(); return true; }
+  if (!$('#chatImageViewer')?.classList.contains('hidden')) { closeChatImageViewer(); return true; }
   if (!$('#profileImageViewer')?.classList.contains('hidden')) { closeProfileImageViewer(); return true; }
   if (chatReactionPicker) { closeChatReactionPicker(); return true; }
+  if (commentReactionPicker) { closeCommentReactionPicker(); return true; }
   if (guideRunning && !guideMandatory) { finishGuide({ completed:false }); return true; }
   return false;
 }
