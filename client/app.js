@@ -976,10 +976,10 @@ function wireCommentGestures(root) {
         if(cancelled)return;
         longPressed=true;
         showCommentReactionPicker(main.dataset.entryId,main.dataset.commentId,main);
-      },430);
+      },360);
     });
     main.addEventListener('pointermove',e=>{
-      if(Math.hypot(e.clientX-startX,e.clientY-startY)>10){
+      if(Math.hypot(e.clientX-startX,e.clientY-startY)>16){
         cancelled=true;clearTimeout(hold);
       }
     });
@@ -987,7 +987,7 @@ function wireCommentGestures(root) {
       clearTimeout(hold);
       if(longPressed||cancelled)return;
       const now=Date.now();
-      if(now-lastTap<320){
+      if(now-lastTap<390){
         lastTap=0;
         toggleCommentReaction(main.dataset.entryId,main.dataset.commentId,'👍');
       } else lastTap=now;
@@ -1115,7 +1115,9 @@ function wireEntryButtons(root) {
     e.stopPropagation();
     const entry=entries.find(item=>item.id===button.dataset.entryId);
     const comment=(entry?.comments || []).find(item=>item.id===button.dataset.commentId);
-    if(comment) openReactionViewer('Comment reactions',commentReactions(comment));
+    if(comment) openReactionViewer('Comment reactions',commentReactions(comment),{
+      onSelfReaction:emoji=>toggleCommentReaction(button.dataset.entryId,button.dataset.commentId,emoji)
+    });
   }));
   wireCommentGestures(root);
   root.querySelectorAll('.comment-delete').forEach(btn => btn.addEventListener('click', async () => {
@@ -2568,7 +2570,7 @@ function renderChatList() {
   }
   host.innerHTML = chats.map(chat => {
     const last = chat.lastMessage;
-    const preview = last ? (last.text || (last.image ? '📷 Photo' : (last.audio ? '🎙 Voice message' : 'New message'))) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
+    const preview = last ? (last.deleted ? 'Message deleted' : (last.text || (last.image ? '📷 Photo' : (last.audio ? '🎙 Voice message' : 'New message')))) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
     return `<button class="chat-list-item ${chat.id === activeChatId ? 'active' : ''}" type="button" data-chat-id="${escapeHtml(chat.id)}">
       ${chatAvatarHtml(chat)}
       <span class="chat-list-copy"><strong>${escapeHtml(chat.name || 'Conversation')}</strong><small>${escapeHtml(preview)}</small></span>
@@ -2787,7 +2789,7 @@ function closeReactionViewer() {
     reactionViewer = null;
   }
 }
-function openReactionViewer(title, groups = []) {
+function openReactionViewer(title, groups = [], { onSelfReaction = null } = {}) {
   if (!isPhoneUI()) return;
   closeReactionViewer();
   const people = [];
@@ -2806,9 +2808,10 @@ function openReactionViewer(title, groups = []) {
     <header><div><small>REACTIONS</small><strong>${escapeHtml(title || 'People who reacted')}</strong></div><button type="button" class="reaction-viewer-close" aria-label="Close">×</button></header>
     <div class="reaction-viewer-list">${people.map(item => {
       const p=item.profile || {};
-      return `<button type="button" class="reaction-viewer-person" data-profile-tag="${escapeHtml(p.tag || '')}">
+      const mine=Boolean(me?.tag && p.tag===me.tag);
+      return `<button type="button" class="reaction-viewer-person ${mine?'self-reactor':''}" data-profile-tag="${escapeHtml(p.tag || '')}" data-reaction-emoji="${escapeHtml(item.emoji)}">
         ${avatarHtml(p,'reaction-viewer-avatar')}
-        <span><strong>${escapeHtml(p.displayName || p.tag || 'Someone')}</strong><small>@${escapeHtml(p.tag || '')}</small></span>
+        <span><strong>${escapeHtml(p.displayName || p.tag || 'Someone')}${mine?' (You)':''}</strong><small>${mine?'Tap to remove your reaction':`@${escapeHtml(p.tag || '')}`}</small></span>
         <em>${escapeHtml(item.emoji)}</em>
       </button>`;
     }).join('')}</div>
@@ -2819,6 +2822,12 @@ function openReactionViewer(title, groups = []) {
   overlay.addEventListener('pointerdown',e=>{if(e.target===overlay)closeReactionViewer();});
   overlay.querySelectorAll('[data-profile-tag]').forEach(button=>button.addEventListener('click',async()=>{
     const tag=button.dataset.profileTag;
+    const emoji=button.dataset.reactionEmoji || '';
+    if(tag && me?.tag && tag===me.tag && typeof onSelfReaction==='function'){
+      closeReactionViewer();
+      await onSelfReaction(emoji);
+      return;
+    }
     closeReactionViewer();
     if(tag)await openPersonProfile(tag);
   }));
@@ -2894,6 +2903,7 @@ function wireChatVoicePlayers(host) {
 
 function chatReplySnippet(message) {
   if (!message) return '';
+  if (message.deleted) return 'Message deleted';
   if (message.text) return String(message.text).replace(/\s+/g,' ').trim().slice(0,110);
   if (message.image) return '📷 Photo';
   if (message.audio) return '🎙 Voice message';
@@ -2945,15 +2955,33 @@ async function toggleChatReaction(messageId,emoji='❤️') {
     showToast(err.message || 'Could not add that reaction.');
   }
 }
+async function deleteChatMessage(messageId) {
+  if(!activeChatId||!messageId)return;
+  const message=activeChatMessages.find(item=>item.id===messageId);
+  if(!message||message.author!==me?.tag||message.deleted)return;
+  if(!confirm('Delete this message? Everyone in this conversation will see “Message deleted”.'))return;
+  try{
+    const data=await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages/${encodeURIComponent(messageId)}`,{method:'DELETE'});
+    const idx=activeChatMessages.findIndex(item=>item.id===messageId);
+    if(idx>=0&&data.message)activeChatMessages[idx]=data.message;
+    if(pendingChatReply?.id===messageId)clearPendingChatReply();
+    renderChatMessages({stickBottom:false});
+    await loadChats();
+    showToast('Message deleted.');
+  }catch(err){
+    showToast(err.message || 'Could not delete that message.');
+  }
+}
 function showChatReactionPicker(message,bubble) {
   if(!isPhoneUI()||!message||!bubble)return;
   closeChatReactionPicker();
   const picker=document.createElement('div');
   picker.className='chat-reaction-picker';
   picker.setAttribute('role','menu');
+  const canDelete=message.author===me?.tag && !message.deleted;
   picker.innerHTML=['❤️','👍','😂','😮','😢','😡'].map(emoji=>
     `<button type="button" data-emoji="${emoji}" aria-label="React ${emoji}">${emoji}</button>`
-  ).join('');
+  ).join('') + (canDelete ? '<button type="button" class="chat-delete-message-action" data-delete-message="1">Delete message</button>' : '');
   document.body.appendChild(picker);
   chatReactionPicker=picker;
   const rect=bubble.getBoundingClientRect();
@@ -2969,6 +2997,11 @@ function showChatReactionPicker(message,bubble) {
   picker.querySelectorAll('button').forEach(button=>button.addEventListener('pointerdown',async e=>{
     e.preventDefault();
     e.stopPropagation();
+    if(button.dataset.deleteMessage){
+      closeChatReactionPicker();
+      await deleteChatMessage(message.id);
+      return;
+    }
     const emoji=button.dataset.emoji;
     closeChatReactionPicker();
     await toggleChatReaction(message.id,emoji);
@@ -2979,13 +3012,15 @@ function wireChatMessageGestures(host) {
   host.querySelectorAll('.chat-reaction-chip').forEach(button=>button.addEventListener('click',e=>{
     e.stopPropagation();
     const message=activeChatMessages.find(item=>item.id===button.dataset.messageId);
-    if(message) openReactionViewer('Message reactions',message.reactions || []);
+    if(message) openReactionViewer('Message reactions',message.reactions || [],{
+      onSelfReaction:emoji=>toggleChatReaction(message.id,emoji)
+    });
   }));
   if(!isPhoneUI())return;
 
   host.querySelectorAll('.chat-bubble[data-message-id]').forEach(bubble=>{
     const message=activeChatMessages.find(item=>item.id===bubble.dataset.messageId);
-    if(!message)return;
+    if(!message||message.deleted)return;
     let lastTap=0;
     let holdTimer=null;
     let startX=0,startY=0;
@@ -3027,14 +3062,14 @@ function wireChatMessageGestures(host) {
       if(e.pointerType==='mouse'||!gestureActive)return;
       const dx=e.clientX-startX;
       const dy=e.clientY-startY;
-      if(Math.abs(dy)>12 && Math.abs(dy)>Math.abs(dx)){
+      if(Math.abs(dy)>18 && Math.abs(dy)>Math.abs(dx)*1.08){
         cancelled=true;
         clearTimeout(holdTimer);
         if(swiping)resetTransform();
         swiping=false;
         return;
       }
-      if(dx>12 && Math.abs(dx)>Math.abs(dy)*1.1){
+      if(dx>15 && Math.abs(dx)>Math.abs(dy)*1.12){
         swiping=true;
         cancelled=true;
         clearTimeout(holdTimer);
@@ -3046,7 +3081,7 @@ function wireChatMessageGestures(host) {
           indicator.style.opacity=String(progress);
           indicator.style.transform=`scale(${0.72+progress*.28})`;
         }
-      }else if(Math.hypot(dx,dy)>10){
+      }else if(Math.hypot(dx,dy)>16){
         cancelled=true;
         clearTimeout(holdTimer);
       }
@@ -3109,12 +3144,14 @@ function renderChatMessages({stickBottom=true}={}) {
       <span class="chat-swipe-reply-indicator" aria-hidden="true">↪</span>
       <div class="chat-bubble" data-message-id="${escapeHtml(message.id || '')}">
         ${!mine ? `<strong>${escapeHtml(profile.displayName || message.author || '')}</strong>` : ''}
-        ${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
-        ${message.image ? `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(message.image)}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" /></button>` : ''}
-        ${chatVoiceHtml(message)}
-        ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
+        ${message.deleted
+          ? '<p class="chat-message-deleted"><span>⊘</span> Message deleted</p>'
+          : `${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
+             ${message.image ? `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(message.image)}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" /></button>` : ''}
+             ${chatVoiceHtml(message)}
+             ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}`}
         <time>${escapeHtml(chatWhen(message.createdAt))}</time>
-        ${reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
+        ${!message.deleted && reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
       </div>
     </article>`;
   }).join('');
@@ -3423,6 +3460,11 @@ async function loadChatMessages(chatId = activeChatId) {
   const data = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`);
   activeChatId = chatId;
   activeChatMessages = data.messages || [];
+  if(pendingChatReply){
+    const latestReply=activeChatMessages.find(item=>item.id===pendingChatReply.id);
+    if(!latestReply || latestReply.deleted) clearPendingChatReply();
+    else pendingChatReply=latestReply;
+  }
   chatUnreadCount = Number(data.unreadCount) || 0;
   const latest = data.chat;
   const idx = chats.findIndex(chat => chat.id === chatId);
@@ -4833,6 +4875,13 @@ document.addEventListener('pointerdown', e => {
 document.addEventListener('pointerdown',e=>{
   if(chatReactionPicker && !e.target.closest('.chat-reaction-picker')) closeChatReactionPicker();
 });
+document.addEventListener('contextmenu',e=>{
+  if(!isPhoneUI())return;
+  e.preventDefault();
+},{capture:true});
+document.addEventListener('dragstart',e=>{
+  if(isPhoneUI() && e.target.closest('img,a')) e.preventDefault();
+},{capture:true});
 document.addEventListener('pointerdown',e=>{
   if(commentReactionPicker && !e.target.closest('.comment-reaction-picker,.comment-react-trigger')) closeCommentReactionPicker();
 });
