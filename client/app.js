@@ -2553,7 +2553,7 @@ function wireChatMessageGestures(host) {
     let lastTap=0;
     let holdTimer=null;
     let startX=0,startY=0;
-    let swiping=false,longPressed=false,cancelled=false;
+    let swiping=false,longPressed=false,cancelled=false,gestureActive=false;
 
     const resetTransform=()=>{
       bubble.style.transition='transform .16s ease';
@@ -2562,7 +2562,8 @@ function wireChatMessageGestures(host) {
     };
 
     bubble.addEventListener('pointerdown',e=>{
-      if(e.pointerType==='mouse')return;
+      if(e.pointerType==='mouse'||e.target.closest('button'))return;
+      gestureActive=true;
       closeChatReactionPicker();
       startX=e.clientX;
       startY=e.clientY;
@@ -2577,7 +2578,7 @@ function wireChatMessageGestures(host) {
     });
 
     bubble.addEventListener('pointermove',e=>{
-      if(e.pointerType==='mouse')return;
+      if(e.pointerType==='mouse'||!gestureActive)return;
       const dx=e.clientX-startX;
       const dy=e.clientY-startY;
       if(Math.abs(dy)>12 && Math.abs(dy)>Math.abs(dx)){
@@ -2600,6 +2601,8 @@ function wireChatMessageGestures(host) {
     });
 
     const finish=e=>{
+      if(!gestureActive)return;
+      gestureActive=false;
       clearTimeout(holdTimer);
       const dx=(e?.clientX ?? startX)-startX;
       if(swiping){
@@ -2626,6 +2629,7 @@ function wireChatMessageGestures(host) {
     };
     bubble.addEventListener('pointerup',finish);
     bubble.addEventListener('pointercancel',()=>{
+      gestureActive=false;
       clearTimeout(holdTimer);
       if(swiping)resetTransform();
       swiping=false;
