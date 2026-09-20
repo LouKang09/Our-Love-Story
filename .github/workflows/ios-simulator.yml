@@ -35,8 +35,10 @@ jobs:
 
       - name: Create Scrapella native artwork
         run: |
-          python3 -m pip install --quiet pillow
-          python3 - <<'PY'
+          python3 -m venv .scrapella-venv
+          source .scrapella-venv/bin/activate
+          python -m pip install --quiet pillow
+          python - <<'PY'
           from PIL import Image
           from pathlib import Path
 
