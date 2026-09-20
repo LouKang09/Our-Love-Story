@@ -3055,7 +3055,7 @@ function wireChatMessageGestures(host) {
         if(cancelled||swiping)return;
         longPressed=true;
         showChatReactionPicker(message,bubble);
-      },430);
+      },360);
     });
 
     bubble.addEventListener('pointermove',e=>{
@@ -3107,7 +3107,7 @@ function wireChatMessageGestures(host) {
       }
       if(cancelled)return;
       const now=Date.now();
-      if(now-lastTap<320){
+      if(now-lastTap<390){
         lastTap=0;
         toggleChatReaction(message.id,'❤️');
       }else{
