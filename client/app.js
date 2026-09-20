@@ -105,7 +105,7 @@ function applyAppearanceMode(value) {
   const btn = $('#themeModeBtn');
   if (btn) {
     const night = mode === 'night';
-    btn.innerHTML = `<span aria-hidden="true">${night ? '☀' : '☾'}</span>`;
+    btn.innerHTML = `<span aria-hidden="true">${night ? '☀' : '☾'}</span><b>${night ? 'Light mode' : 'Dark mode'}</b>`;
     btn.setAttribute('aria-label', night ? 'Switch to light mode' : 'Switch to night mode');
     btn.title = night ? 'Switch to light mode' : 'Switch to night mode';
     btn.classList.toggle('active', night);
@@ -1034,7 +1034,7 @@ async function respondUnbind(approve) {
 function renderFollowStats() {
   const el = $('#followStats');
   if (!el) return;
-  el.innerHTML = `<button class="follow-stat-button" type="button" data-list="followers"><b>${followers.length}</b><span>followers</span></button><button class="follow-stat-button" type="button" data-list="following"><b>${following.length}</b><span>following</span></button>`;
+  el.innerHTML = `<button class="follow-stat-button" type="button" data-list="followers"><b>${compactSocialCount(followers.length)}</b><span>followers</span></button><button class="follow-stat-button" type="button" data-list="following"><b>${compactSocialCount(following.length)}</b><span>following</span></button>`;
   el.querySelectorAll('.follow-stat-button').forEach(btn => btn.addEventListener('click', () => openPersonProfile(me.tag, { list:btn.dataset.list })));
 }
 async function savePersonalPrivacy(privacy) {
@@ -1229,10 +1229,10 @@ const GUIDE_STEPS = [
     prepare:() => showView('home')
   },
   {
-    selector:'.scrapbook-picker-wrap',
+    selector:'#profileBtn',
     eyebrow:'YOUR SCRAPBOOKS',
-    title:'Create or switch books here.',
-    text:'Use the scrapbook selector to move between your Personal, Lovers, and Group scrapbooks. Tap the + button beside it when you want to create a new scrapbook.'
+    title:'Your scrapbook controls now live in Profile.',
+    text:'Open Profile to switch between your Personal, Lovers, and Group scrapbooks. The + button in the header creates a new scrapbook.'
   },
   {
     selector:'.mode-switch',
@@ -1266,7 +1266,7 @@ const GUIDE_STEPS = [
   },
   {
     introducedIn:8,
-    selector:'#scrapbookPicker',
+    selector:'#profileBtn',
     eyebrow:'NEW · PERSONAL SCRAPBOOKS',
     title:'Personal scrapbooks now work better with multiple journals.',
     text:'A person can own more than one Personal scrapbook. Every scrapbook shared with you now appears on their profile and Home shelf. Owners can also change You Only, Followers Only, or Partner Only directly from the active scrapbook.',
@@ -1274,10 +1274,10 @@ const GUIDE_STEPS = [
   },
   {
     introducedIn:7,
-    selector:'#themeModeBtn',
+    selector:'#profileBtn',
     eyebrow:'NEW · NIGHT MODE',
-    title:'The scrapbook can now settle into the dark.',
-    text:'Use the moon or sun button to switch between light and night mode. Your choice follows your account across devices.',
+    title:'Appearance settings now live in Profile.',
+    text:'Open Profile to switch between light and night mode. Your choice follows your account across devices.',
     prepare:() => showView('home')
   },
   {
@@ -1598,8 +1598,8 @@ function renderPersonProfile() {
       ${p.bio ? `<p class="profile-about-text">${mentionTextHtml(p.bio)}</p>` : '<p class="muted">No bio yet.</p>'}
       <div class="person-relation-badges">${data.isPartner ? '<span>Partner</span>' : ''}${data.followsYou ? '<span>Follows you</span>' : ''}${data.isFollowing ? '<span>You follow</span>' : ''}</div>
     </div>`;
-  $('#personFollowerCount').textContent = String(data.followerCount || 0);
-  $('#personFollowingCount').textContent = String(data.followingCount || 0);
+  $('#personFollowerCount').textContent = compactSocialCount(data.followerCount || 0);
+  $('#personFollowingCount').textContent = compactSocialCount(data.followingCount || 0);
 
   $('#personProfileActions').innerHTML = data.isSelf
     ? '<button id="personEditOwnProfile" class="ghost" type="button">Edit my profile</button>'
@@ -1672,27 +1672,40 @@ $('#personProfileBackBtn').addEventListener('click', async () => {
   else showView(mode);
 });
 
+function compactSocialCount(value) {
+  const count = Math.max(0, Number(value) || 0);
+  if (count >= 1000) return `${Math.floor(count / 1000)}k+`;
+  if (count > 100) return '99+';
+  return String(count);
+}
+function homeAccessibleBooks(item) {
+  return Array.isArray(item?.scrapbooks)
+    ? item.scrapbooks
+    : (item?.scrapbook?.accessible ? [item.scrapbook] : []);
+}
+function homeHasLockedBooks(item) {
+  return item?.hasLockedPersonalScrapbooks === true ||
+    Boolean(item?.scrapbook && item.scrapbook.accessible === false);
+}
 function renderHome() {
   if (!me) return;
   if (!$('#homeSearchInput')?.value.trim()) {
     $('#homeSearchResults')?.classList.add('hidden');
     if ($('#homeSearchResults')) $('#homeSearchResults').innerHTML = '';
   }
-  const profileCard = $('#homeProfileCard');
-  profileCard.innerHTML = `<button class="home-profile-link" type="button" data-profile-tag="${escapeHtml(me.tag)}">${avatarHtml(me,'home-avatar')}<span><strong>${escapeHtml(me.displayName || me.tag)}</strong><em>@${escapeHtml(me.tag)}</em><small>${followers.length} followers · ${following.length} following</small></span></button>`;
 
-  const shelf = Array.isArray(homeData.followingShelf) ? homeData.followingShelf : [];
-  $('#homeFollowingCount').textContent = `${shelf.length} following`;
+  const rawShelf = Array.isArray(homeData.followingShelf) ? homeData.followingShelf : [];
+  const shelf = rawShelf.filter(item => {
+    const books = homeAccessibleBooks(item);
+    return books.length > 0 || !homeHasLockedBooks(item);
+  });
+
+  $('#homeFollowingCount').textContent = `${compactSocialCount(following.length)} following`;
   $('#homeShelf').innerHTML = shelf.length ? shelf.map(item => {
     const p = item.profile || {};
-    const books = Array.isArray(item.scrapbooks)
-      ? item.scrapbooks
-      : (item.scrapbook?.accessible ? [item.scrapbook] : []);
-    const hasLocked =
-      item.hasLockedPersonalScrapbooks === true ||
-      Boolean(item.scrapbook && item.scrapbook.accessible === false);
-
+    const books = homeAccessibleBooks(item);
     const firstBook = books[0] || null;
+
     const booksHtml = firstBook ? `<div class="home-personal-book-card">
       <div class="home-closed-book" data-book-id="${escapeHtml(firstBook.id)}">
         <div class="home-book-spine"></div>
@@ -1715,8 +1728,7 @@ function renderHome() {
         <small>Tap here to see the rest</small>
       </button>` : '';
 
-
-    const emptyHtml = !books.length && !hasLocked ? `<div class="home-personal-book-card">
+    const emptyHtml = !books.length ? `<div class="home-personal-book-card">
       <div class="home-closed-book empty-book">
         <div class="home-book-face">
           <span class="home-book-mark">♡</span>
@@ -1734,7 +1746,7 @@ function renderHome() {
       </button>
       <div class="home-personal-books-grid">${booksHtml}${emptyHtml}${moreBooksHtml}</div>
     </article>`;
-  }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from People and their Personal scrapbooks will appear here when they choose to share them with you.</p></div>';
+  }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone and their Personal scrapbooks will appear here when they choose to share them with you.</p></div>';
 
   const suggestions = Array.isArray(homeData.friendSuggestions) ? homeData.friendSuggestions : [];
   $('#homeSuggestions').innerHTML = suggestions.length ? suggestions.map(item => {
@@ -1745,13 +1757,14 @@ function renderHome() {
       <div class="home-suggestion-copy"><strong>${escapeHtml(p.displayName || p.tag)}</strong><span>@${escapeHtml(p.tag || '')}</span><small>${item.mutualCount || 1} friend connection${(item.mutualCount || 1) === 1 ? '' : 's'}${viaNames ? ` · through ${viaNames}` : ''}</small></div>
       <button class="primary home-follow-suggestion" type="button">Follow</button>
     </article>`;
-  }).join('') : '<p class="home-suggestion-empty">Follow a few people and friends-of-friends suggestions will appear here.</p>';
+  }).join('') : '<p class="home-suggestion-empty">Suggestions will appear here as your scrapbook circle grows.</p>';
 
   $('#homeShelf').querySelectorAll('.home-open-book').forEach(btn => btn.addEventListener('click', async () => {
     await openHomeScrapbook(btn.dataset.id, btn.dataset.mode || 'book');
   }));
   wireProfileLinks(homeView);
-  $('#homeSuggestions').querySelectorAll('.home-follow-suggestion').forEach(btn => btn.addEventListener('click', async () => {
+  $('#homeSuggestions').querySelectorAll('.home-follow-suggestion').forEach(btn => btn.addEventListener('click', async e => {
+    e.stopPropagation();
     const tag = btn.closest('.home-suggestion-card')?.dataset.tag;
     if (!tag) return;
     btn.disabled = true;
@@ -1781,6 +1794,7 @@ function renderHomeSearchResults(people = []) {
   </article>`).join('');
   wireProfileLinks(host);
   host.querySelectorAll('.home-search-follow').forEach(btn => btn.addEventListener('click', async e => {
+    e.preventDefault();
     e.stopPropagation();
     const card = btn.closest('.home-search-person');
     const tag = card?.dataset.tag;
@@ -1794,10 +1808,7 @@ function renderHomeSearchResults(people = []) {
       });
       await loadSession(activeScrapbook?.id || null);
       const query = $('#homeSearchInput').value.trim();
-      if (query) {
-        const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
-        renderHomeSearchResults(data.people || []);
-      }
+      if (query) await runHomePeopleSearch(query);
       showToast(currentlyFollowing ? `Unfollowed @${tag}.` : `You are now following @${tag}.`);
     } catch (err) {
       showToast(err.message);
@@ -1805,17 +1816,43 @@ function renderHomeSearchResults(people = []) {
     }
   }));
 }
-
-$('#homeSearchForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const query = $('#homeSearchInput').value.trim();
-  if (!query) return;
+let homePeopleSearchTimer = null;
+let homePeopleSearchSeq = 0;
+async function runHomePeopleSearch(rawQuery = $('#homeSearchInput')?.value || '') {
+  const input = $('#homeSearchInput');
+  const host = $('#homeSearchResults');
+  const query = String(rawQuery || '').trim();
+  if (!input || !host || !query) {
+    host?.classList.add('hidden');
+    if (host) host.innerHTML = '';
+    return;
+  }
+  const seq = ++homePeopleSearchSeq;
   try {
     const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
+    if (seq !== homePeopleSearchSeq) return;
     renderHomeSearchResults(data.people || []);
   } catch (err) {
-    showToast(err.message || 'Could not search profiles.');
+    if (seq === homePeopleSearchSeq) showToast(err.message || 'Could not search profiles.');
   }
+}
+$('#homeSearchInput').addEventListener('input', e => {
+  clearTimeout(homePeopleSearchTimer);
+  const query = e.currentTarget.value.trim();
+  if (!query) {
+    $('#homeSearchResults').classList.add('hidden');
+    $('#homeSearchResults').innerHTML = '';
+    return;
+  }
+  homePeopleSearchTimer = setTimeout(() => runHomePeopleSearch(query), 120);
+});
+$('#homeSearchInput').addEventListener('focus', e => {
+  const query = e.currentTarget.value.trim();
+  if (query) runHomePeopleSearch(query);
+});
+$('#homeSearchForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  await runHomePeopleSearch($('#homeSearchInput').value);
 });
 
 async function openHomeScrapbook(id, mode = 'book') {
@@ -1902,8 +1939,19 @@ function openChatMembersDialog(chat) {
   }));
   $('#chatMembersDialog').showModal();
 }
+function syncMobileChatViewport() {
+  if (!messagesView) return;
+  if (!window.matchMedia('(max-width: 800px)').matches || !messagesView.classList.contains('chat-open')) {
+    messagesView.style.removeProperty('--mobile-chat-top');
+    return;
+  }
+  const topbar = document.querySelector('.topbar');
+  const top = Math.max(0, Math.round(topbar?.getBoundingClientRect().bottom || 0));
+  messagesView.style.setProperty('--mobile-chat-top', `${top}px`);
+}
 function closeMobileChat() {
   messagesView?.classList.remove('chat-open');
+  messagesView?.style.removeProperty('--mobile-chat-top');
   if (window.matchMedia('(max-width: 800px)').matches) {
     activeChatId = null;
     activeChatMessages = [];
@@ -1996,6 +2044,7 @@ async function openChat(chatId) {
   activeChatId = chatId;
   if (currentMode !== 'messages') showView('messages');
   messagesView?.classList.add('chat-open');
+  syncMobileChatViewport();
   try { await loadChatMessages(chatId); }
   catch (err) { showToast(err.message || 'Could not open that conversation.'); }
 }
@@ -2689,6 +2738,7 @@ $('#logoutBtn').addEventListener('click', async () => {
   localStorage.removeItem('activeScrapbookId'); location.reload();
 });
 $('#brandButton').addEventListener('click', async () => {
+  if (profileDialog.open) profileDialog.close();
   setBookCoverOpen(false);
   await refreshAndShow('cover');
 });
@@ -2723,6 +2773,7 @@ $('#scrapbookPicker').addEventListener('change', async e => {
   spreadIndex = 0;
   try {
     await loadSession(selectedId);
+    if (profileDialog.open) profileDialog.close();
     setBookCoverOpen(false);
     showView('cover');
   } catch (err) {
@@ -2844,9 +2895,66 @@ $('#coverThemeSelect').addEventListener('change', async e => {
 });
 $('#closeChatMembersDialog').addEventListener('click', () => $('#chatMembersDialog').close());
 
+let privateChatSearchTimer = null;
+let privateChatSearchSeq = 0;
+function hidePrivateChatSuggestions() {
+  const host = $('#privateChatSuggestions');
+  host?.classList.add('hidden');
+  if (host) host.innerHTML = '';
+}
+function renderPrivateChatSuggestions(people = []) {
+  const host = $('#privateChatSuggestions');
+  if (!host) return;
+  const filtered = people.filter(person => person?.tag && person.tag !== me?.tag).slice(0,8);
+  if (!filtered.length) {
+    host.innerHTML = '<p class="private-chat-suggestion-empty">No matching people.</p>';
+    host.classList.remove('hidden');
+    return;
+  }
+  host.innerHTML = filtered.map(person => `<button class="private-chat-suggestion" type="button" data-tag="${escapeHtml(person.tag)}">
+    ${avatarHtml(person,'mention-suggestion-avatar')}
+    <span><strong>${escapeHtml(person.displayName || person.tag)}</strong><small>@${escapeHtml(person.tag)}</small></span>
+  </button>`).join('');
+  host.classList.remove('hidden');
+  host.querySelectorAll('.private-chat-suggestion').forEach(btn => btn.addEventListener('pointerdown', async e => {
+    e.preventDefault();
+    const tag = btn.dataset.tag;
+    if (!tag) return;
+    $('#privateChatTag').value = `@${tag}`;
+    hidePrivateChatSuggestions();
+    await startPrivateChat(tag);
+  }));
+}
+async function runPrivateChatSearch(rawQuery = $('#privateChatTag')?.value || '') {
+  const query = String(rawQuery || '').trim();
+  if (!query) {
+    hidePrivateChatSuggestions();
+    return;
+  }
+  const seq = ++privateChatSearchSeq;
+  try {
+    const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
+    if (seq !== privateChatSearchSeq) return;
+    renderPrivateChatSuggestions(data.people || []);
+  } catch {
+    if (seq === privateChatSearchSeq) hidePrivateChatSuggestions();
+  }
+}
+$('#privateChatTag').addEventListener('input', e => {
+  clearTimeout(privateChatSearchTimer);
+  const query = e.currentTarget.value.trim();
+  if (!query) return hidePrivateChatSuggestions();
+  privateChatSearchTimer = setTimeout(() => runPrivateChatSearch(query), 100);
+});
+$('#privateChatTag').addEventListener('focus', e => {
+  const query = e.currentTarget.value.trim();
+  if (query) runPrivateChatSearch(query);
+});
+$('#privateChatTag').addEventListener('blur', () => setTimeout(hidePrivateChatSuggestions, 180));
 $('#privateChatForm').addEventListener('submit', async e => {
   e.preventDefault();
-  await startPrivateChat($('#privateChatTag').value);
+  const value = $('#privateChatTag').value.trim();
+  if (value) await startPrivateChat(value);
 });
 $('#chatPhotoInput').addEventListener('change', () => {
   const file = $('#chatPhotoInput').files?.[0] || null;
@@ -2896,6 +3004,12 @@ $('#chatComposer').addEventListener('submit', async e => {
     sendBtn.disabled = false;
     $('#chatText').focus({ preventScroll:true });
   }
+});
+$('#chatText').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+  if (!window.matchMedia('(min-width: 801px)').matches) return;
+  e.preventDefault();
+  $('#chatComposer').requestSubmit();
 });
 
 $('#notificationBtn').addEventListener('click', async () => {
@@ -3295,3 +3409,7 @@ setInterval(() => refreshNotificationCount(), 60 * 1000);
     console.error(err);
   }
 })();
+
+
+window.addEventListener('resize', syncMobileChatViewport);
+window.addEventListener('orientationchange', () => setTimeout(syncMobileChatViewport, 120));
