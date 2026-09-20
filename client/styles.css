@@ -7245,3 +7245,63 @@ html[data-theme="night"] .profile-image-viewer{
     grid-column:1/-1;
   }
 }
+
+
+/* =========================================================
+   PHONE UI V16 — session bootstrap without login flash
+   ========================================================= */
+.session-splash{
+  display:none;
+}
+@media(max-width:800px){
+  body.auth-pending #lockScreen,
+  body.auth-pending #journalApp{
+    display:none!important;
+  }
+  body.auth-pending .session-splash{
+    position:fixed;
+    inset:0;
+    z-index:2147483640;
+    display:grid;
+    place-items:center;
+    padding:24px;
+    background:
+      radial-gradient(circle at 18% 14%,rgba(200,120,140,.10),transparent 32%),
+      var(--paper);
+  }
+  .session-splash-card{
+    display:grid;
+    justify-items:center;
+    gap:9px;
+    color:var(--muted);
+    text-align:center;
+  }
+  .session-splash-card>span{
+    display:grid;
+    place-items:center;
+    width:54px;
+    height:54px;
+    border:1px solid var(--line);
+    border-radius:50%;
+    color:var(--rose);
+    background:rgba(255,255,255,.34);
+    font-size:27px;
+    animation:session-heart-pulse 1.05s ease-in-out infinite alternate;
+  }
+  .session-splash-card>strong{
+    font:700 11px/1.4 ui-sans-serif,system-ui,sans-serif;
+    letter-spacing:.03em;
+  }
+  @keyframes session-heart-pulse{
+    from{transform:scale(.96);opacity:.72}
+    to{transform:scale(1.04);opacity:1}
+  }
+  html[data-theme="night"] body.auth-pending .session-splash{
+    background:
+      radial-gradient(circle at 18% 14%,rgba(200,120,140,.10),transparent 32%),
+      #21191b;
+  }
+  html[data-theme="night"] .session-splash-card>span{
+    background:#352a2e;
+  }
+}
