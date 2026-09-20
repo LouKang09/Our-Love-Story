@@ -3034,6 +3034,52 @@ async function copyChatMessage(message) {
     area.remove();
   }
 }
+async function editOwnChatMessage(message) {
+  if(!message||message.author!==me?.tag||message.deleted)return;
+  const current=String(message.text||'');
+  const next=prompt('Edit message',current);
+  if(next===null)return;
+  const value=String(next).trim();
+  if(!value && !chatMessageImages(message).length && !message.audio){
+    showToast('A message cannot be empty.');
+    return;
+  }
+  try{
+    const data=await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages/${encodeURIComponent(message.id)}`,{
+      method:'PATCH',
+      body:JSON.stringify({text:value})
+    });
+    const idx=activeChatMessages.findIndex(item=>item.id===message.id);
+    if(idx>=0&&data.message)activeChatMessages[idx]=data.message;
+    renderChatMessages({stickBottom:false});
+    await loadChats();
+    showToast('Message edited.');
+  }catch(err){
+    showToast(err.message||'Could not edit that message.');
+  }
+}
+function translateChatMessage(message) {
+  const text=String(message?.text||'').trim();
+  if(!text){showToast('There is no text to translate.');return;}
+  const lang=String(navigator.language||'en').split('-')[0]||'en';
+  const url=`https://translate.google.com/?sl=auto&tl=${encodeURIComponent(lang)}&text=${encodeURIComponent(text)}&op=translate`;
+  window.open(url,'_blank','noopener,noreferrer');
+}
+async function togglePinChatMessage(message) {
+  if(!activeChatId||!message||message.deleted)return;
+  try{
+    const data=await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages/${encodeURIComponent(message.id)}/pin`,{
+      method:'POST',
+      body:JSON.stringify({pinned:!message.pinnedAt})
+    });
+    const idx=activeChatMessages.findIndex(item=>item.id===message.id);
+    if(idx>=0&&data.message)activeChatMessages[idx]=data.message;
+    renderChatMessages({stickBottom:false});
+    showToast(message.pinnedAt?'Message unpinned.':'Message pinned.');
+  }catch(err){
+    showToast(err.message||'Could not update the pin.');
+  }
+}
 async function forwardOwnChatMessage(message) {
   if(!message||message.author!==me?.tag)return;
   closeChatReactionPicker();
@@ -3076,8 +3122,11 @@ async function forwardOwnChatMessage(message) {
 function chatActionIcon(kind) {
   const icons={
     reply:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8 4 12l5 4"/><path d="M5 12h8a7 7 0 0 1 7 7"/></svg>',
+    edit:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10L4 20Z"/><path d="m13.5 7 3.5 3.5"/></svg>',
     forward:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 8 5 4-5 4"/><path d="M19 12h-8a7 7 0 0 0-7 7"/></svg>',
     copy:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>',
+    translate:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h8M8 3v2M6 7c1 3 3 5 6 6"/><path d="M5 13c2-1 4-3 6-6"/><path d="m14 20 3-7 3 7M15.5 17h3"/></svg>',
+    pin:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4 8 8"/><path d="m14 3 7 7-4 2-3 5-2-2-5 3-2-2 3-5-2-2 5-3 3-4Z"/><path d="m9 15-5 5"/></svg>',
     save:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>',
     delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="m7 7 1 13h8l1-13"/><path d="M10 11v5M14 11v5"/></svg>'
   };
@@ -3091,10 +3140,14 @@ function showChatReactionPicker(message,bubble) {
   const overlay=document.createElement('div');
   overlay.className='chat-reaction-picker chat-message-menu-overlay';
   overlay.setAttribute('role','presentation');
+  const hasText=Boolean(String(message.text||'').trim());
   const actions=[
     {id:'reply',label:'Reply',show:!message.deleted},
+    {id:'edit',label:'Edit',show:mine&&!message.deleted&&hasText},
     {id:'forward',label:'Forward',show:mine&&!message.deleted},
-    {id:'copy',label:'Copy',show:!message.deleted&&Boolean(String(message.text||'').trim())},
+    {id:'copy',label:'Copy',show:!message.deleted&&hasText},
+    {id:'translate',label:'Translate',show:!message.deleted&&hasText},
+    {id:'pin',label:message.pinnedAt?'Unpin':'Pin',show:!message.deleted},
     {id:'save',label:images.length>1?'Save photos':'Save image',show:!message.deleted&&images.length>0},
     {id:'delete',label:'Delete',show:mine&&!message.deleted,danger:true}
   ].filter(action=>action.show);
@@ -3138,6 +3191,11 @@ function showChatReactionPicker(message,bubble) {
       setPendingChatReply(message);
       return;
     }
+    if(action==='edit'){
+      closeChatReactionPicker();
+      await editOwnChatMessage(message);
+      return;
+    }
     if(action==='forward'){
       await forwardOwnChatMessage(message);
       return;
@@ -3145,6 +3203,16 @@ function showChatReactionPicker(message,bubble) {
     if(action==='copy'){
       closeChatReactionPicker();
       await copyChatMessage(message);
+      return;
+    }
+    if(action==='translate'){
+      closeChatReactionPicker();
+      translateChatMessage(message);
+      return;
+    }
+    if(action==='pin'){
+      closeChatReactionPicker();
+      await togglePinChatMessage(message);
       return;
     }
     if(action==='save'){
