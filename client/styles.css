@@ -8693,3 +8693,20 @@ html[data-theme="night"] .profile-image-viewer{
     font-weight:800;
   }
 }
+
+
+@media(max-width:800px){
+  .chat-message-action-sheet{
+    max-height:calc(100svh - 112px);
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+  .chat-message-pinned{
+    display:inline-flex;
+    align-items:center;
+    gap:3px;
+    margin-top:4px;
+    color:var(--muted);
+    font:700 8px/1.2 ui-sans-serif,system-ui,sans-serif;
+  }
+}
