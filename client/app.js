@@ -80,6 +80,8 @@ let mobileHomeSearchTimer = null;
 let mobileHomeSearchSeq = 0;
 let mobilePrivateChatSearchTimer = null;
 let mobilePrivateChatSearchSeq = 0;
+let mobileInviteSearchTimer = null;
+let mobileInviteSearchSeq = 0;
 
 function isPhoneUI() {
   return window.matchMedia(PHONE_UI_QUERY).matches;
@@ -154,6 +156,9 @@ function renderMobileBookShelf() {
         </div>
       </div>`;
   }
+  const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
+  $('#mobileNewMemoryBtn')?.classList.toggle('hidden', !canWrite);
+  if ($('#mobileStreamBtn')) $('#mobileStreamBtn').disabled = !activeScrapbook;
 }
 async function prepareMobileBookView() {
   if (!isPhoneUI()) {
@@ -2088,22 +2093,46 @@ function syncMobileChatViewport() {
   const top = Math.max(0, Math.round(topbar?.getBoundingClientRect().bottom || 0));
   messagesView.style.setProperty('--mobile-chat-top', `${top}px`);
 }
-function closeMobileChat() {
+async function closeMobileChat() {
+  const closingId = activeChatId;
+  const closingChat = activeChat();
+  const untouchedDraft = isPhoneUI() &&
+    closingId &&
+    closingChat?.type === 'private' &&
+    activeChatMessages.length === 0 &&
+    !closingChat.lastMessage &&
+    !($('#chatText')?.value || '').trim() &&
+    !pendingChatFile;
+
   messagesView?.classList.remove('chat-open');
   messagesView?.style.removeProperty('--mobile-chat-top');
-  if (window.matchMedia('(max-width: 800px)').matches) {
+
+  if (isPhoneUI()) {
     activeChatId = null;
     activeChatMessages = [];
+    clearPendingChatImage();
+    if ($('#chatText')) $('#chatText').value = '';
     $('#activeChat')?.classList.add('hidden');
     $('#chatEmptyState')?.classList.remove('hidden');
-    renderChatList();
+
+    if (untouchedDraft) {
+      try {
+        await api(`/api/chats/${encodeURIComponent(closingId)}`, { method:'DELETE' });
+        chats = chats.filter(chat => chat.id !== closingId);
+        await loadChats({ preserveActive:false });
+      } catch {
+        await loadChats({ preserveActive:false }).catch(() => {});
+      }
+    } else {
+      renderChatList();
+    }
   }
 }
 function renderChatHeader(chat) {
   const host = $('#chatHeader');
   if (!host || !chat) return;
   const memberCount = Array.isArray(chat.members) ? chat.members.length : 0;
-  host.innerHTML = `<button class="chat-mobile-back" type="button" aria-label="Back to conversations">←</button><div class="chat-header-identity">${chatAvatarHtml(chat)}<div><p class="eyebrow">${chat.type === 'group' ? 'GROUP SCRAPBOOK CHAT' : 'PRIVATE MESSAGE'}</p><h3>${escapeHtml(chat.name || 'Conversation')}</h3>${chat.type === 'group' ? `<button class="chat-member-count" type="button">${memberCount} member${memberCount === 1 ? '' : 's'} · tap to view</button>` : `<button class="chat-profile-link" type="button" data-profile-tag="${escapeHtml(chat.otherProfile?.tag || '')}">@${escapeHtml(chat.otherProfile?.tag || '')}</button>`}</div></div>`;
+  host.innerHTML = `<button class="chat-mobile-back" type="button" aria-label="Back to conversations"><span aria-hidden="true">←</span></button><div class="chat-header-identity">${chatAvatarHtml(chat)}<div><p class="eyebrow">${chat.type === 'group' ? 'GROUP SCRAPBOOK CHAT' : 'PRIVATE MESSAGE'}</p><h3>${escapeHtml(chat.name || 'Conversation')}</h3>${chat.type === 'group' ? `<button class="chat-member-count" type="button">${memberCount} member${memberCount === 1 ? '' : 's'} · tap to view</button>` : `<button class="chat-profile-link" type="button" data-profile-tag="${escapeHtml(chat.otherProfile?.tag || '')}">@${escapeHtml(chat.otherProfile?.tag || '')}</button>`}</div></div>`;
   wireProfileLinks(host);
   host.querySelector('.chat-mobile-back')?.addEventListener('click', closeMobileChat);
   host.querySelector('.chat-member-count')?.addEventListener('click', () => openChatMembersDialog(chat));
@@ -2226,7 +2255,7 @@ function showView(mode) {
   messagesView.classList.toggle('hidden', mode !== 'messages');
   personProfileView.classList.toggle('hidden', mode !== 'person');
   $('#homeModeBtn').classList.toggle('active', mode === 'home');
-  $('#bookModeBtn').classList.toggle('active', mode === 'book');
+  $('#bookModeBtn').classList.toggle('active', mode === 'book' || (isPhoneUI() && mode === 'stream'));
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
   $('#connectionsModeBtn').classList.toggle('active', mode === 'connections' || mode === 'person');
   $('#messagesModeBtn').classList.toggle('active', mode === 'messages');
@@ -2913,6 +2942,14 @@ $('#connectionsModeBtn').addEventListener('click', async () => {
 });
 $('#messagesModeBtn').addEventListener('click', () => { closeMobileChat(); showView('messages'); });
 $('#newEntryBtn').addEventListener('click', () => openEditor());
+$('#mobileNewMemoryBtn')?.addEventListener('click', () => {
+  if (!isPhoneUI() || !activeScrapbook || activeScrapbook.canWrite === false) return;
+  openEditor();
+});
+$('#mobileStreamBtn')?.addEventListener('click', () => {
+  if (!isPhoneUI() || !activeScrapbook) return;
+  showView('stream');
+});
 $('#emptyAddBtn').addEventListener('click', () => activeScrapbook ? openEditor() : scrapbookDialog.showModal());
 $('#closeEditorBtn').addEventListener('click', closeEditor);
 $('#cancelEditorBtn').addEventListener('click', closeEditor);
@@ -2972,13 +3009,73 @@ $('#scrapbookForm').addEventListener('submit', async e => {
     showToast(type === 'personal' ? 'Personal scrapbook created.' : 'Scrapbook created. Invite someone by @tag.');
   } catch (err) { $('#scrapbookError').textContent = err.message; }
 });
+function hidePhoneInviteSuggestions() {
+  const host = $('#inviteSuggestions');
+  host?.classList.add('hidden');
+  if (host) host.innerHTML = '';
+}
+async function sendScrapbookInvite(tag) {
+  if (!activeScrapbook) return;
+  const clean = String(tag || '').trim().replace(/^@/,'').toLowerCase();
+  if (!clean) return;
+  try {
+    await api(`/api/scrapbooks/${activeScrapbook.id}/invite`, { method:'POST', body:JSON.stringify({ tag:clean }) });
+    $('#inviteTag').value = '';
+    hidePhoneInviteSuggestions();
+    showToast(`Invitation sent to @${clean}.`);
+  } catch (err) {
+    showToast(err.message);
+  }
+}
 $('#inviteForm').addEventListener('submit', async e => {
   e.preventDefault();
-  if (!activeScrapbook) return;
+  await sendScrapbookInvite($('#inviteTag').value);
+});
+function renderPhoneInviteSuggestions(people = []) {
+  if (!isPhoneUI()) return;
+  const host = $('#inviteSuggestions');
+  if (!host) return;
+  const existing = new Set(activeScrapbook?.members || []);
+  const filtered = people
+    .filter(person => person?.tag && person.tag !== me?.tag && !existing.has(person.tag))
+    .slice(0,8);
+  if (!filtered.length) {
+    host.innerHTML = '<p class="invite-suggestion-empty">No available matching profiles.</p>';
+    host.classList.remove('hidden');
+    return;
+  }
+  host.innerHTML = filtered.map(person => `<button class="invite-suggestion" type="button" data-tag="${escapeHtml(person.tag)}">
+    ${avatarHtml(person,'mention-suggestion-avatar')}
+    <span><strong>${escapeHtml(person.displayName || person.tag)}</strong><small>@${escapeHtml(person.tag)}</small></span>
+  </button>`).join('');
+  host.classList.remove('hidden');
+  host.querySelectorAll('.invite-suggestion').forEach(btn => btn.addEventListener('pointerdown', async e => {
+    e.preventDefault();
+    await sendScrapbookInvite(btn.dataset.tag);
+  }));
+}
+async function runPhoneInviteSearch(rawQuery = $('#inviteTag')?.value || '') {
+  if (!isPhoneUI()) return;
+  const query = String(rawQuery || '').trim();
+  if (!query) return hidePhoneInviteSuggestions();
+  const seq = ++mobileInviteSearchSeq;
   try {
-    await api(`/api/scrapbooks/${activeScrapbook.id}/invite`, { method:'POST', body:JSON.stringify({ tag:$('#inviteTag').value.trim() }) });
-    showToast('Invitation sent.'); $('#inviteTag').value = '';
-  } catch (err) { showToast(err.message); }
+    const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
+    if (seq !== mobileInviteSearchSeq || !isPhoneUI()) return;
+    renderPhoneInviteSuggestions(data.people || []);
+  } catch {
+    if (seq === mobileInviteSearchSeq) hidePhoneInviteSuggestions();
+  }
+}
+$('#inviteTag').addEventListener('input', e => {
+  if (!isPhoneUI()) return;
+  clearTimeout(mobileInviteSearchTimer);
+  const query = e.currentTarget.value.trim();
+  if (!query) return hidePhoneInviteSuggestions();
+  mobileInviteSearchTimer = setTimeout(() => runPhoneInviteSearch(query), 100);
+});
+$('#inviteTag').addEventListener('blur', () => {
+  if (isPhoneUI()) setTimeout(hidePhoneInviteSuggestions, 180);
 });
 
 function renderDiscoverResults(people) {
@@ -3298,6 +3395,7 @@ function syncResponsiveChrome() {
     setPhoneMessageButtonVisual(false);
     if ($('#privateChatTag')) $('#privateChatTag').placeholder = 'Message @tag';
     hideMobilePrivateChatSuggestions();
+    hidePhoneInviteSuggestions();
   }
   applyAppearanceMode(me?.appearanceMode || document.documentElement.dataset.theme || 'light');
   renderScrapbookPicker();
