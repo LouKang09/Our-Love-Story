@@ -236,12 +236,12 @@
                 <div id="chatAudioPreview" class="chat-audio-preview hidden"></div>
                 <textarea id="chatText" rows="2" maxlength="2000" placeholder="Write a message..."></textarea>
                 <div class="chat-compose-actions">
-                  <label class="ghost chat-photo-button" title="Choose photo">＋<input id="chatPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
+                  <label class="ghost chat-photo-button" title="Choose photo"><span class="desktop-chat-photo-label">📷 Photo</span><span class="phone-chat-photo-label">＋</span><input id="chatPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
                   <label class="ghost chat-camera-button phone-only-chat-tool" title="Take photo">📷<input id="chatCameraInput" type="file" accept="image/*" capture="environment" hidden /></label>
                   <button id="chatMicBtn" class="ghost chat-mic-button phone-only-chat-tool" type="button" aria-label="Record voice message" title="Record voice message">🎙</button>
                   <button id="chatSendBtn" class="primary" type="submit">Send</button>
                 </div>
-                <p class="helper chat-media-helper">Attach a photo or record a voice message.</p>
+                <p class="helper chat-media-helper"><span class="desktop-chat-media-helper">Chat attachments accept images only.</span><span class="phone-chat-media-helper">Attach a photo, take one now, or record a voice message.</span></p>
               </form>
             </div>
           </section>
