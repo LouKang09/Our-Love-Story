@@ -34,8 +34,9 @@ let chats = [];
 let activeChatId = null;
 let activeChatMessages = [];
 let chatUnreadCount = 0;
-let pendingChatFile = null;
-let pendingChatPreviewUrl = '';
+let pendingChatFiles = [];
+let pendingChatPreviewUrls = [];
+let chatImageViewerSrc = '';
 let pendingChatReply = null;
 let chatReactionPicker = null;
 let commentReactionPicker = null;
@@ -2140,11 +2141,51 @@ function setProfileImageScale(value) {
   }
   applyProfileImageTransform();
 }
+function chatMessageImages(message) {
+  if (!message) return [];
+  return [...new Set([
+    ...(Array.isArray(message.images) ? message.images : []),
+    message.image || ''
+  ].filter(Boolean))].slice(0,10);
+}
+async function saveChatImage(src,index=0) {
+  if(!src)return;
+  try{
+    const response=await fetch(src,{credentials:'same-origin'});
+    if(!response.ok)throw new Error('Could not download that photo.');
+    const blob=await response.blob();
+    const ext=(blob.type.split('/')[1]||'jpg').replace('jpeg','jpg');
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`scrapbook-photo-${Date.now()}-${index+1}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(err){
+    showToast(err.message || 'Could not save that photo.');
+  }
+}
+async function saveChatImages(message) {
+  const images=chatMessageImages(message);
+  if(!images.length)return;
+  if(images.length===1){
+    await saveChatImage(images[0],0);
+    return;
+  }
+  for(let i=0;i<images.length;i++){
+    await saveChatImage(images[i],i);
+    await new Promise(resolve=>setTimeout(resolve,180));
+  }
+  showToast(`Saving ${images.length} photos.`);
+}
 function openChatImageViewer(src) {
   if(!isPhoneUI()||!src)return;
   const viewer=$('#chatImageViewer');
   const img=$('#chatImageViewerImg');
   if(!viewer||!img)return;
+  chatImageViewerSrc=src;
   img.src=src;
   viewer.classList.remove('hidden');
   document.body.classList.add('chat-image-viewing');
@@ -2152,6 +2193,7 @@ function openChatImageViewer(src) {
 function closeChatImageViewer() {
   $('#chatImageViewer')?.classList.add('hidden');
   if($('#chatImageViewerImg'))$('#chatImageViewerImg').src='';
+  chatImageViewerSrc='';
   document.body.classList.remove('chat-image-viewing');
 }
 function openProfileImageViewer(profile) {
@@ -2743,7 +2785,7 @@ async function closeMobileChat() {
     activeChatMessages.length === 0 &&
     !closingChat.lastMessage &&
     !($('#chatText')?.value || '').trim() &&
-    !pendingChatFile;
+    pendingChatFiles.length === 0;
 
   messagesView?.classList.remove('chat-open');
   messagesView?.style.removeProperty('--mobile-chat-top');
