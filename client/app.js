@@ -157,8 +157,10 @@ function renderMobileBookShelf() {
       </div>`;
   }
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
+  const canDeleteBook = Boolean(activeScrapbook && activeScrapbook.isOwner === true && !other);
   $('#mobileNewMemoryBtn')?.classList.toggle('hidden', !canWrite);
   if ($('#mobileStreamBtn')) $('#mobileStreamBtn').disabled = !activeScrapbook;
+  $('#mobileDeleteScrapbookBtn')?.classList.toggle('hidden', !canDeleteBook);
 }
 async function prepareMobileBookView() {
   if (!isPhoneUI()) {
@@ -248,6 +250,27 @@ function escapeHtml(str = '') {
 function formatDate(dateString) {
   const d = new Date(`${dateString}T12:00:00`);
   return new Intl.DateTimeFormat(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' }).format(d);
+}
+function formatBondDate(value) {
+  const d = new Date(value || '');
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', year:'numeric' }).format(d);
+}
+function bondDurationText(startValue, endValue = null) {
+  const start = new Date(startValue || '');
+  const end = endValue ? new Date(endValue) : new Date();
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return '';
+  let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  if (end.getDate() < start.getDate()) months -= 1;
+  months = Math.max(0, months);
+  if (months >= 12) {
+    const years = Math.floor(months / 12);
+    const remain = months % 12;
+    return remain ? `${years}y ${remain}mo bonded` : `${years} year${years === 1 ? '' : 's'} bonded`;
+  }
+  if (months >= 1) return `${months} month${months === 1 ? '' : 's'} bonded`;
+  const days = Math.max(0, Math.floor((end - start) / 86400000));
+  return `${days} day${days === 1 ? '' : 's'} bonded`;
 }
 function formatEntryTime(value) {
   const d = new Date(value || '');
@@ -1339,9 +1362,17 @@ function renderConnections() {
   if (isCouple) {
     const mine = profiles.find(p => p.tag === me.tag) || me;
     const other = profiles.find(p => p.tag !== me.tag);
+    const bondStart = activeScrapbook.boundAt || activeScrapbook.createdAt;
+    const bondEnd = archived ? activeScrapbook.unboundAt : null;
+    const bondDate = other && bondStart ? formatBondDate(bondStart) : '';
+    const bondDuration = other && bondStart ? bondDurationText(bondStart, bondEnd) : '';
     $('#peopleMap').innerHTML = `<div class="couple-bind ${archived ? 'unbound-bind' : ''}">
+      <svg class="bond-current-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path class="bond-current-left" d="M18 50 C27 38 36 62 47 50" />
+        <path class="bond-current-right" d="M53 50 C64 38 73 62 82 50" />
+      </svg>
       <button class="bound-profile profile-card-button" type="button" data-profile-tag="${escapeHtml(mine.tag)}">${avatarHtml(mine, 'bound-avatar')}<strong>${escapeHtml(mine.displayName)}</strong><span>@${escapeHtml(mine.tag)}</span></button>
-      <div class="heart-bind"><span>♡</span><small>${archived ? 'UNBOUND ARCHIVE' : (other ? 'BOUND' : 'WAITING')}</small></div>
+      <div class="heart-bind"><span>♡</span><small>${archived ? 'UNBOUND ARCHIVE' : (other ? 'BOUND' : 'WAITING')}</small>${bondDate ? `<em>Since ${escapeHtml(bondDate)}</em>` : ''}${bondDuration ? `<b>${escapeHtml(bondDuration)}</b>` : ''}</div>
       ${other ? `<button class="bound-profile profile-card-button" type="button" data-profile-tag="${escapeHtml(other.tag)}">${avatarHtml(other, 'bound-avatar')}<strong>${escapeHtml(other.displayName)}</strong><span>@${escapeHtml(other.tag)}</span></button>` : `<div class="bound-profile empty-bound"><span class="avatar bound-avatar">?</span><strong>Your person</strong><span>Invite by @tag</span></div>`}
     </div>`;
     wireProfileLinks($('#peopleMap'));
@@ -2278,6 +2309,7 @@ function showView(mode) {
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
   $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || mode === 'messages' || (Boolean(activeScrapbook) && !canWrite));
   emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || mode === 'messages' || (!noBook && !noEntries));
+  $('#emptyDeleteScrapbookBtn')?.classList.toggle('hidden', !(isPhoneUI() && noEntries && activeScrapbook?.isOwner === true));
 
   if (mode === 'home') {
     renderHome();
@@ -3039,6 +3071,8 @@ $('#mobileStreamBtn')?.addEventListener('click', () => {
   if (!isPhoneUI() || !activeScrapbook) return;
   showView('stream');
 });
+$('#mobileDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
+$('#emptyDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
 $('#emptyAddBtn').addEventListener('click', () => activeScrapbook ? openEditor() : scrapbookDialog.showModal());
 $('#closeEditorBtn').addEventListener('click', closeEditor);
 $('#cancelEditorBtn').addEventListener('click', closeEditor);
@@ -3094,10 +3128,38 @@ $('#scrapbookForm').addEventListener('submit', async e => {
     const type = $('#scrapbookType').value;
     const data = await api('/api/scrapbooks', { method:'POST', body:JSON.stringify({ type, name:$('#scrapbookName').value.trim(), privacy:$('#personalPrivacy').value, coverTheme:$('#scrapbookCoverTheme').value }) });
     scrapbookDialog.close(); $('#scrapbookName').value = '';
-    await loadSession(data.scrapbook.id); showView('connections');
-    showToast(type === 'personal' ? 'Personal scrapbook created.' : 'Scrapbook created. Invite someone by @tag.');
+    if (isPhoneUI() && type === 'personal') {
+      mobileBookContextTag = me?.tag || null;
+      await loadSession(data.scrapbook.id);
+      setBookCoverOpen(true);
+      showView('book');
+      showToast('Personal scrapbook created.');
+      setTimeout(() => openEditor(), 140);
+    } else {
+      await loadSession(data.scrapbook.id); showView('connections');
+      showToast(type === 'personal' ? 'Personal scrapbook created.' : 'Scrapbook created. Invite someone by @tag.');
+    }
   } catch (err) { $('#scrapbookError').textContent = err.message; }
 });
+async function deleteActiveScrapbook() {
+  if (!isPhoneUI() || !activeScrapbook || activeScrapbook.isOwner !== true) return;
+  const book = activeScrapbook;
+  const warning = book.type === 'personal'
+    ? `Delete "${book.name}" and all of its memories? This cannot be undone.`
+    : `Delete "${book.name}" for everyone and remove all of its memories and shared chat? This cannot be undone.`;
+  if (!confirm(warning)) return;
+  try {
+    await api(`/api/scrapbooks/${encodeURIComponent(book.id)}`, { method:'DELETE' });
+    localStorage.removeItem('activeScrapbookId');
+    mobileBookContextTag = me?.tag || null;
+    await loadSession(null);
+    showToast('Scrapbook deleted.');
+    showView(activeScrapbook ? 'book' : 'home');
+  } catch (err) {
+    showToast(err.message || 'Could not delete the scrapbook.');
+  }
+}
+
 function hidePhoneInviteSuggestions() {
   const host = $('#inviteSuggestions');
   host?.classList.add('hidden');
@@ -3796,10 +3858,26 @@ entryForm.addEventListener('submit', async e => {
   e.preventDefault(); $('#editorError').textContent = '';
   try {
     const draft = currentDraft();
-    await api(editingId ? `/api/entries/${editingId}` : '/api/entries', { method:editingId ? 'PUT' : 'POST', body:JSON.stringify(draft) });
+    const bookId = activeScrapbook?.id || '';
+    const result = await api(editingId ? `/api/entries/${editingId}` : '/api/entries', { method:editingId ? 'PUT' : 'POST', body:JSON.stringify(draft) });
     const wasEditing = Boolean(editingId);
-    await refreshEntries(); closeEditor(); showToast(wasEditing ? 'Memory updated.' : 'Memory added to the scrapbook.');
-    if (currentMode === 'cover') showView('book');
+    const savedId = result.entry?.id || editingId || null;
+
+    if (isPhoneUI()) {
+      closeEditor();
+      await loadSession(bookId);
+      const ordered = chronologicalEntries();
+      const savedIndex = savedId ? ordered.findIndex(entry => entry.id === savedId) : -1;
+      spreadIndex = savedIndex >= 0 ? savedIndex : Math.max(0, ordered.length - 1);
+      setBookCoverOpen(true);
+      showView('book');
+      renderBook();
+    } else {
+      await refreshEntries();
+      closeEditor();
+      if (currentMode === 'cover') showView('book');
+    }
+    showToast(wasEditing ? 'Memory updated.' : 'Memory added to the scrapbook.');
   } catch (err) { $('#editorError').textContent = err.message; }
 });
 $('#deleteEntryBtn').addEventListener('click', async () => {
