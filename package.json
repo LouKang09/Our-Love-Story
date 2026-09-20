@@ -1,14 +1,18 @@
 {
-  "name": "our-love-story",
+  "name": "scrapella",
   "version": "2.1.0",
   "private": true,
-  "description": "A private social scrapbook for lovers, friends and groups with journal pages, profiles and shared memories.",
+  "description": "Scrapella — a private social scrapbook for personal stories, couples, friends and groups.",
   "scripts": {
     "start": "node server/server.js",
     "dev": "node --watch server/server.js",
     "android:add": "npx cap add android",
     "android:sync": "npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "ios:add": "npx cap add ios",
+    "ios:sync": "npx cap sync ios",
+    "ios:open": "npx cap open ios",
+    "mobile:sync": "npx cap sync"
   },
   "engines": {
     "node": ">=20"
@@ -19,6 +23,7 @@
   "devDependencies": {
     "@capacitor/android": "8.5.2",
     "@capacitor/cli": "8.5.2",
-    "@capacitor/core": "8.5.2"
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2"
   }
 }
