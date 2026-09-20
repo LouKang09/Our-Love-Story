@@ -373,9 +373,14 @@ function sanitizeRichText(input) {
     const faceMatch = attrs.match(/\bface\s*=\s*["']([^"']+)["']/i);
     const sizeMatch = attrs.match(/\bsize\s*=\s*["']?([1-7])["']?/i);
     const face = String(faceMatch?.[1] || '').toLowerCase();
-    if (face.includes('georgia') || face.includes('times')) classes.push('fmt-font-serif');
+    if (face.includes('georgia')) classes.push('fmt-font-serif');
+    else if (face.includes('times')) classes.push('fmt-font-classic');
+    else if (face.includes('palatino') || face.includes('book antiqua')) classes.push('fmt-font-elegant');
+    else if (face.includes('verdana')) classes.push('fmt-font-rounded');
+    else if (face.includes('trebuchet')) classes.push('fmt-font-casual');
     else if (face.includes('arial') || face.includes('helvetica') || face.includes('sans')) classes.push('fmt-font-sans');
     else if (face.includes('segoe print') || face.includes('comic sans') || face.includes('bradley')) classes.push('fmt-font-hand');
+    else if (face.includes('brush script') || face.includes('segoe script')) classes.push('fmt-font-script');
     else if (face.includes('courier') || face.includes('mono')) classes.push('fmt-font-mono');
     if (sizeMatch) classes.push(`fmt-size-${sizeMatch[1]}`);
     return classes.length ? `<span class="${classes.join(' ')}">` : '<span>';
@@ -394,8 +399,14 @@ function sanitizeRichText(input) {
     const classMatch = attrs.match(/\bclass\s*=\s*["']([^"']+)["']/i);
     const allowed = String(classMatch?.[1] || '')
       .split(/\s+/)
-      .filter(cls => /^fmt-font-(serif|sans|hand|mono)$/.test(cls) || /^fmt-size-[1-7]$/.test(cls));
-    return allowed.length ? `<span class="${[...new Set(allowed)].join(' ')}">` : '<span>';
+      .filter(cls => /^fmt-font-(serif|classic|elegant|sans|rounded|casual|hand|script|mono)$/.test(cls) || /^fmt-size-[1-7]$/.test(cls));
+    const styleMatch = attrs.match(/\bstyle\s*=\s*["'][^"']*font-size\s*:\s*([0-9.]+)px[^"']*["']/i);
+    const rawSize = Number(styleMatch?.[1]);
+    const safeStyle = Number.isFinite(rawSize)
+      ? ` style="font-size:${Math.max(7,Math.min(42,rawSize)).toFixed(rawSize % 1 ? 1 : 0)}px"`
+      : '';
+    const classAttr = allowed.length ? ` class="${[...new Set(allowed)].join(' ')}"` : '';
+    return `<span${classAttr}${safeStyle}>`;
   });
   html = html.replace(/<\/span\s*>/gi, '</span>');
 
