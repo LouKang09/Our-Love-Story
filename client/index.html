@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-privacy8" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-mobileui10" />
 </head>
 <body>
   <div id="app">
@@ -41,37 +41,39 @@
 
     <main id="journalApp" class="hidden">
       <header class="topbar">
-        <button id="brandButton" class="brand-button" aria-label="Return to cover"><span>♡</span><strong id="brandTitle">Our Journal</strong></button>
-        <div class="scrapbook-picker-wrap">
-          <select id="scrapbookPicker" aria-label="Choose scrapbook"></select>
-          <button id="createScrapbookBtn" class="small-circle" title="Create scrapbook">＋</button>
-        </div>
         <div class="toolbar">
+          <div class="header-actions">
+            <button id="createScrapbookBtn" class="small-circle" type="button" title="Create scrapbook" aria-label="Create scrapbook">＋</button>
+            <div id="notificationWrap" class="notification-wrap">
+              <button id="notificationBtn" class="notification-btn" type="button" aria-label="Open notifications" aria-expanded="false">
+                <span class="notification-bell-glyph" aria-hidden="true">🔔</span>
+                <span id="notificationBadge" class="notification-badge hidden">0</span>
+              </button>
+              <section id="notificationPanel" class="notification-panel hidden" aria-label="Notifications">
+                <div class="notification-panel-head">
+                  <div><p class="eyebrow">NOTIFICATIONS</p><h3>Your scrapbook circle</h3></div>
+                  <button id="notificationCloseBtn" class="icon-btn" type="button" aria-label="Close notifications">×</button>
+                </div>
+                <div id="notificationList" class="notification-list"></div>
+              </section>
+            </div>
+            <button id="guideBtn" class="guide-btn" type="button" title="How to use the scrapbook" aria-label="Open scrapbook guide">ⓘ</button>
+            <button id="profileBtn" class="profile-chip" type="button" aria-label="Open profile and settings"><span id="profileAvatarMini" class="avatar mini-avatar">♡</span><span id="profileChipText">Profile</span></button>
+            <button id="messagesModeBtn" class="messages-mode-btn messages-icon-btn" type="button" aria-label="Open messages" title="Messages">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 2.3a1 1 0 0 0-1.05-.23L2.7 9.05a1 1 0 0 0 .08 1.89l7.42 2.47 2.47 7.42a1 1 0 0 0 1.89.08l6.97-17.95a1 1 0 0 0 .17-.66ZM5.95 10.08 18.4 5.24l-7.03 7.03-5.42-2.19Zm8 7.97-1.81-5.42 7.03-7.03-5.22 12.45Z"/></svg>
+              <span id="messagesBadge" class="messages-badge hidden">0</span>
+            </button>
+            <button id="logoutBtn" class="logout-btn" type="button">Log out</button>
+          </div>
+
           <div class="mode-switch" role="group" aria-label="Journal view">
             <button id="homeModeBtn">Home</button>
             <button id="bookModeBtn">Book</button>
             <button id="streamModeBtn">Memory Stream</button>
             <button id="connectionsModeBtn">People</button>
-            <button id="messagesModeBtn" class="messages-mode-btn">Messages <span id="messagesBadge" class="messages-badge hidden">0</span></button>
           </div>
+
           <button id="newEntryBtn" class="primary">＋ New memory</button>
-          <div id="notificationWrap" class="notification-wrap">
-            <button id="notificationBtn" class="notification-btn" type="button" aria-label="Open notifications" aria-expanded="false">
-              <span class="notification-bell-glyph" aria-hidden="true">🔔</span>
-              <span id="notificationBadge" class="notification-badge hidden">0</span>
-            </button>
-            <section id="notificationPanel" class="notification-panel hidden" aria-label="Notifications">
-              <div class="notification-panel-head">
-                <div><p class="eyebrow">NOTIFICATIONS</p><h3>Your scrapbook circle</h3></div>
-                <button id="notificationCloseBtn" class="icon-btn" type="button" aria-label="Close notifications">×</button>
-              </div>
-              <div id="notificationList" class="notification-list"></div>
-            </section>
-          </div>
-          <button id="guideBtn" class="guide-btn" type="button" title="How to use the scrapbook" aria-label="Open scrapbook guide">ⓘ</button>
-          <button id="themeModeBtn" class="theme-mode-btn" type="button" title="Toggle night mode" aria-label="Switch to night mode"><span aria-hidden="true">☾</span></button>
-          <button id="profileBtn" class="profile-chip" type="button"><span id="profileAvatarMini" class="avatar mini-avatar">♡</span><span id="profileChipText">Profile</span></button>
-          <button id="logoutBtn" class="logout-btn" type="button">Log out</button>
         </div>
       </header>
 
@@ -79,26 +81,23 @@
       <section id="personalPrivacyQuick" class="personal-privacy-quick hidden" aria-label="Personal scrapbook privacy"></section>
 
       <section id="homeView" class="home-view hidden">
-        <div class="home-hero">
-          <div>
-            <p class="eyebrow">YOUR SCRAPBOOK CIRCLE</p>
-            <h2>Home</h2>
-            <p>Keep up with the people you follow, then open the personal scrapbooks they have chosen to share with you.</p>
-          </div>
-          <div id="homeProfileCard" class="home-profile-card"></div>
-        </div>
-
         <section class="home-search-section">
-          <div>
+          <div class="home-search-copy">
             <p class="eyebrow">FIND PEOPLE</p>
-            <h3>Search the scrapbook community</h3>
-            <p>Search by @tag from Home, open a profile, follow them, or view a Personal scrapbook they share with you.</p>
+            <h2>Search the scrapbook community</h2>
+            <p>Type <strong>@</strong> or a name to find someone. Choose a suggestion, then follow them or open their profile.</p>
           </div>
-          <form id="homeSearchForm" class="home-search-form">
-            <input id="homeSearchInput" placeholder="Search @tag" autocomplete="off" required />
-            <button class="primary" type="submit">Search</button>
+          <form id="homeSearchForm" class="home-search-form" autocomplete="off">
+            <input id="homeSearchInput" placeholder="Search @tag or name" autocomplete="off" aria-autocomplete="list" />
           </form>
           <div id="homeSearchResults" class="home-search-results hidden"></div>
+
+          <div class="home-suggestions-inline">
+            <div class="home-suggestions-heading">
+              <div><p class="eyebrow">FRIENDS OF FRIENDS</p><h3>People you may know</h3></div>
+            </div>
+            <div id="homeSuggestions" class="home-suggestions"></div>
+          </div>
         </section>
 
         <section class="home-section">
@@ -107,13 +106,6 @@
             <span id="homeFollowingCount" class="home-count"></span>
           </div>
           <div id="homeShelf" class="home-shelf"></div>
-        </section>
-
-        <section class="home-section home-suggestions-section">
-          <div class="home-section-head">
-            <div><p class="eyebrow">FRIENDS OF FRIENDS</p><h3>People you may know</h3></div>
-          </div>
-          <div id="homeSuggestions" class="home-suggestions"></div>
         </section>
       </section>
 
@@ -191,11 +183,11 @@
             <div class="chat-sidebar-head">
               <div><p class="eyebrow">MESSAGES</p><h2>Conversations</h2></div>
             </div>
-            <form id="privateChatForm" class="private-chat-form">
-              <input id="privateChatTag" placeholder="Message @tag" autocomplete="off" required />
-              <button class="primary" type="submit">Start</button>
+            <form id="privateChatForm" class="private-chat-form" autocomplete="off">
+              <input id="privateChatTag" placeholder="Search" autocomplete="off" aria-autocomplete="list" />
+              <div id="privateChatSuggestions" class="private-chat-suggestions hidden" role="listbox"></div>
             </form>
-            <p class="helper chat-helper">Private chats are one-to-one. Every Group scrapbook automatically gets its own shared chat.</p>
+            <p class="helper chat-helper">Type @ or a name, then tap a person to start a private conversation. Group scrapbook chats appear automatically.</p>
             <div id="chatList" class="chat-list"></div>
           </aside>
 
@@ -210,12 +202,13 @@
               <div id="chatMessages" class="chat-messages"></div>
               <form id="chatComposer" class="chat-composer">
                 <div id="chatImagePreview" class="chat-image-preview hidden"></div>
-                <textarea id="chatText" rows="2" maxlength="2000" placeholder="Write a message..."></textarea>
+                <textarea id="chatText" rows="1" maxlength="2000" placeholder="Write a message..."></textarea>
                 <div class="chat-compose-actions">
-                  <label class="ghost chat-photo-button">📷 Photo<input id="chatPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
-                  <button id="chatSendBtn" class="primary" type="submit">Send</button>
+                  <label class="ghost chat-photo-button" aria-label="Add photo" title="Add photo"><span aria-hidden="true">＋</span><input id="chatPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
+                  <button id="chatSendBtn" class="primary chat-send-button" type="submit" aria-label="Send message" title="Send">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 2.3a1 1 0 0 0-1.05-.23L2.7 9.05a1 1 0 0 0 .08 1.89l7.42 2.47 2.47 7.42a1 1 0 0 0 1.89.08l6.97-17.95a1 1 0 0 0 .17-.66ZM5.95 10.08 18.4 5.24l-7.03 7.03-5.42-2.19Zm8 7.97-1.81-5.42 7.03-7.03-5.22 12.45Z"/></svg>
+                  </button>
                 </div>
-                <p class="helper">Chat attachments accept images only.</p>
               </form>
             </div>
           </section>
@@ -473,6 +466,25 @@
         <label>About you<textarea id="profileBio" rows="4" maxlength="220" placeholder="A tiny note about you... Tag someone with @theirtag"></textarea></label>
         <p class="helper profile-bio-helper">Tip: use <strong>@tag</strong> in your About text to mention someone. They will receive a notification when the tag is newly added.</p>
 
+        <section class="profile-scrapbook-settings">
+          <div class="profile-settings-heading">
+            <p class="eyebrow">YOUR SCRAPBOOK CIRCLE</p>
+            <h3>My scrapbooks</h3>
+          </div>
+          <button id="brandButton" class="profile-book-brand" type="button" aria-label="Open active scrapbook">
+            <span class="profile-book-heart" aria-hidden="true">♡</span>
+            <span><small>ACTIVE SCRAPBOOK</small><strong id="brandTitle">Our Journal</strong></span>
+          </button>
+          <label>Switch scrapbook
+            <select id="scrapbookPicker" aria-label="Choose scrapbook"></select>
+          </label>
+        </section>
+
+        <section class="appearance-settings">
+          <div><strong>Appearance</strong><p>Choose how the scrapbook looks on this account.</p></div>
+          <button id="themeModeBtn" class="theme-mode-btn" type="button" title="Toggle night mode" aria-label="Switch to night mode"><span aria-hidden="true">☾</span><b>Theme</b></button>
+        </section>
+
         <section class="notification-settings">
           <div>
             <strong>Daily journey reminder</strong>
@@ -507,6 +519,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-bulkprivacy9" defer></script>
+  <script src="/app.js?v=20260920-mobileui10" defer></script>
 </body>
 </html>
