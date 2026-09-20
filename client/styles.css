@@ -7305,3 +7305,408 @@ html[data-theme="night"] .profile-image-viewer{
     background:#352a2e;
   }
 }
+
+
+/* =========================================================
+   PHONE UI V17 — comment threads, media viewer & voice chat
+   ========================================================= */
+
+/* Desktop keeps its previous composer labels/layout. */
+.phone-only-chat-tool,
+.phone-chat-photo-label,
+.phone-chat-media-helper{
+  display:none;
+}
+.desktop-chat-photo-label,
+.desktop-chat-media-helper{
+  display:inline;
+}
+.chat-message-image-button{
+  display:block;
+  max-width:100%;
+  margin:0;
+  padding:0;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:inherit;
+}
+.chat-message-image-button .chat-message-image{
+  margin-bottom:7px;
+}
+.chat-message-audio{
+  display:block;
+  width:min(280px,100%);
+  margin:4px 0 7px;
+}
+.chat-audio-preview{
+  grid-column:1/-1;
+}
+.chat-audio-preview>div{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:8px;
+  padding:6px 7px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:rgba(255,255,255,.78);
+}
+.chat-audio-preview audio{
+  width:100%;
+  min-width:0;
+  height:34px;
+}
+.chat-audio-preview span{
+  color:var(--muted);
+  font:10px ui-sans-serif,system-ui,sans-serif;
+}
+#removeChatAudioBtn{
+  width:26px;
+  height:26px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:rgba(146,86,97,.12);
+  color:var(--rose-dark);
+}
+
+/* Dedicated phone photo lightbox. */
+.chat-image-viewer{
+  position:fixed;
+  inset:0;
+  z-index:2147483620;
+  display:grid;
+  place-items:center;
+  padding:54px 12px 24px;
+  background:rgba(0,0,0,.95);
+}
+.chat-image-viewer.hidden{
+  display:none!important;
+}
+.chat-image-viewer img{
+  max-width:100%;
+  max-height:calc(100svh - 86px);
+  object-fit:contain;
+  border-radius:8px;
+}
+.chat-image-viewer-close{
+  position:absolute;
+  top:calc(12px + env(safe-area-inset-top));
+  right:14px;
+  width:42px;
+  height:42px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:50%;
+  background:rgba(35,35,35,.78);
+  color:#fff;
+  font-size:25px;
+}
+
+/* New comment controls are generated only on the phone layout. */
+.comment-actions,
+.comment-reply-form,
+.comment-replies{
+  display:none;
+}
+.comment-reaction-picker{
+  position:fixed;
+  z-index:2147483550;
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:3px;
+  padding:6px;
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:999px;
+  background:rgba(42,32,35,.98);
+  box-shadow:0 16px 40px rgba(0,0,0,.34);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.comment-reaction-picker button{
+  width:100%;
+  min-width:0;
+  height:38px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  font-size:20px;
+}
+.comment-reaction-picker button:active{
+  background:rgba(255,255,255,.12);
+  transform:scale(.93);
+}
+
+@media(max-width:800px){
+  .desktop-chat-photo-label,
+  .desktop-chat-media-helper{
+    display:none!important;
+  }
+  .phone-chat-photo-label,
+  .phone-chat-media-helper{
+    display:inline!important;
+  }
+  .phone-only-chat-tool{
+    display:grid!important;
+  }
+
+  /* Avoid the older generated plus now that the actual glyph is present. */
+  .chat-photo-button::before{
+    content:none!important;
+    display:none!important;
+  }
+  .chat-photo-button,
+  .chat-camera-button,
+  .chat-mic-button,
+  #chatSendBtn{
+    width:44px;
+    min-width:44px;
+    height:44px;
+    min-height:44px;
+    display:grid!important;
+    place-items:center!important;
+    padding:0!important;
+    border-radius:50%!important;
+    line-height:1!important;
+    font-size:20px!important;
+  }
+  .chat-photo-button{
+    position:relative;
+  }
+  .chat-camera-button,
+  .chat-mic-button{
+    border:1px solid var(--line);
+    background:transparent;
+    color:var(--ink);
+  }
+  .chat-mic-button.recording{
+    border-color:#d44b5b;
+    background:#d44b5b;
+    color:#fff;
+    animation:chat-record-pulse .75s ease-in-out infinite alternate;
+  }
+  @keyframes chat-record-pulse{
+    from{box-shadow:0 0 0 0 rgba(212,75,91,.18)}
+    to{box-shadow:0 0 0 8px rgba(212,75,91,0)}
+  }
+  .chat-compose-actions{
+    width:100%;
+    display:grid!important;
+    grid-template-columns:44px 44px 44px minmax(52px,1fr);
+    gap:7px;
+    align-items:center!important;
+  }
+  #chatSendBtn{
+    justify-self:end;
+    background:var(--rose);
+    color:#fff;
+  }
+  .chat-media-helper{
+    font-size:8px!important;
+  }
+  html[data-theme="night"] .chat-camera-button,
+  html[data-theme="night"] .chat-mic-button{
+    background:#2b2225;
+    color:#f3e8e5;
+    border-color:#58464c;
+  }
+  html[data-theme="night"] .chat-audio-preview>div{
+    background:#2b2225;
+  }
+
+  /* Messenger-like grouped reactions hug the lower-right bubble edge. */
+  .chat-bubble{
+    padding-bottom:14px;
+  }
+  .chat-reactions{
+    position:absolute;
+    right:-5px;
+    bottom:-10px;
+    z-index:3;
+    display:inline-flex!important;
+    width:max-content;
+    max-width:calc(100% - 12px);
+    flex-wrap:nowrap!important;
+    align-items:center;
+    justify-content:flex-end!important;
+    gap:1px!important;
+    margin:0!important;
+    padding:2px 5px!important;
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:999px;
+    background:#2b292a;
+    box-shadow:0 2px 8px rgba(0,0,0,.25);
+  }
+  .chat-reaction-chip{
+    min-width:0!important;
+    width:auto!important;
+    height:22px!important;
+    gap:2px!important;
+    padding:0 2px!important;
+    border:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+    font-size:13px!important;
+  }
+  .chat-reaction-chip.mine{
+    background:transparent!important;
+    outline:0!important;
+  }
+  .chat-reaction-chip b{
+    color:#ddd;
+    font-size:9px!important;
+  }
+
+  /* #2 Facebook-style phone comment threads. */
+  .comment-actions{
+    display:flex;
+    align-items:center;
+    gap:3px;
+    margin:6px 0 0 38px;
+    min-height:25px;
+  }
+  .comment-react-trigger,
+  .comment-reply-trigger{
+    min-height:24px;
+    padding:2px 6px;
+    border:0;
+    border-radius:7px;
+    background:transparent;
+    color:var(--muted);
+    font:700 9px ui-sans-serif,system-ui,sans-serif;
+  }
+  .comment-react-trigger:active,
+  .comment-reply-trigger:active{
+    background:rgba(146,86,97,.1);
+  }
+  .comment-reaction-summary{
+    display:inline-flex;
+    align-items:center;
+    gap:1px;
+    margin-left:auto;
+    padding:2px 5px;
+    border:1px solid rgba(146,86,97,.12);
+    border-radius:999px;
+    background:rgba(255,255,255,.68);
+  }
+  .comment-reaction-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:2px;
+    min-height:20px;
+    padding:0 2px;
+    border:0;
+    background:transparent;
+    color:var(--muted);
+    font-size:11px;
+  }
+  .comment-reaction-chip b{
+    font:800 8px ui-sans-serif,system-ui,sans-serif;
+  }
+  .comment-main{
+    touch-action:pan-y;
+  }
+  .comment-main p{
+    margin-top:7px;
+  }
+  .comment-reply-form{
+    grid-template-columns:1fr;
+    gap:6px;
+    margin:8px 0 0 38px;
+  }
+  .comment-reply-form:not(.hidden){
+    display:grid!important;
+  }
+  .comment-reply-form textarea{
+    width:100%;
+    min-height:48px;
+    resize:vertical;
+    padding:8px 9px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:rgba(255,255,255,.72);
+    color:var(--ink);
+    font:11px/1.4 ui-sans-serif,system-ui,sans-serif;
+  }
+  .comment-reply-form>div{
+    display:flex;
+    justify-content:flex-end;
+    gap:6px;
+  }
+  .comment-reply-form button{
+    min-height:32px;
+    padding:5px 9px;
+    font-size:9px;
+  }
+  .comment-replies{
+    display:grid!important;
+    gap:6px;
+    margin:6px 0 0 34px;
+    padding-left:8px;
+    border-left:1px solid rgba(146,86,97,.2);
+  }
+  .comment-replies .memory-comment{
+    padding:8px 30px 8px 8px;
+    border-radius:11px;
+  }
+  .comment-replies .comment-avatar{
+    width:25px;
+    height:25px;
+    flex-basis:25px;
+  }
+  .comment-replies .comment-author strong{
+    font-size:10px;
+  }
+  .comment-replies .comment-author small{
+    font-size:8px;
+  }
+  .comment-replies .comment-actions,
+  .comment-replies .comment-reply-form{
+    margin-left:33px;
+  }
+  html[data-theme="night"] .comment-reaction-summary{
+    background:#34282c;
+    border-color:#57444a;
+  }
+  html[data-theme="night"] .comment-reply-form textarea{
+    background:#1d1719;
+    color:#f5ece9;
+    border-color:#4d3c42;
+  }
+
+  /* Phone chat photo opens full-screen. */
+  .chat-message-image-button{
+    -webkit-tap-highlight-color:transparent;
+  }
+  .chat-message-image-button:active{
+    transform:scale(.99);
+  }
+  body.chat-image-viewing{
+    overflow:hidden!important;
+    touch-action:none;
+  }
+}
+
+@media(max-width:480px){
+  .comment-actions{
+    margin-left:0;
+  }
+  .comment-reply-form{
+    margin-left:0;
+  }
+  .comment-replies{
+    margin-left:18px;
+  }
+  .comment-replies .comment-actions,
+  .comment-replies .comment-reply-form{
+    margin-left:0;
+  }
+}
