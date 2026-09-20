@@ -152,6 +152,14 @@ async function readSocial() {
   data.chats = Array.isArray(data.chats) ? data.chats : [];
   data.chatMessages = Array.isArray(data.chatMessages) ? data.chatMessages : [];
   data.chatRead = data.chatRead && typeof data.chatRead === 'object' ? data.chatRead : {};
+  for (const book of data.scrapbooks) {
+    if (book?.type !== 'group') continue;
+    const members = Array.isArray(book.members) ? book.members.filter(Boolean) : [];
+    book.members = [...new Set(members)];
+    const legacyAdmins = Array.isArray(book.admins) ? book.admins.filter(tag => book.members.includes(tag)) : [];
+    book.admins = [...new Set([book.owner, ...legacyAdmins].filter(tag => book.members.includes(tag)))];
+    if (book.deleteRequest && book.deleteRequest.status !== 'pending') delete book.deleteRequest;
+  }
   return data;
 }
 async function writeSocial(social) { await writeJson(SOCIAL_FILE, social); }
@@ -555,18 +563,22 @@ async function sendUserPush(social, { to, title, body, tag = 'scrapbook-social',
     }
   }
 }
-async function sendMentionPush(social, { to, from, kind, excerpt = '' }) {
+async function sendMentionPush(social, { to, from, kind, excerpt = '', chatId = null }) {
   const actor = publicProfileFor(social, from);
   const name = actor.displayName || displayTag(from);
   const profileMention = kind === 'profile';
+  const chatMention = kind === 'chat';
   await sendUserPush(social, {
     to,
-    title:profileMention ? `${name} mentioned you in their profile` : `${name} mentioned you in a scrapbook comment`,
-    body:excerpt || (profileMention ? 'Open the scrapbook to see the mention.' : 'Open the memory to see the comment.'),
-    tag:`mention-${kind}-${from}-${to}`
+    title:profileMention
+      ? `${name} mentioned you in their profile`
+      : (chatMention ? `${name} mentioned you in a message` : `${name} mentioned you in a scrapbook comment`),
+    body:excerpt || (profileMention ? 'Open the scrapbook to see the mention.' : (chatMention ? 'Open Messages to see the mention.' : 'Open the memory to see the comment.')),
+    tag:`mention-${kind}-${from}-${to}`,
+    url:chatMention && chatId ? `/?messages=${encodeURIComponent(chatId)}` : '/?notifications=1'
   });
 }
-async function appendMentionNotifications(social, { from, text, kind, scrapbookId = null, entryId = null, previousText = '', allowedTargets = null }) {
+async function appendMentionNotifications(social, { from, text, kind, scrapbookId = null, entryId = null, chatId = null, previousText = '', allowedTargets = null }) {
   const previous = new Set(mentionTags(previousText));
   for (const target of mentionTags(text)) {
     if (!target || target === from || previous.has(target)) continue;
@@ -580,15 +592,17 @@ async function appendMentionNotifications(social, { from, text, kind, scrapbookI
       kind,
       scrapbookId,
       entryId,
+      chatId,
       excerpt,
       createdAt: new Date().toISOString()
     });
-    await sendMentionPush(social, { to:target, from, kind, excerpt });
-    emitLiveEvent(target, 'notification', { type:kind === 'profile' ? 'profile_mention' : 'comment_mention', from, scrapbookId, entryId });
+    await sendMentionPush(social, { to:target, from, kind, excerpt, chatId });
+    const type = kind === 'profile' ? 'profile_mention' : (kind === 'chat' ? 'chat_mention' : 'comment_mention');
+    emitLiveEvent(target, 'notification', { type, from, scrapbookId, entryId, chatId });
   }
   if (social.mentions.length > 2000) social.mentions = social.mentions.slice(-2000);
 }
-function appendActivityNotification(social, { to, from, type, scrapbookId = null, entryId = null, scrapbookName = '', excerpt = '' }) {
+function appendActivityNotification(social, { to, from, type, scrapbookId = null, entryId = null, chatId = null, scrapbookName = '', excerpt = '' }) {
   if (!to || to === from) return null;
   const item = {
     id:crypto.randomUUID(),
@@ -597,6 +611,7 @@ function appendActivityNotification(social, { to, from, type, scrapbookId = null
     type,
     scrapbookId,
     entryId,
+    chatId,
     scrapbookName:String(scrapbookName || '').slice(0,80),
     excerpt:String(excerpt || '').slice(0,180),
     createdAt:new Date().toISOString()
@@ -620,7 +635,7 @@ function realtimeBookViewers(social, book) {
 }
 function canCommentBook(social, book, viewer) {
   if (!book || !viewer) return false;
-  if (book.type === 'group') return Array.isArray(book.members) && book.members.includes(viewer);
+  if (book.type === 'group' || book.type === 'couple') return Array.isArray(book.members) && book.members.includes(viewer);
   if (book.type === 'personal') return canViewBook(social, book, viewer);
   return false;
 }
@@ -666,12 +681,13 @@ function notificationSnapshot(social, user) {
     .filter(item => item.to === user)
     .map(item => ({
       id: `mention:${item.id}`,
-      type: item.kind === 'profile' ? 'profile_mention' : 'comment_mention',
+      type: item.kind === 'profile' ? 'profile_mention' : (item.kind === 'chat' ? 'chat_mention' : 'comment_mention'),
       createdAt: item.createdAt || '',
       unread: (Date.parse(item.createdAt || '') || 0) > seenMs,
       actor: publicProfileFor(social, item.from),
       scrapbookId: item.scrapbookId || null,
       entryId: item.entryId || null,
+      chatId: item.chatId || null,
       excerpt: item.excerpt || ''
     }));
 
@@ -685,6 +701,7 @@ function notificationSnapshot(social, user) {
       actor:publicProfileFor(social, item.from),
       scrapbookId:item.scrapbookId || null,
       entryId:item.entryId || null,
+      chatId:item.chatId || null,
       scrapbookName:item.scrapbookName || '',
       excerpt:item.excerpt || ''
     }));
@@ -736,6 +753,30 @@ function chatUnreadCount(social, chat, user) {
     (Date.parse(message.createdAt || '') || 0) > seenMs
   ).length;
 }
+function decorateChatMessage(social, message, user) {
+  const raw = message?.reactions && typeof message.reactions === 'object' ? message.reactions : {};
+  const reactions = Object.entries(raw).map(([emoji,tags]) => {
+    const people = Array.isArray(tags) ? [...new Set(tags.filter(Boolean))] : [];
+    return { emoji, count:people.length, reactedByMe:people.includes(user) };
+  }).filter(item => item.count > 0);
+  const replied = message?.replyTo ? social.chatMessages.find(item => item.id === message.replyTo && item.chatId === message.chatId) : null;
+  return {
+    id:message.id,
+    author:message.author,
+    profile:publicProfileFor(social, message.author),
+    text:message.text || '',
+    image:message.image || '',
+    replyTo:replied ? {
+      id:replied.id,
+      author:replied.author,
+      profile:publicProfileFor(social, replied.author),
+      text:String(replied.text || '').slice(0,180),
+      image:replied.image || ''
+    } : null,
+    reactions,
+    createdAt:message.createdAt
+  };
+}
 function decorateChat(social, chat, user) {
   const members = chatMembers(social, chat);
   const lastMessage = [...social.chatMessages].reverse().find(message => message.chatId === chat.id) || null;
@@ -746,6 +787,15 @@ function decorateChat(social, chat, user) {
       type:'group',
       scrapbookId:chat.scrapbookId,
       name:book?.name || 'Group chat',
+      owner:book?.owner || null,
+      admins:book ? groupAdminTags(book) : [],
+      isOwner:Boolean(book && book.owner === user),
+      isAdmin:Boolean(book && isGroupAdmin(book,user)),
+      deleteRequest:book?.deleteRequest?.status === 'pending' ? {
+        id:book.deleteRequest.id,
+        requestedBy:book.deleteRequest.requestedBy,
+        createdAt:book.deleteRequest.createdAt
+      } : null,
       members:members.map(tag => publicProfileFor(social, tag)),
       unreadCount:chatUnreadCount(social, chat, user),
       lastMessage:lastMessage ? {
@@ -780,6 +830,15 @@ function totalChatUnread(social, user) {
     .filter(chat => canAccessChat(social, chat, user))
     .reduce((sum, chat) => sum + chatUnreadCount(social, chat, user), 0);
 }
+function groupAdminTags(book) {
+  if (!book || book.type !== 'group') return [];
+  const members = Array.isArray(book.members) ? book.members : [];
+  const admins = Array.isArray(book.admins) ? book.admins : [];
+  return [...new Set([book.owner, ...admins].filter(tag => members.includes(tag)))];
+}
+function isGroupAdmin(book, tag) {
+  return Boolean(book?.type === 'group' && tag && groupAdminTags(book).includes(tag));
+}
 function decorateBook(social, book, viewer) {
   const viewingAsFollower = book.type === 'personal' && book.owner !== viewer && isFollowing(social, viewer, book.owner);
   const viewingAsPartner = book.type === 'personal' && book.owner !== viewer && isActivePartner(social, viewer, book.owner);
@@ -793,6 +852,13 @@ function decorateBook(social, book, viewer) {
     privacy: book.type === 'personal' ? personalPrivacy(book) : null,
     createdAt: book.createdAt,
     isOwner: book.owner === viewer,
+    admins: book.type === 'group' ? groupAdminTags(book) : [],
+    isGroupAdmin: book.type === 'group' ? isGroupAdmin(book, viewer) : false,
+    deleteRequest: book.type === 'group' && book.deleteRequest?.status === 'pending' ? {
+      id:book.deleteRequest.id,
+      requestedBy:book.deleteRequest.requestedBy,
+      createdAt:book.deleteRequest.createdAt
+    } : null,
     canWrite: canWriteBook(book, viewer),
     accessReason: book.owner === viewer ? 'owner' : (viewingAsPartner ? 'partner' : (viewingAsFollower ? 'follower' : 'member')),
     bindingStatus: book.bindingStatus || 'bound',
@@ -811,6 +877,65 @@ function decorateBook(social, book, viewer) {
 }
 function userHasOtherCouple(social, tag, exceptId = null) {
   return social.scrapbooks.some(b => b.type === 'couple' && (b.bindingStatus || 'bound') !== 'unbound' && b.id !== exceptId && b.members.includes(tag));
+}
+
+async function deleteScrapbookCompletely(social, book, actor) {
+  const viewers = realtimeBookViewers(social, book);
+  const entries = await readEntries();
+  const removedEntries = entries.filter(entry => entry.scrapbookId === book.id);
+  const remainingEntries = entries.filter(entry => entry.scrapbookId !== book.id);
+  const removedChats = social.chats.filter(chat => chat.scrapbookId === book.id);
+  const removedChatIds = new Set(removedChats.map(chat => chat.id));
+  const removedMessages = social.chatMessages.filter(message => removedChatIds.has(message.chatId));
+
+  const candidateAssets = new Set();
+  for (const entry of removedEntries) {
+    for (const photo of Array.isArray(entry.photos) ? entry.photos : []) {
+      if (photo?.src?.startsWith('/uploads/')) candidateAssets.add(photo.src);
+    }
+    for (const item of Array.isArray(entry.canvasItems) ? entry.canvasItems : []) {
+      if (item?.type === 'photo' && item?.src?.startsWith('/uploads/')) candidateAssets.add(item.src);
+    }
+  }
+  for (const message of removedMessages) {
+    if (message?.image?.startsWith('/uploads/')) candidateAssets.add(message.image);
+  }
+
+  social.scrapbooks = social.scrapbooks.filter(item => item.id !== book.id);
+  social.invites = social.invites.filter(invite => invite.scrapbookId !== book.id);
+  social.chats = social.chats.filter(chat => !removedChatIds.has(chat.id));
+  social.chatMessages = social.chatMessages.filter(message => !removedChatIds.has(message.chatId));
+  social.mentions = social.mentions.filter(item => item.scrapbookId !== book.id && !removedChatIds.has(item.chatId));
+  social.activityNotifications = social.activityNotifications.filter(item => item.scrapbookId !== book.id && !removedChatIds.has(item.chatId));
+
+  for (const readMap of Object.values(social.chatRead || {})) {
+    if (!readMap || typeof readMap !== 'object') continue;
+    for (const chatId of removedChatIds) delete readMap[chatId];
+  }
+
+  const assetStillUsed = src =>
+    remainingEntries.some(entry =>
+      (Array.isArray(entry.photos) && entry.photos.some(photo => photo?.src === src)) ||
+      (Array.isArray(entry.canvasItems) && entry.canvasItems.some(item => item?.type === 'photo' && item?.src === src))
+    ) ||
+    social.chatMessages.some(message => message?.image === src) ||
+    Object.values(social.profiles || {}).some(profile => profile?.avatar === src);
+
+  const orphanedAssets = [...candidateAssets].filter(src => !assetStillUsed(src));
+  for (const src of orphanedAssets) {
+    if (social.uploadOwners) delete social.uploadOwners[src];
+  }
+
+  await writeEntries(remainingEntries);
+  await writeSocial(social);
+
+  for (const src of orphanedAssets) {
+    try { await fsp.unlink(path.join(UPLOADS, path.basename(src))); }
+    catch (err) { if (err?.code !== 'ENOENT') console.warn('Could not remove orphaned upload:', src, err?.message || err); }
+  }
+
+  emitLiveMany(viewers, 'social', { type:'scrapbook_deleted', scrapbookId:book.id, from:actor });
+  return { deleted:true, scrapbookId:book.id };
 }
 
 async function serveFile(res, file) {
@@ -1232,6 +1357,7 @@ async function handleApi(req, res, url) {
       coverTheme,
       owner: user,
       members: [user],
+      admins: type === 'group' ? [user] : undefined,
       privacy: type === 'personal' ? privacy : undefined,
       createdAt: new Date().toISOString()
     };
@@ -1248,69 +1374,83 @@ async function handleApi(req, res, url) {
     return json(res, 201, { scrapbook: decorateBook(social, book, user) });
   }
 
+  const deleteRespondMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/delete-request\/respond$/i);
+  if (deleteRespondMatch && req.method === 'POST') {
+    const book = social.scrapbooks.find(item => item.id === deleteRespondMatch[1]);
+    if (!book || book.type !== 'group') return notFound(res);
+    if (book.owner !== user) return forbidden(res, 'Only the group owner can approve a deletion request.');
+    const request = book.deleteRequest;
+    if (!request || request.status !== 'pending') return json(res, 404, { error:'There is no pending group deletion request.' });
+    const body = await readBody(req, 64 * 1024);
+    if (body.approve !== true) {
+      const requester = request.requestedBy;
+      book.deleteRequestHistory = Array.isArray(book.deleteRequestHistory) ? book.deleteRequestHistory : [];
+      book.deleteRequestHistory.push({ ...request, status:'declined', respondedBy:user, respondedAt:new Date().toISOString() });
+      delete book.deleteRequest;
+      appendActivityNotification(social, { to:requester, from:user, type:'group_delete_declined', scrapbookId:book.id, scrapbookName:book.name });
+      await sendUserPush(social, {
+        to:requester,
+        title:`Deletion request declined · ${book.name}`,
+        body:'The group owner kept the scrapbook.',
+        tag:`group-delete-declined-${book.id}`
+      });
+      await writeSocial(social);
+      emitLiveEvent(requester, 'notification', { type:'group_delete_declined', from:user, scrapbookId:book.id });
+      emitLiveMany(book.members, 'social', { type:'group_delete_request_closed', scrapbookId:book.id });
+      return json(res, 200, { deleted:false, scrapbook:decorateBook(social,book,user) });
+    }
+    const requester = request.requestedBy;
+    await sendUserPush(social, {
+      to:requester,
+      title:`Group deletion approved · ${book.name}`,
+      body:'The owner approved your request. The group scrapbook has been deleted.',
+      tag:`group-delete-approved-${book.id}`
+    });
+    const result = await deleteScrapbookCompletely(social, book, user);
+    return json(res, 200, result);
+  }
+
   const deleteScrapbookMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)$/i);
   if (deleteScrapbookMatch && req.method === 'DELETE') {
     const book = social.scrapbooks.find(item => item.id === deleteScrapbookMatch[1]);
     if (!book) return notFound(res);
+
+    if (book.type === 'group' && book.owner !== user) {
+      if (!isGroupAdmin(book,user)) return forbidden(res, 'Only a group admin can request deletion.');
+      if (book.deleteRequest?.status === 'pending') {
+        return json(res, 409, { error:'A group deletion request is already waiting for the owner.' });
+      }
+      book.deleteRequest = {
+        id:crypto.randomUUID(),
+        status:'pending',
+        requestedBy:user,
+        createdAt:new Date().toISOString()
+      };
+      appendActivityNotification(social, {
+        to:book.owner,
+        from:user,
+        type:'group_delete_request',
+        scrapbookId:book.id,
+        scrapbookName:book.name,
+        excerpt:'An admin requested to delete this Group scrapbook.'
+      });
+      const requester = publicProfileFor(social,user);
+      await sendUserPush(social, {
+        to:book.owner,
+        title:`${requester.displayName || displayTag(user)} requested group deletion`,
+        body:`Approve or decline deletion of ${book.name}.`,
+        tag:`group-delete-request-${book.id}`,
+        url:'/?notifications=1'
+      });
+      await writeSocial(social);
+      emitLiveEvent(book.owner, 'notification', { type:'group_delete_request', from:user, scrapbookId:book.id });
+      emitLiveMany(book.members, 'social', { type:'group_delete_request', scrapbookId:book.id, from:user });
+      return json(res, 202, { approvalRequired:true, request:book.deleteRequest });
+    }
+
     if (book.owner !== user) return forbidden(res, 'Only the scrapbook owner can delete this scrapbook.');
-
-    const viewers = realtimeBookViewers(social, book);
-    const entries = await readEntries();
-    const removedEntries = entries.filter(entry => entry.scrapbookId === book.id);
-    const remainingEntries = entries.filter(entry => entry.scrapbookId !== book.id);
-
-    const removedChats = social.chats.filter(chat => chat.scrapbookId === book.id);
-    const removedChatIds = new Set(removedChats.map(chat => chat.id));
-    const removedMessages = social.chatMessages.filter(message => removedChatIds.has(message.chatId));
-
-    const candidateAssets = new Set();
-    for (const entry of removedEntries) {
-      for (const photo of Array.isArray(entry.photos) ? entry.photos : []) {
-        if (photo?.src?.startsWith('/uploads/')) candidateAssets.add(photo.src);
-      }
-      for (const item of Array.isArray(entry.canvasItems) ? entry.canvasItems : []) {
-        if (item?.type === 'photo' && item?.src?.startsWith('/uploads/')) candidateAssets.add(item.src);
-      }
-    }
-    for (const message of removedMessages) {
-      if (message?.image?.startsWith('/uploads/')) candidateAssets.add(message.image);
-    }
-
-    social.scrapbooks = social.scrapbooks.filter(item => item.id !== book.id);
-    social.invites = social.invites.filter(invite => invite.scrapbookId !== book.id);
-    social.chats = social.chats.filter(chat => !removedChatIds.has(chat.id));
-    social.chatMessages = social.chatMessages.filter(message => !removedChatIds.has(message.chatId));
-    social.mentions = social.mentions.filter(item => item.scrapbookId !== book.id);
-    social.activityNotifications = social.activityNotifications.filter(item => item.scrapbookId !== book.id);
-
-    for (const readMap of Object.values(social.chatRead || {})) {
-      if (!readMap || typeof readMap !== 'object') continue;
-      for (const chatId of removedChatIds) delete readMap[chatId];
-    }
-
-    const assetStillUsed = src =>
-      remainingEntries.some(entry =>
-        (Array.isArray(entry.photos) && entry.photos.some(photo => photo?.src === src)) ||
-        (Array.isArray(entry.canvasItems) && entry.canvasItems.some(item => item?.type === 'photo' && item?.src === src))
-      ) ||
-      social.chatMessages.some(message => message?.image === src) ||
-      Object.values(social.profiles || {}).some(profile => profile?.avatar === src);
-
-    const orphanedAssets = [...candidateAssets].filter(src => !assetStillUsed(src));
-    for (const src of orphanedAssets) {
-      if (social.uploadOwners) delete social.uploadOwners[src];
-    }
-
-    await writeEntries(remainingEntries);
-    await writeSocial(social);
-
-    for (const src of orphanedAssets) {
-      try { await fsp.unlink(path.join(UPLOADS, path.basename(src))); }
-      catch (err) { if (err?.code !== 'ENOENT') console.warn('Could not remove orphaned upload:', src, err?.message || err); }
-    }
-
-    emitLiveMany(viewers, 'social', { type:'scrapbook_deleted', scrapbookId:book.id, from:user });
-    return json(res, 200, { deleted:true, scrapbookId:book.id });
+    const result = await deleteScrapbookCompletely(social, book, user);
+    return json(res, 200, result);
   }
 
   const coverThemeMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/cover-theme$/i);
@@ -1385,11 +1525,83 @@ async function handleApi(req, res, url) {
     return json(res, 200, { scrapbook: decorateBook(social, book, user) });
   }
 
+  const groupAdminMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/admins\/([^/]+)$/i);
+  if (groupAdminMatch && ['PUT','DELETE'].includes(req.method)) {
+    const book = social.scrapbooks.find(item => item.id === groupAdminMatch[1]);
+    if (!book || book.type !== 'group') return notFound(res);
+    if (book.owner !== user) return forbidden(res, 'Only the group owner can manage admins.');
+    const target = slugTag(groupAdminMatch[2]);
+    if (!target || !book.members.includes(target)) return json(res, 404, { error:'That person is not a group member.' });
+    if (target === book.owner) return json(res, 409, { error:'The group owner is always an admin.' });
+    const admins = new Set(groupAdminTags(book));
+    if (req.method === 'PUT') admins.add(target);
+    else admins.delete(target);
+    book.admins = [...admins];
+    appendActivityNotification(social, {
+      to:target,
+      from:user,
+      type:req.method === 'PUT' ? 'group_admin_added' : 'group_admin_removed',
+      scrapbookId:book.id,
+      scrapbookName:book.name
+    });
+    await writeSocial(social);
+    emitLiveMany(book.members, 'social', { type:'group_admins_changed', scrapbookId:book.id, from:user });
+    emitLiveEvent(target, 'notification', { type:req.method === 'PUT' ? 'group_admin_added' : 'group_admin_removed', from:user, scrapbookId:book.id });
+    return json(res, 200, { scrapbook:decorateBook(social,book,user) });
+  }
+
+  const groupMemberMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/members\/([^/]+)$/i);
+  if (groupMemberMatch && req.method === 'DELETE') {
+    const book = social.scrapbooks.find(item => item.id === groupMemberMatch[1]);
+    if (!book || book.type !== 'group') return notFound(res);
+    if (!isGroupAdmin(book,user)) return forbidden(res, 'Only a group admin can remove members.');
+    const target = slugTag(groupMemberMatch[2]);
+    if (!target || !book.members.includes(target)) return json(res, 404, { error:'That person is not a group member.' });
+    if (target === book.owner) return json(res, 409, { error:'The group owner cannot be removed.' });
+    if (target === user) return json(res, 409, { error:'Use Leave group to remove yourself.' });
+
+    book.members = book.members.filter(tag => tag !== target);
+    book.admins = groupAdminTags(book).filter(tag => tag !== target);
+    const groupChat = social.chats.find(chat => chat.type === 'group' && chat.scrapbookId === book.id);
+    if (groupChat && social.chatRead?.[target]) delete social.chatRead[target][groupChat.id];
+
+    appendActivityNotification(social, { to:target, from:user, type:'group_removed', scrapbookId:book.id, scrapbookName:book.name });
+    await sendUserPush(social, {
+      to:target,
+      title:`Removed from ${book.name}`,
+      body:'A group admin removed you from the scrapbook.',
+      tag:`group-removed-${book.id}`
+    });
+    await writeSocial(social);
+    emitLiveEvent(target, 'notification', { type:'group_removed', from:user, scrapbookId:book.id });
+    emitLiveEvent(target, 'social', { type:'group_removed', scrapbookId:book.id, from:user });
+    emitLiveMany(book.members, 'social', { type:'scrapbook_members_changed', scrapbookId:book.id, from:user });
+    return json(res, 200, { scrapbook:decorateBook(social,book,user) });
+  }
+
+  const groupLeaveMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/leave$/i);
+  if (groupLeaveMatch && req.method === 'POST') {
+    const book = social.scrapbooks.find(item => item.id === groupLeaveMatch[1]);
+    if (!book || book.type !== 'group' || !book.members.includes(user)) return notFound(res);
+    if (book.owner === user) return json(res, 409, { error:'The group owner cannot leave. Delete the group or keep ownership.' });
+    book.members = book.members.filter(tag => tag !== user);
+    book.admins = groupAdminTags(book).filter(tag => tag !== user);
+    const groupChat = social.chats.find(chat => chat.type === 'group' && chat.scrapbookId === book.id);
+    if (groupChat && social.chatRead?.[user]) delete social.chatRead[user][groupChat.id];
+    appendActivityNotification(social, { to:book.owner, from:user, type:'group_member_left', scrapbookId:book.id, scrapbookName:book.name });
+    await writeSocial(social);
+    emitLiveEvent(book.owner, 'notification', { type:'group_member_left', from:user, scrapbookId:book.id });
+    emitLiveEvent(user, 'social', { type:'group_left', scrapbookId:book.id, from:user });
+    emitLiveMany(book.members, 'social', { type:'scrapbook_members_changed', scrapbookId:book.id, from:user });
+    return json(res, 200, { left:true, scrapbookId:book.id });
+  }
+
   const inviteMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/invite$/i);
   if (inviteMatch && req.method === 'POST') {
     const book = bookForUser(social, inviteMatch[1], user);
     if (!book) return forbidden(res);
     if (book.type === 'personal') return json(res, 409, { error: 'Personal scrapbooks use privacy and followers instead of invitations.' });
+    if (book.type === 'group' && !isGroupAdmin(book,user)) return forbidden(res, 'Only a group admin can invite new members.');
     const body = await readBody(req, 64 * 1024);
     const target = slugTag(body.tag);
     if (!target || target === user) return json(res, 400, { error: 'Enter another person’s @tag.' });
@@ -1566,14 +1778,7 @@ async function handleApi(req, res, url) {
     const messages = social.chatMessages
       .filter(message => message.chatId === chat.id)
       .slice(-500)
-      .map(message => ({
-        id:message.id,
-        author:message.author,
-        profile:publicProfileFor(social, message.author),
-        text:message.text || '',
-        image:message.image || '',
-        createdAt:message.createdAt
-      }));
+      .map(message => decorateChatMessage(social,message,user));
     social.chatRead[user] ||= {};
     social.chatRead[user][chat.id] = new Date().toISOString();
     await writeSocial(social);
@@ -1586,6 +1791,9 @@ async function handleApi(req, res, url) {
     const body = await readBody(req, 128 * 1024);
     const text = String(body.text || '').trim().slice(0, 2000);
     const image = String(body.image || '');
+    const replyTo = String(body.replyTo || '');
+    const repliedMessage = replyTo ? social.chatMessages.find(item => item.id === replyTo && item.chatId === chat.id) : null;
+    if (replyTo && !repliedMessage) return json(res, 400, { error:'That replied message is no longer available.' });
     if (!text && !image) return json(res, 400, { error:'Write a message or attach a photo.' });
     if (image) {
       if (!image.startsWith('/uploads/')) return json(res, 400, { error:'Chat attachments must be uploaded images.' });
@@ -1597,38 +1805,73 @@ async function handleApi(req, res, url) {
       author:user,
       text,
       image,
+      replyTo:repliedMessage?.id || null,
+      reactions:{},
       createdAt:new Date().toISOString()
     };
     social.chatMessages.push(message);
     social.chatRead[user] ||= {};
     social.chatRead[user][chat.id] = message.createdAt;
     const recipients = chatMembers(social, chat).filter(tag => tag !== user);
+    const mentionedTargets = new Set();
+    if (chat.type === 'group' && text) {
+      const book = social.scrapbooks.find(item => item.id === chat.scrapbookId && item.type === 'group');
+      const allowedTargets = new Set(book?.members || []);
+      for (const tag of mentionTags(text)) {
+        if (tag !== user && allowedTargets.has(tag)) mentionedTargets.add(tag);
+      }
+      await appendMentionNotifications(social, {
+        from:user,
+        text,
+        kind:'chat',
+        scrapbookId:book?.id || null,
+        chatId:chat.id,
+        allowedTargets
+      });
+    }
     const actor = publicProfileFor(social, user);
     for (const target of recipients) {
-      await sendUserPush(social, {
-        to:target,
-        title:chat.type === 'group'
-          ? `${actor.displayName || displayTag(user)} · ${decorateChat(social,chat,target).name}`
-          : `${actor.displayName || displayTag(user)} sent you a message`,
-        body:text || 'Sent a photo',
-        tag:`chat-${chat.id}`,
-        url:`/?messages=${encodeURIComponent(chat.id)}`
-      });
+      if (!mentionedTargets.has(target)) {
+        await sendUserPush(social, {
+          to:target,
+          title:chat.type === 'group'
+            ? `${actor.displayName || displayTag(user)} · ${decorateChat(social,chat,target).name}`
+            : `${actor.displayName || displayTag(user)} sent you a message`,
+          body:text || 'Sent a photo',
+          tag:`chat-${chat.id}`,
+          url:`/?messages=${encodeURIComponent(chat.id)}`
+        });
+      }
       emitLiveEvent(target, 'chat', { type:'message', chatId:chat.id, from:user, messageId:message.id });
     }
     emitLiveEvent(user, 'chat', { type:'message_sent', chatId:chat.id, from:user, messageId:message.id });
     await writeSocial(social);
     return json(res, 201, {
-      message:{
-        id:message.id,
-        author:message.author,
-        profile:publicProfileFor(social,user),
-        text:message.text,
-        image:message.image,
-        createdAt:message.createdAt
-      },
+      message:decorateChatMessage(social,message,user),
       unreadCount:totalChatUnread(social,user)
     });
+  }
+
+  const chatReactionMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/messages\/([a-f0-9-]+)\/reactions$/i);
+  if (chatReactionMatch && req.method === 'POST') {
+    const chat = social.chats.find(item => item.id === chatReactionMatch[1]);
+    if (!chat || !canAccessChat(social,chat,user)) return forbidden(res, 'You do not have access to this chat.');
+    const message = social.chatMessages.find(item => item.id === chatReactionMatch[2] && item.chatId === chat.id);
+    if (!message) return notFound(res);
+    const body = await readBody(req, 64 * 1024);
+    const emoji = ['❤️','👍','😂','😮','😢','😡'].includes(String(body.emoji || '')) ? String(body.emoji) : '';
+    if (!emoji) return json(res, 400, { error:'Choose a supported reaction.' });
+    message.reactions = message.reactions && typeof message.reactions === 'object' ? message.reactions : {};
+    const current = new Set(Array.isArray(message.reactions[emoji]) ? message.reactions[emoji] : []);
+    if (current.has(user)) current.delete(user);
+    else current.add(user);
+    if (current.size) message.reactions[emoji] = [...current];
+    else delete message.reactions[emoji];
+    await writeSocial(social);
+    for (const target of chatMembers(social,chat)) {
+      emitLiveEvent(target, 'chat', { type:'reaction', chatId:chat.id, from:user, messageId:message.id });
+    }
+    return json(res, 200, { message:decorateChatMessage(social,message,user) });
   }
 
   if (pathname === '/api/entries' && req.method === 'GET') {
@@ -1638,8 +1881,9 @@ async function handleApi(req, res, url) {
     const entries = (await readEntries()).filter(e => e.scrapbookId === scrapbookId);
     entries.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
     const baseTags = book.type === 'personal' ? [book.owner] : book.members;
+    const entryAuthors = entries.map(entry => entry.author);
     const commentTags = entries.flatMap(entry => Array.isArray(entry.comments) ? entry.comments.map(comment => comment.author) : []);
-    const profileTags = [...new Set([...baseTags, ...commentTags].filter(Boolean))];
+    const profileTags = [...new Set([...baseTags, ...entryAuthors, ...commentTags].filter(Boolean))];
     const profiles = Object.fromEntries(profileTags.map(tag => [tag, publicProfileFor(social, tag)]));
     return json(res, 200, {
       entries,
@@ -1665,7 +1909,7 @@ async function handleApi(req, res, url) {
     const entry = entries.find(e => e.id === commentMatch[1]);
     if (!entry) return notFound(res);
     const book = bookForViewer(social, entry.scrapbookId, user);
-    if (!book || !canCommentBook(social, book, user)) return forbidden(res, 'Comments are available on Personal and Group scrapbooks you can access.');
+    if (!book || !canCommentBook(social, book, user)) return forbidden(res, 'Comments are available on Personal, Lovers, and Group scrapbooks you can access.');
     const body = await readBody(req, 64 * 1024);
     const text = String(body.text || '').trim().slice(0, 600);
     if (!text) return json(res, 400, { error:'Write something before posting your comment.' });
@@ -1688,7 +1932,7 @@ async function handleApi(req, res, url) {
       allowedTargets:allowedMentionTargets
     });
 
-    const genericRecipients = book.type === 'group'
+    const genericRecipients = (book.type === 'group' || book.type === 'couple')
       ? (book.members || []).filter(tag => tag !== user && !allowedMentionTargets.has(tag))
       : [book.owner].filter(tag => tag && tag !== user && !allowedMentionTargets.has(tag));
     const actor = publicProfileFor(social, user);
