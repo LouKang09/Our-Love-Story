@@ -165,7 +165,13 @@ function renderMobileBookShelf() {
   if ($('#mobileStreamBtn')) $('#mobileStreamBtn').disabled = !activeScrapbook;
   const deleteBtn = $('#mobileDeleteScrapbookBtn');
   deleteBtn?.classList.toggle('hidden', !canDeleteBook);
-  if (deleteBtn && canDeleteBook) deleteBtn.textContent = activeScrapbook.isOwner === true ? 'Delete scrapbook' : 'Request group deletion';
+  if (deleteBtn && canDeleteBook) {
+    const waiting = activeScrapbook.type === 'group' && activeScrapbook.isOwner !== true && Boolean(activeScrapbook.deleteRequest);
+    deleteBtn.textContent = waiting ? 'Deletion request pending' : (activeScrapbook.isOwner === true ? 'Delete scrapbook' : 'Request group deletion');
+    deleteBtn.disabled = waiting;
+  } else if (deleteBtn) {
+    deleteBtn.disabled = false;
+  }
   $('#mobileLeaveScrapbookBtn')?.classList.toggle('hidden', !canLeaveGroup);
 }
 async function prepareMobileBookView() {
@@ -4164,6 +4170,8 @@ function syncResponsiveChrome() {
   const mobileActions = $('#mobileHeaderActions');
   const mobileThemeSlot = $('#mobileThemeSlot');
   const mobileBookSlot = $('#mobileBookPickerSlot');
+  const mobileBookShelf = $('#mobileBookShelf');
+  const privacyQuick = $('#personalPrivacyQuick');
   const suggestions = $('#homeSuggestionsSection');
   const searchSection = document.querySelector('.home-search-section');
   const home = $('#homeView');
@@ -4174,10 +4182,14 @@ function syncResponsiveChrome() {
       .filter(Boolean).forEach(el => mobileActions?.appendChild(el));
     if ($('#themeModeBtn')) mobileThemeSlot?.appendChild($('#themeModeBtn'));
     if ($('#scrapbookPicker')) mobileBookSlot?.appendChild($('#scrapbookPicker'));
+    if (privacyQuick && mobileBookShelf && privacyQuick.parentNode !== mobileBookShelf) mobileBookShelf.appendChild(privacyQuick);
     if (suggestions && searchSection && suggestions.parentNode !== searchSection) searchSection.appendChild(suggestions);
     setPhoneMessageButtonVisual(true);
     if ($('#privateChatTag')) $('#privateChatTag').placeholder = 'Search';
   } else {
+    if (privacyQuick && $('#inviteBanner') && privacyQuick.previousElementSibling !== $('#inviteBanner')) {
+      $('#inviteBanner').insertAdjacentElement('afterend', privacyQuick);
+    }
     if ($('#scrapbookPicker') && pickerWrap) pickerWrap.insertBefore($('#scrapbookPicker'), $('#createScrapbookBtn') || null);
     if ($('#createScrapbookBtn') && pickerWrap) pickerWrap.appendChild($('#createScrapbookBtn'));
     if ($('#messagesModeBtn') && modeSwitch) modeSwitch.appendChild($('#messagesModeBtn'));
