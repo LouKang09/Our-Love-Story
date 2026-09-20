@@ -793,6 +793,7 @@ function decorateBook(social, book, viewer) {
     canWrite: canWriteBook(book, viewer),
     accessReason: book.owner === viewer ? 'owner' : (viewingAsPartner ? 'partner' : (viewingAsFollower ? 'follower' : 'member')),
     bindingStatus: book.bindingStatus || 'bound',
+    boundAt: book.boundAt || (book.type === 'couple' && (book.members || []).length >= 2 ? book.createdAt : null),
     unboundAt: book.unboundAt || null,
     unbindRequest: book.unbindRequest ? {
       status: book.unbindRequest.status,
@@ -1244,6 +1245,71 @@ async function handleApi(req, res, url) {
     return json(res, 201, { scrapbook: decorateBook(social, book, user) });
   }
 
+  const deleteScrapbookMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)$/i);
+  if (deleteScrapbookMatch && req.method === 'DELETE') {
+    const book = social.scrapbooks.find(item => item.id === deleteScrapbookMatch[1]);
+    if (!book) return notFound(res);
+    if (book.owner !== user) return forbidden(res, 'Only the scrapbook owner can delete this scrapbook.');
+
+    const viewers = realtimeBookViewers(social, book);
+    const entries = await readEntries();
+    const removedEntries = entries.filter(entry => entry.scrapbookId === book.id);
+    const remainingEntries = entries.filter(entry => entry.scrapbookId !== book.id);
+
+    const removedChats = social.chats.filter(chat => chat.scrapbookId === book.id);
+    const removedChatIds = new Set(removedChats.map(chat => chat.id));
+    const removedMessages = social.chatMessages.filter(message => removedChatIds.has(message.chatId));
+
+    const candidateAssets = new Set();
+    for (const entry of removedEntries) {
+      for (const photo of Array.isArray(entry.photos) ? entry.photos : []) {
+        if (photo?.src?.startsWith('/uploads/')) candidateAssets.add(photo.src);
+      }
+      for (const item of Array.isArray(entry.canvasItems) ? entry.canvasItems : []) {
+        if (item?.type === 'photo' && item?.src?.startsWith('/uploads/')) candidateAssets.add(item.src);
+      }
+    }
+    for (const message of removedMessages) {
+      if (message?.image?.startsWith('/uploads/')) candidateAssets.add(message.image);
+    }
+
+    social.scrapbooks = social.scrapbooks.filter(item => item.id !== book.id);
+    social.invites = social.invites.filter(invite => invite.scrapbookId !== book.id);
+    social.chats = social.chats.filter(chat => !removedChatIds.has(chat.id));
+    social.chatMessages = social.chatMessages.filter(message => !removedChatIds.has(message.chatId));
+    social.mentions = social.mentions.filter(item => item.scrapbookId !== book.id);
+    social.activityNotifications = social.activityNotifications.filter(item => item.scrapbookId !== book.id);
+
+    for (const readMap of Object.values(social.chatRead || {})) {
+      if (!readMap || typeof readMap !== 'object') continue;
+      for (const chatId of removedChatIds) delete readMap[chatId];
+    }
+
+    const assetStillUsed = src =>
+      remainingEntries.some(entry =>
+        (Array.isArray(entry.photos) && entry.photos.some(photo => photo?.src === src)) ||
+        (Array.isArray(entry.canvasItems) && entry.canvasItems.some(item => item?.type === 'photo' && item?.src === src))
+      ) ||
+      social.chatMessages.some(message => message?.image === src) ||
+      Object.values(social.profiles || {}).some(profile => profile?.avatar === src);
+
+    const orphanedAssets = [...candidateAssets].filter(src => !assetStillUsed(src));
+    for (const src of orphanedAssets) {
+      if (social.uploadOwners) delete social.uploadOwners[src];
+    }
+
+    await writeEntries(remainingEntries);
+    await writeSocial(social);
+
+    for (const src of orphanedAssets) {
+      try { await fsp.unlink(path.join(UPLOADS, path.basename(src))); }
+      catch (err) { if (err?.code !== 'ENOENT') console.warn('Could not remove orphaned upload:', src, err?.message || err); }
+    }
+
+    emitLiveMany(viewers, 'social', { type:'scrapbook_deleted', scrapbookId:book.id, from:user });
+    return json(res, 200, { deleted:true, scrapbookId:book.id });
+  }
+
   const coverThemeMatch = pathname.match(/^\/api\/scrapbooks\/([a-f0-9-]+)\/cover-theme$/i);
   if (coverThemeMatch && req.method === 'PUT') {
     const book = social.scrapbooks.find(item => item.id === coverThemeMatch[1]);
@@ -1375,6 +1441,7 @@ async function handleApi(req, res, url) {
     }
     if (!book.members.includes(user)) book.members.push(user);
     invite.status = 'accepted'; invite.respondedAt = new Date().toISOString();
+    if (book.type === 'couple' && book.members.length >= 2 && !book.boundAt) book.boundAt = invite.respondedAt;
     const responder = publicProfileFor(social, user);
     appendActivityNotification(social, { to:invite.from, from:user, type:'invite_accepted', scrapbookId:book.id, scrapbookName:book.name });
     await sendUserPush(social, {
