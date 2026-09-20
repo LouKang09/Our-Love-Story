@@ -2493,7 +2493,7 @@ function renderChatList() {
   }
   host.innerHTML = chats.map(chat => {
     const last = chat.lastMessage;
-    const preview = last ? (last.text || (last.image ? '📷 Photo' : 'New message')) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
+    const preview = last ? (last.text || (last.image ? '📷 Photo' : (last.audio ? '🎙 Voice message' : 'New message'))) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
     return `<button class="chat-list-item ${chat.id === activeChatId ? 'active' : ''}" type="button" data-chat-id="${escapeHtml(chat.id)}">
       ${chatAvatarHtml(chat)}
       <span class="chat-list-copy"><strong>${escapeHtml(chat.name || 'Conversation')}</strong><small>${escapeHtml(preview)}</small></span>
