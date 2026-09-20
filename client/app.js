@@ -38,6 +38,13 @@ let pendingChatFile = null;
 let pendingChatPreviewUrl = '';
 let pendingChatReply = null;
 let chatReactionPicker = null;
+let commentReactionPicker = null;
+let pendingChatAudioFile = null;
+let pendingChatAudioUrl = '';
+let chatMediaRecorder = null;
+let chatMediaStream = null;
+let chatAudioChunks = [];
+let chatRecordingStartedAt = 0;
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
@@ -832,80 +839,128 @@ function commentProfile(comment) {
 function commentsEnabledForActiveBook() {
   return Boolean(activeScrapbook && ['personal','group','couple'].includes(activeScrapbook.type) && activeScrapbook.canComment !== false);
 }
+function commentReactions(comment) {
+  const raw = comment?.reactions && typeof comment.reactions === 'object' ? comment.reactions : {};
+  return Object.entries(raw).map(([emoji,tags]) => {
+    const people = Array.isArray(tags) ? [...new Set(tags.filter(Boolean))] : [];
+    return { emoji, count:people.length, reactedByMe:Boolean(me?.tag && people.includes(me.tag)) };
+  }).filter(item => item.count > 0);
+}
+function commentReactionHtml(entryId, comment) {
+  const reactions = commentReactions(comment);
+  return reactions.length
+    ? `<div class="comment-reaction-summary">${reactions.map(item=>`<button type="button" class="comment-reaction-chip ${item.reactedByMe?'mine':''}" data-entry-id="${escapeHtml(entryId)}" data-comment-id="${escapeHtml(comment.id)}" data-emoji="${escapeHtml(item.emoji)}"><span>${escapeHtml(item.emoji)}</span><b>${item.count}</b></button>`).join('')}</div>`
+    : '';
+}
+function commentNodeHtml(entry, comment, childrenMap, depth = 0) {
+  const p = commentProfile(comment);
+  const canDelete = me && (comment.author === me.tag || activeScrapbook.owner === me.tag);
+  const children = childrenMap.get(comment.id) || [];
+  return `<div class="comment-thread ${depth ? 'comment-reply-thread' : ''}">
+    <article class="memory-comment" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id || '')}">
+      <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
+      <div class="comment-main" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}"><p>${mentionTextHtml(comment.text || '')}</p></div>
+      <div class="comment-actions">
+        <button class="comment-react-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="React to comment">♡ React</button>
+        <button class="comment-reply-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">Reply</button>
+        ${commentReactionHtml(entry.id,comment)}
+      </div>
+      <form class="comment-reply-form hidden" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">
+        <textarea maxlength="600" rows="2" placeholder="Write a reply… Tag someone with @tag"></textarea>
+        <div><button class="ghost comment-reply-cancel" type="button">Cancel</button><button class="primary" type="submit">Reply</button></div>
+      </form>
+      ${canDelete ? `<button class="comment-delete" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="Delete comment">×</button>` : ''}
+    </article>
+    ${children.length ? `<div class="comment-replies">${children.map(child=>commentNodeHtml(entry,child,childrenMap,depth+1)).join('')}</div>` : ''}
+  </div>`;
+}
 function commentsHtml(entry) {
   if (!activeScrapbook || !['personal','group','couple'].includes(activeScrapbook.type)) return '';
   const comments = Array.isArray(entry.comments) ? entry.comments : [];
-  const list = comments.length ? comments.map(comment => {
-    const p = commentProfile(comment);
-    const canDelete = me && (comment.author === me.tag || activeScrapbook.owner === me.tag);
-    return `<article class="memory-comment" data-comment-id="${escapeHtml(comment.id || '')}">
-      <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
-      <p>${mentionTextHtml(comment.text || '')}</p>
-      ${canDelete ? `<button class="comment-delete" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="Delete comment">×</button>` : ''}
-    </article>`;
-  }).join('') : '<p class="comments-empty">No comments yet. Leave the first little note.</p>';
+  const childrenMap = new Map();
+  comments.forEach(comment => {
+    if (!comment.parentId) return;
+    const list = childrenMap.get(comment.parentId) || [];
+    list.push(comment);
+    childrenMap.set(comment.parentId,list);
+  });
+  const roots = comments.filter(comment => !comment.parentId || !comments.some(item => item.id === comment.parentId));
+  const list = roots.length ? roots.map(comment => commentNodeHtml(entry,comment,childrenMap,0)).join('') : '<p class="comments-empty">No comments yet. Leave the first little note.</p>';
   const composer = commentsEnabledForActiveBook()
     ? `<form class="comment-form" data-entry-id="${escapeHtml(entry.id)}"><textarea maxlength="600" rows="2" placeholder="Write a comment… Tag someone with @tag"></textarea><button class="primary" type="submit">Post</button></form>`
     : '';
   return `<section class="memory-comments"><div class="comments-head"><strong>Comments</strong><span>${comments.length}</span></div><div class="comments-list">${list}</div>${composer}</section>`;
 }
-function pageHtml(entry) {
-  if (!entry) return '<div class="blank-page"><div><strong>A blank page.</strong><span>Some days are only waiting to happen.</span></div></div>';
-  const editable = me && entry.author === me.tag;
-  const time = formatEntryTime(entry.createdAt);
-  return `<div class="entry-page" data-entry-id="${escapeHtml(entry.id)}">
-    <div class="entry-date-row"><div class="entry-date">${formatDate(entry.date)}</div>${time ? `<time class="entry-time">${escapeHtml(time)}</time>` : ''}</div>
-    <h2>${escapeHtml(entry.title)}</h2>
-    <div class="entry-meta">${authorHtml(entry)}</div>
-    <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
-    ${commentsHtml(entry)}
-    ${editable ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this page</button></div>` : ''}
-  </div>`;
-}
-function chronologicalEntries() {
-  return [...entries].sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
-}
-function isMobileBook() { return window.matchMedia('(max-width: 800px)').matches; }
-function activeBookLabel() { return activeScrapbook?.name || 'My Scrapbooks'; }
-
-function renderBook() {
-  const ordered = chronologicalEntries();
-  const mobile = isMobileBook();
-  const step = mobile ? 1 : 2;
-  const maxIndex = Math.max(0, ordered.length - 1);
-  spreadIndex = Math.max(0, Math.min(spreadIndex, mobile ? maxIndex : Math.max(0, ordered.length - (ordered.length % 2 ? 1 : 2))));
-  if (mobile) {
-    leftPage.innerHTML = '';
-    rightPage.innerHTML = pageHtml(ordered[spreadIndex]);
-    $('#pageCounter').textContent = ordered.length ? `Page ${spreadIndex + 1} of ${ordered.length}` : 'Empty book';
-  } else {
-    leftPage.innerHTML = pageHtml(ordered[spreadIndex]);
-    rightPage.innerHTML = pageHtml(ordered[spreadIndex + 1]);
-    $('#pageCounter').textContent = ordered.length ? `Pages ${spreadIndex + 1}–${Math.min(spreadIndex + 2, ordered.length)} of ${ordered.length}` : 'Empty book';
+function closeCommentReactionPicker() {
+  if (commentReactionPicker) {
+    commentReactionPicker.remove();
+    commentReactionPicker = null;
   }
-  $('#prevBtn').disabled = spreadIndex <= 0;
-  $('#nextBtn').disabled = spreadIndex + step >= ordered.length;
-  if ($('#mobilePrevBtn')) $('#mobilePrevBtn').disabled = spreadIndex <= 0;
-  if ($('#mobileNextBtn')) $('#mobileNextBtn').disabled = spreadIndex + step >= ordered.length;
-  wireEntryButtons(bookShell);
 }
-function renderTimeline() {
-  const ordered = chronologicalEntries().reverse();
-  $('#timeline').innerHTML = ordered.map(entry => {
-    const time = formatEntryTime(entry.createdAt);
-    return `<article class="timeline-item" data-entry-id="${escapeHtml(entry.id)}">
-      <div class="timeline-dot"></div>
-      <div class="stream-card">
-        <div class="entry-date-row"><div class="entry-date">${formatDate(entry.date)}</div>${time ? `<time class="entry-time">${escapeHtml(time)}</time>` : ''}</div>
-        <h2>${escapeHtml(entry.title)}</h2>
-        <div class="entry-meta">${authorHtml(entry)}</div>
-        <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
-        ${commentsHtml(entry)}
-        ${me && entry.author === me.tag ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button></div>` : ''}
-      </div>
-    </article>`;
-  }).join('');
-  wireEntryButtons($('#timeline'));
+async function toggleCommentReaction(entryId,commentId,emoji='👍') {
+  try {
+    await api(`/api/entries/${encodeURIComponent(entryId)}/comments/${encodeURIComponent(commentId)}/reactions`,{
+      method:'POST',
+      body:JSON.stringify({emoji})
+    });
+    await refreshEntries();
+  } catch (err) {
+    showToast(err.message || 'Could not react to that comment.');
+  }
+}
+function showCommentReactionPicker(entryId,commentId,anchor) {
+  if (!isPhoneUI() || !anchor) return;
+  closeCommentReactionPicker();
+  const picker=document.createElement('div');
+  picker.className='comment-reaction-picker';
+  picker.innerHTML=['👍','❤️','😂','😮','😢','😡'].map(emoji=>`<button type="button" data-emoji="${emoji}">${emoji}</button>`).join('');
+  document.body.appendChild(picker);
+  commentReactionPicker=picker;
+  const rect=anchor.getBoundingClientRect();
+  const width=Math.min(330,window.innerWidth-16);
+  picker.style.width=`${width}px`;
+  picker.style.left=`${Math.max(8,Math.min(window.innerWidth-width-8,rect.left+(rect.width-width)/2))}px`;
+  requestAnimationFrame(()=>{
+    const h=picker.offsetHeight||52;
+    picker.style.top=`${rect.top-h-8>=8?rect.top-h-8:Math.min(window.innerHeight-h-8,rect.bottom+8)}px`;
+  });
+  picker.querySelectorAll('button').forEach(button=>button.addEventListener('pointerdown',async e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    const emoji=button.dataset.emoji;
+    closeCommentReactionPicker();
+    await toggleCommentReaction(entryId,commentId,emoji);
+  }));
+}
+function wireCommentGestures(root) {
+  root.querySelectorAll('.comment-main').forEach(main=>{
+    let lastTap=0,hold=null,startX=0,startY=0,cancelled=false,longPressed=false;
+    main.addEventListener('pointerdown',e=>{
+      if(!isPhoneUI()||e.pointerType==='mouse')return;
+      startX=e.clientX;startY=e.clientY;cancelled=false;longPressed=false;
+      hold=setTimeout(()=>{
+        if(cancelled)return;
+        longPressed=true;
+        showCommentReactionPicker(main.dataset.entryId,main.dataset.commentId,main);
+      },430);
+    });
+    main.addEventListener('pointermove',e=>{
+      if(Math.hypot(e.clientX-startX,e.clientY-startY)>10){
+        cancelled=true;clearTimeout(hold);
+      }
+    });
+    main.addEventListener('pointerup',()=>{
+      clearTimeout(hold);
+      if(longPressed||cancelled)return;
+      const now=Date.now();
+      if(now-lastTap<320){
+        lastTap=0;
+        toggleCommentReaction(main.dataset.entryId,main.dataset.commentId,'👍');
+      } else lastTap=now;
+    });
+    main.addEventListener('pointercancel',()=>{cancelled=true;clearTimeout(hold);});
+    main.addEventListener('contextmenu',e=>{if(isPhoneUI())e.preventDefault();});
+  });
 }
 function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
@@ -913,25 +968,66 @@ function wireEntryButtons(root) {
   root.querySelectorAll('.comment-form').forEach(form => {
     wireMentionAutocomplete(form.querySelector('textarea'));
     form.addEventListener('submit', async e => {
-    e.preventDefault();
-    const entryId = form.dataset.entryId;
-    const input = form.querySelector('textarea');
-    const text = input?.value.trim() || '';
-    if (!text) return;
-    const button = form.querySelector('button[type="submit"]');
-    button.disabled = true;
-    try {
-      await api(`/api/entries/${encodeURIComponent(entryId)}/comments`, { method:'POST', body:JSON.stringify({ text }) });
-      await refreshEntries();
-      showToast('Comment posted.');
-    } catch (err) {
-      showToast(err.message);
-      button.disabled = false;
-    }
+      e.preventDefault();
+      const entryId = form.dataset.entryId;
+      const input = form.querySelector('textarea');
+      const text = input?.value.trim() || '';
+      if (!text) return;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        await api(`/api/entries/${encodeURIComponent(entryId)}/comments`, { method:'POST', body:JSON.stringify({ text }) });
+        await refreshEntries();
+        showToast('Comment posted.');
+      } catch (err) {
+        showToast(err.message);
+        button.disabled = false;
+      }
     });
   });
+  root.querySelectorAll('.comment-reply-trigger').forEach(button=>button.addEventListener('click',()=>{
+    const article=button.closest('.memory-comment');
+    const form=article?.querySelector('.comment-reply-form');
+    if(!form)return;
+    root.querySelectorAll('.comment-reply-form:not(.hidden)').forEach(other=>{if(other!==form)other.classList.add('hidden');});
+    form.classList.toggle('hidden');
+    if(!form.classList.contains('hidden')) form.querySelector('textarea')?.focus({preventScroll:true});
+  }));
+  root.querySelectorAll('.comment-reply-cancel').forEach(button=>button.addEventListener('click',()=>{
+    button.closest('.comment-reply-form')?.classList.add('hidden');
+  }));
+  root.querySelectorAll('.comment-reply-form').forEach(form=>{
+    wireMentionAutocomplete(form.querySelector('textarea'));
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const input=form.querySelector('textarea');
+      const text=input?.value.trim()||'';
+      if(!text)return;
+      const submit=form.querySelector('button[type="submit"]');
+      submit.disabled=true;
+      try{
+        await api(`/api/entries/${encodeURIComponent(form.dataset.entryId)}/comments`,{
+          method:'POST',
+          body:JSON.stringify({text,parentId:form.dataset.commentId})
+        });
+        await refreshEntries();
+        showToast('Reply posted.');
+      }catch(err){
+        showToast(err.message||'Could not post that reply.');
+        submit.disabled=false;
+      }
+    });
+  });
+  root.querySelectorAll('.comment-react-trigger').forEach(button=>button.addEventListener('click',()=>{
+    if(isPhoneUI()) showCommentReactionPicker(button.dataset.entryId,button.dataset.commentId,button);
+    else toggleCommentReaction(button.dataset.entryId,button.dataset.commentId,'👍');
+  }));
+  root.querySelectorAll('.comment-reaction-chip').forEach(button=>button.addEventListener('click',()=>{
+    toggleCommentReaction(button.dataset.entryId,button.dataset.commentId,button.dataset.emoji);
+  }));
+  wireCommentGestures(root);
   root.querySelectorAll('.comment-delete').forEach(btn => btn.addEventListener('click', async () => {
-    if (!confirm('Delete this comment? This cannot be undone.')) return;
+    if (!confirm('Delete this comment? Its replies will also be removed. This cannot be undone.')) return;
     try {
       await api(`/api/entries/${encodeURIComponent(btn.dataset.entryId)}/comments/${encodeURIComponent(btn.dataset.commentId)}`, { method:'DELETE' });
       await refreshEntries();
@@ -1950,6 +2046,20 @@ function setProfileImageScale(value) {
   }
   applyProfileImageTransform();
 }
+function openChatImageViewer(src) {
+  if(!isPhoneUI()||!src)return;
+  const viewer=$('#chatImageViewer');
+  const img=$('#chatImageViewerImg');
+  if(!viewer||!img)return;
+  img.src=src;
+  viewer.classList.remove('hidden');
+  document.body.classList.add('chat-image-viewing');
+}
+function closeChatImageViewer() {
+  $('#chatImageViewer')?.classList.add('hidden');
+  if($('#chatImageViewerImg'))$('#chatImageViewerImg').src='';
+  document.body.classList.remove('chat-image-viewing');
+}
 function openProfileImageViewer(profile) {
   if (!profile?.avatar) return;
   $('#profileImageViewerImg').src = profile.avatar;
@@ -2548,6 +2658,9 @@ async function closeMobileChat() {
     activeChatId = null;
     activeChatMessages = [];
     clearPendingChatImage();
+    clearPendingChatAudio();
+    if(chatMediaRecorder?.state==='recording')chatMediaRecorder.stop();
+    stopChatMediaStream();
     clearPendingChatReply();
     closeChatReactionPicker();
     if ($('#chatText')) $('#chatText').value = '';
@@ -2580,6 +2693,7 @@ function chatReplySnippet(message) {
   if (!message) return '';
   if (message.text) return String(message.text).replace(/\s+/g,' ').trim().slice(0,110);
   if (message.image) return '📷 Photo';
+  if (message.audio) return '🎙 Voice message';
   return 'Message';
 }
 function renderChatReplyPreview() {
@@ -2680,7 +2794,7 @@ function wireChatMessageGestures(host) {
     };
 
     bubble.addEventListener('pointerdown',e=>{
-      if(e.pointerType==='mouse'||e.target.closest('button'))return;
+      if(e.pointerType==='mouse'||e.target.closest('button,audio'))return;
       gestureActive=true;
       closeChatReactionPicker();
       startX=e.clientX;
@@ -2775,7 +2889,8 @@ function renderChatMessages({stickBottom=true}={}) {
       <div class="chat-bubble" data-message-id="${escapeHtml(message.id || '')}">
         ${!mine ? `<strong>${escapeHtml(profile.displayName || message.author || '')}</strong>` : ''}
         ${reply ? `<div class="chat-reply-quote"><small>Reply to ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></div>` : ''}
-        ${message.image ? `<img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" />` : ''}
+        ${message.image ? `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(message.image)}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" /></button>` : ''}
+        ${message.audio ? `<audio class="chat-message-audio" controls preload="metadata" src="${escapeHtml(message.audio)}"></audio>` : ''}
         ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
         <time>${escapeHtml(chatWhen(message.createdAt))}</time>
         ${reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
@@ -2783,6 +2898,10 @@ function renderChatMessages({stickBottom=true}={}) {
     </article>`;
   }).join('');
   wireProfileLinks(host);
+  host.querySelectorAll('.chat-message-image-button').forEach(button=>button.addEventListener('click',e=>{
+    e.stopPropagation();
+    openChatImageViewer(button.dataset.chatImage);
+  }));
   wireChatMessageGestures(host);
   requestAnimationFrame(() => {
     if(stickBottom) host.scrollTop=host.scrollHeight;
@@ -2808,6 +2927,86 @@ function clearPendingChatImage() {
   if ($('#chatPhotoInput')) $('#chatPhotoInput').value = '';
   renderPendingChatImage();
 }
+function renderPendingChatAudio() {
+  const host=$('#chatAudioPreview');
+  if(!host)return;
+  if(!pendingChatAudioFile||!pendingChatAudioUrl){
+    host.classList.add('hidden');
+    host.innerHTML='';
+    return;
+  }
+  host.classList.remove('hidden');
+  host.innerHTML=`<div><audio controls src="${escapeHtml(pendingChatAudioUrl)}"></audio><span>Voice message</span><button id="removeChatAudioBtn" type="button" aria-label="Remove voice message">×</button></div>`;
+  $('#removeChatAudioBtn')?.addEventListener('click',clearPendingChatAudio);
+}
+function clearPendingChatAudio() {
+  if(pendingChatAudioUrl)URL.revokeObjectURL(pendingChatAudioUrl);
+  pendingChatAudioUrl='';
+  pendingChatAudioFile=null;
+  renderPendingChatAudio();
+}
+function stopChatMediaStream() {
+  if(chatMediaStream){
+    chatMediaStream.getTracks().forEach(track=>track.stop());
+    chatMediaStream=null;
+  }
+}
+async function toggleChatAudioRecording() {
+  const button=$('#chatMicBtn');
+  if(!button||!isPhoneUI())return;
+  if(chatMediaRecorder && chatMediaRecorder.state==='recording'){
+    chatMediaRecorder.stop();
+    return;
+  }
+  if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined'){
+    showToast('Voice recording is not supported by this browser.');
+    return;
+  }
+  try{
+    clearPendingChatAudio();
+    chatMediaStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const preferred=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'].find(type=>MediaRecorder.isTypeSupported?.(type));
+    chatAudioChunks=[];
+    chatMediaRecorder=new MediaRecorder(chatMediaStream,preferred?{mimeType:preferred}:undefined);
+    chatRecordingStartedAt=Date.now();
+    chatMediaRecorder.addEventListener('dataavailable',event=>{if(event.data?.size)chatAudioChunks.push(event.data);});
+    chatMediaRecorder.addEventListener('stop',()=>{
+      const duration=Date.now()-chatRecordingStartedAt;
+      const type=chatMediaRecorder?.mimeType || chatAudioChunks[0]?.type || 'audio/webm';
+      const blob=new Blob(chatAudioChunks,{type});
+      stopChatMediaStream();
+      chatMediaRecorder=null;
+      chatAudioChunks=[];
+      button.classList.remove('recording');
+      button.textContent='🎙';
+      button.setAttribute('aria-label','Record voice message');
+      if(duration<400||!blob.size){
+        showToast('Recording was too short.');
+        return;
+      }
+      if(blob.size>8*1024*1024){
+        showToast('Voice message is too large. Please record a shorter clip.');
+        return;
+      }
+      const ext=type.includes('ogg')?'ogg':'webm';
+      pendingChatAudioFile=new File([blob],`voice-${Date.now()}.${ext}`,{type,lastModified:Date.now()});
+      pendingChatAudioUrl=URL.createObjectURL(pendingChatAudioFile);
+      renderPendingChatAudio();
+    });
+    chatMediaRecorder.start(250);
+    button.classList.add('recording');
+    button.textContent='■';
+    button.setAttribute('aria-label','Stop voice recording');
+    showToast('Recording… tap the microphone again to stop.');
+  }catch(err){
+    stopChatMediaStream();
+    chatMediaRecorder=null;
+    button.classList.remove('recording');
+    button.textContent='🎙';
+    showToast(err?.name==='NotAllowedError'?'Microphone permission was not granted.':'Could not start voice recording.');
+  }
+}
+
 async function loadChats({ preserveActive = true } = {}) {
   const data = await api('/api/chats');
   chats = data.chats || [];
@@ -3641,6 +3840,14 @@ async function uploadImage(file) {
   const dataUrl = await fileToDataUrl(compressed);
   return api('/api/upload', { method:'POST', body:JSON.stringify({ dataUrl, name:compressed.name || file.name }) });
 }
+async function uploadAttachment(file) {
+  if (!file) throw new Error('No attachment selected.');
+  if (String(file.type || '').startsWith('image/')) return uploadImage(file);
+  if (!String(file.type || '').startsWith('audio/')) throw new Error('Unsupported attachment type.');
+  if (file.size > 8 * 1024 * 1024) throw new Error('Voice messages must be 8 MB or smaller.');
+  const dataUrl = await fileToDataUrl(file);
+  return api('/api/upload', { method:'POST', body:JSON.stringify({ dataUrl, name:file.name || 'voice-message.webm' }) });
+}
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -4145,46 +4352,56 @@ $('#privateChatTag').addEventListener('input', e => {
 $('#privateChatTag').addEventListener('blur', () => {
   if (isPhoneUI()) setTimeout(hideMobilePrivateChatSuggestions, 160);
 });
-$('#chatPhotoInput').addEventListener('change', () => {
-  const file = $('#chatPhotoInput').files?.[0] || null;
+function setPendingChatPhoto(file,input) {
   if (!file) { clearPendingChatImage(); return; }
   if (!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type)) {
-    showToast('Chat attachments can only be image files.');
-    $('#chatPhotoInput').value = '';
+    showToast('Please choose a supported photo.');
+    if(input)input.value='';
     return;
   }
-  if (file.size > 8 * 1024 * 1024) {
-    showToast('Chat photos must be 8 MB or smaller.');
-    $('#chatPhotoInput').value = '';
+  if (file.size > 16 * 1024 * 1024) {
+    showToast('That photo is too large to process.');
+    if(input)input.value='';
     return;
   }
   clearPendingChatImage();
-  pendingChatFile = file;
-  pendingChatPreviewUrl = URL.createObjectURL(file);
+  pendingChatFile=file;
+  pendingChatPreviewUrl=URL.createObjectURL(file);
   renderPendingChatImage();
-});
+}
+$('#chatPhotoInput').addEventListener('change',()=>setPendingChatPhoto($('#chatPhotoInput').files?.[0]||null,$('#chatPhotoInput')));
+$('#chatCameraInput')?.addEventListener('change',()=>setPendingChatPhoto($('#chatCameraInput').files?.[0]||null,$('#chatCameraInput')));
+$('#chatMicBtn')?.addEventListener('click',toggleChatAudioRecording);
 $('#chatComposer').addEventListener('submit', async e => {
   e.preventDefault();
   if (!activeChatId) return;
   const text = $('#chatText').value.trim();
-  if (!text && !pendingChatFile) {
-    showToast('Write a message or attach a photo.');
+  if (!text && !pendingChatFile && !pendingChatAudioFile) {
+    showToast('Write a message or attach media.');
     return;
   }
   const sendBtn = $('#chatSendBtn');
   sendBtn.disabled = true;
   try {
     let image = '';
+    let audio = '';
     if (pendingChatFile) {
       const uploaded = await uploadImage(pendingChatFile);
       image = uploaded.src || '';
     }
+    if (pendingChatAudioFile) {
+      const uploaded = await uploadAttachment(pendingChatAudioFile);
+      audio = uploaded.src || '';
+    }
     await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, {
       method:'POST',
-      body:JSON.stringify({ text, image, replyTo:pendingChatReply?.id || '' })
+      body:JSON.stringify({ text, image, audio, replyTo:pendingChatReply?.id || '' })
     });
     $('#chatText').value = '';
     clearPendingChatImage();
+    clearPendingChatAudio();
+    if(chatMediaRecorder?.state==='recording')chatMediaRecorder.stop();
+    stopChatMediaStream();
     clearPendingChatReply();
     await loadChatMessages(activeChatId);
     await loadChats();
@@ -4213,10 +4430,21 @@ document.addEventListener('pointerdown', e => {
 document.addEventListener('pointerdown',e=>{
   if(chatReactionPicker && !e.target.closest('.chat-reaction-picker')) closeChatReactionPicker();
 });
+document.addEventListener('pointerdown',e=>{
+  if(commentReactionPicker && !e.target.closest('.comment-reaction-picker,.comment-react-trigger')) closeCommentReactionPicker();
+});
 
+$('#chatImageViewerClose')?.addEventListener('click',closeChatImageViewer);
+$('#chatImageViewer')?.addEventListener('pointerdown',e=>{if(e.target===$('#chatImageViewer'))closeChatImageViewer();});
 $('#profileImageViewerClose').addEventListener('click', closeProfileImageViewer);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !$('#profileImageViewer').classList.contains('hidden')) {
+  if(e.key!=='Escape')return;
+  if(!$('#chatImageViewer')?.classList.contains('hidden')){
+    e.preventDefault();
+    closeChatImageViewer();
+    return;
+  }
+  if (!$('#profileImageViewer').classList.contains('hidden')) {
     e.preventDefault();
     closeProfileImageViewer();
   }
