@@ -4,11 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
-  <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui22" />
+  <title>Scrapella</title>
+  <link rel="stylesheet" href="/styles.css?v=20260920-scrapella01" />
 </head>
-<body class="auth-pending">
+<body class="auth-pending brand-intro-active">
   <div id="app">
+    <div id="brandIntro" class="brand-intro" aria-label="Scrapella is opening">
+      <div class="brand-intro-stage" aria-hidden="true">
+        <img class="brand-intro-ghost" src="/assets/scrapella-logo.webp" alt="" />
+        <div class="brand-intro-reveal"><img src="/assets/scrapella-logo.webp" alt="" /></div>
+        <svg class="brand-intro-pencil-track" viewBox="0 0 1000 420" preserveAspectRatio="none">
+          <path id="scrapellaPencilPath" d="M115 244 C142 148 230 145 263 229 C283 280 234 314 203 283 C179 258 194 222 232 220 C305 216 321 281 371 267 C410 257 402 215 437 213 C474 211 461 278 504 266 C544 254 543 198 582 204 C620 210 603 282 650 264 C691 249 690 189 732 193 C774 197 752 275 801 263 C848 251 858 202 896 212 C932 221 913 264 881 280" fill="none" stroke="transparent"/>
+          <g class="brand-intro-pencil">
+            <g transform="rotate(-18)">
+              <rect x="-30" y="-7" width="48" height="14" rx="5" fill="#e6b14e"/>
+              <rect x="-20" y="-7" width="29" height="14" fill="#f3cf73"/>
+              <polygon points="18,-7 31,0 18,7" fill="#d6b28a"/>
+              <polygon points="27,-3 34,0 27,3" fill="#3c302c"/>
+              <rect x="-34" y="-7" width="7" height="14" rx="3" fill="#df8b82"/>
+            </g>
+            <animateMotion dur="1.55s" begin=".08s" fill="freeze" rotate="auto">
+              <mpath href="#scrapellaPencilPath"/>
+            </animateMotion>
+          </g>
+        </svg>
+      </div>
+      <p>Stories worth keeping.</p>
+    </div>
     <div id="sessionSplash" class="session-splash" aria-live="polite" aria-label="Opening your scrapbook">
       <div class="session-splash-card">
         <span aria-hidden="true">♡</span>
@@ -17,9 +39,9 @@
     </div>
     <section id="lockScreen" class="lock-screen">
       <div class="lock-card paper-card">
-        <div class="lock-seal">♡</div>
+        <img class="lock-brand-logo" src="/assets/scrapella-logo.webp" alt="Scrapella" />
         <p class="eyebrow">PRIVATE SCRAPBOOKS</p>
-        <h1 id="lockTitle">Our Little Book of Us</h1>
+        <h1 id="lockTitle" class="sr-only">Scrapella</h1>
         <p id="lockSubtitle" class="muted">Every ordinary day deserves to be remembered.</p>
 
         <div class="auth-tabs" role="tablist" aria-label="Account access">
@@ -557,6 +579,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-phoneui24" defer></script>
+  <script src="/app.js?v=20260920-scrapella01" defer></script>
 </body>
 </html>
