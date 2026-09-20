@@ -930,57 +930,161 @@ function closeNotificationHub() {
   $('#notificationPanel')?.classList.add('hidden');
   $('#notificationBtn')?.setAttribute('aria-expanded','false');
 }
+async function openNotificationMemory(scrapbookId,entryId) {
+  if(!scrapbookId||!entryId)return;
+  closeNotificationHub();
+  try{
+    await loadSession(scrapbookId);
+    if(!activeScrapbook||activeScrapbook.id!==scrapbookId){
+      showToast('That scrapbook is no longer shared with you.');
+      return;
+    }
+    showView('stream');
+    requestAnimationFrame(()=>{
+      document.querySelector(`#timeline [data-entry-id="${CSS.escape(entryId)}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+  }catch(err){
+    showToast(err.message || 'That memory is no longer available.');
+  }
+}
+async function openNotificationChat(chatId) {
+  if(!chatId)return;
+  closeNotificationHub();
+  try{
+    showView('messages');
+    await loadChats();
+    if(!chats.some(chat=>chat.id===chatId)){
+      showToast('That conversation is no longer available.');
+      return;
+    }
+    await openChat(chatId);
+  }catch(err){
+    showToast(err.message || 'That conversation is no longer available.');
+  }
+}
+async function respondGroupDeleteRequest(scrapbookId,approve) {
+  if(!scrapbookId)return;
+  if(approve && !confirm('Approve deletion of this Group scrapbook? Its memories, group chat, related notifications, and stored group images will be removed. This cannot be undone.'))return;
+  try{
+    const currentId=activeScrapbook?.id || null;
+    const data=await api(`/api/scrapbooks/${encodeURIComponent(scrapbookId)}/delete-request/respond`,{
+      method:'POST',
+      body:JSON.stringify({approve})
+    });
+    if(data.deleted && currentId===scrapbookId){
+      localStorage.removeItem('activeScrapbookId');
+      await loadSession(null);
+    }else{
+      await loadSession(currentId===scrapbookId ? scrapbookId : currentId);
+    }
+    await loadNotificationHub({markRead:false});
+    showToast(data.deleted ? 'Group deletion approved.' : 'Group deletion request declined.');
+  }catch(err){
+    showToast(err.message || 'Could not respond to the group deletion request.');
+    await loadNotificationHub({markRead:false}).catch(()=>{});
+  }
+}
+function notificationActivityLabel(item) {
+  const labels={
+    invite_accepted:'accepted your scrapbook invitation',
+    invite_declined:'declined your scrapbook invitation',
+    group_delete_declined:'declined your group deletion request',
+    group_admin_added:'made you a group admin',
+    group_admin_removed:'removed your group admin role',
+    group_removed:'removed you from a group scrapbook',
+    group_member_left:'left your group scrapbook'
+  };
+  return labels[item.type] || 'updated your scrapbook circle';
+}
 function renderNotificationHub() {
   const host = $('#notificationList');
   if (!host) return;
   if (!notificationItems.length) {
-    host.innerHTML = '<div class="notification-empty"><span>♡</span><strong>All caught up.</strong><p>New followers and scrapbook invitations will appear here.</p></div>';
+    host.innerHTML = '<div class="notification-empty"><span>♡</span><strong>All caught up.</strong><p>New followers, mentions, messages, and scrapbook invitations will appear here.</p></div>';
     return;
   }
+
   host.innerHTML = notificationItems.map(item => {
     const actor = item.actor || {};
-    if (item.type === 'profile_mention' || item.type === 'comment_mention') {
-      const inComment = item.type === 'comment_mention';
-      return `<article class="notification-item mention-notification ${item.unread ? 'unread' : ''}">
-        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+
+    if (item.type === 'profile_mention') {
+      return `<article class="notification-item mention-notification notification-route-profile ${item.unread ? 'unread' : ''}" data-profile-tag="${escapeHtml(actor.tag || '')}">
+        <div class="notification-actor">
           ${avatarHtml(actor,'notification-avatar')}
-          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>${inComment ? 'tagged you in a scrapbook comment' : 'tagged you in their profile About'}</small></span>
-        </button>
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>tagged you in their profile About</small></span>
+        </div>
         <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
         ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
-        ${inComment && item.scrapbookId && item.entryId ? `<button class="ghost notification-view-memory" type="button" data-scrapbook-id="${escapeHtml(item.scrapbookId)}" data-entry-id="${escapeHtml(item.entryId)}">View memory</button>` : ''}
       </article>`;
     }
+
+    if (item.type === 'chat_mention') {
+      return `<article class="notification-item mention-notification notification-route-chat ${item.unread ? 'unread' : ''}" data-chat-id="${escapeHtml(item.chatId || '')}">
+        <div class="notification-actor">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>mentioned you in a message</small></span>
+        </div>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+        ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
+      </article>`;
+    }
+
+    if (item.type === 'comment_mention') {
+      return `<article class="notification-item mention-notification notification-route-memory ${item.unread ? 'unread' : ''}" data-scrapbook-id="${escapeHtml(item.scrapbookId || '')}" data-entry-id="${escapeHtml(item.entryId || '')}">
+        <div class="notification-actor">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>tagged you in a scrapbook comment</small></span>
+        </div>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+        ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
+      </article>`;
+    }
+
     if (item.type === 'comment') {
-      return `<article class="notification-item mention-notification ${item.unread ? 'unread' : ''}">
-        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+      return `<article class="notification-item mention-notification notification-route-memory ${item.unread ? 'unread' : ''}" data-scrapbook-id="${escapeHtml(item.scrapbookId || '')}" data-entry-id="${escapeHtml(item.entryId || '')}">
+        <div class="notification-actor">
           ${avatarHtml(actor,'notification-avatar')}
           <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>commented in ${escapeHtml(item.scrapbookName || 'a scrapbook')}</small></span>
-        </button>
+        </div>
         <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
         ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
-        ${item.scrapbookId && item.entryId ? `<button class="ghost notification-view-memory" type="button" data-scrapbook-id="${escapeHtml(item.scrapbookId)}" data-entry-id="${escapeHtml(item.entryId)}">View memory</button>` : ''}
       </article>`;
     }
-    if (item.type === 'invite_accepted' || item.type === 'invite_declined') {
-      const accepted = item.type === 'invite_accepted';
-      return `<article class="notification-item ${item.unread ? 'unread' : ''}">
-        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+
+    if (item.type === 'group_delete_request') {
+      return `<article class="notification-item group-delete-notification ${item.unread ? 'unread' : ''}" data-scrapbook-id="${escapeHtml(item.scrapbookId || '')}">
+        <div class="notification-actor">
           ${avatarHtml(actor,'notification-avatar')}
-          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>${accepted ? 'accepted' : 'declined'} your scrapbook invitation${item.scrapbookName ? ` · ${escapeHtml(item.scrapbookName)}` : ''}</small></span>
-        </button>
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Group admin')}</strong><small>requested deletion of ${escapeHtml(item.scrapbookName || 'your Group scrapbook')}</small></span>
+        </div>
         <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+        <div class="group-delete-notification-actions">
+          <button class="ghost group-delete-decline" type="button">Keep group</button>
+          <button class="danger group-delete-approve" type="button">Approve deletion</button>
+        </div>
       </article>`;
     }
+
     if (item.type === 'follow') {
-      return `<article class="notification-item ${item.unread ? 'unread' : ''}">
-        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+      return `<article class="notification-item notification-route-profile ${item.unread ? 'unread' : ''}" data-profile-tag="${escapeHtml(actor.tag || '')}">
+        <div class="notification-actor">
           ${avatarHtml(actor,'notification-avatar')}
           <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>@${escapeHtml(actor.tag || '')} followed you</small></span>
+        </div>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+      </article>`;
+    }
+
+    if (['invite_accepted','invite_declined','group_delete_declined','group_admin_added','group_admin_removed','group_removed','group_member_left'].includes(item.type)) {
+      return `<article class="notification-item ${item.unread ? 'unread' : ''}">
+        <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>${escapeHtml(notificationActivityLabel(item))}${item.scrapbookName ? ` · ${escapeHtml(item.scrapbookName)}` : ''}</small></span>
         </button>
         <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
       </article>`;
     }
+
     const isCouple = item.type === 'couple_invite';
     return `<article class="notification-item invite-notification" data-invite-id="${escapeHtml(item.inviteId || '')}">
       <button class="notification-actor notification-profile-link" type="button" data-tag="${escapeHtml(actor.tag || '')}">
@@ -994,29 +1098,44 @@ function renderNotificationHub() {
       </div>
     </article>`;
   }).join('');
-  host.querySelectorAll('.notification-profile-link').forEach(btn => btn.addEventListener('click', async () => {
+
+  host.querySelectorAll('.notification-profile-link').forEach(btn => btn.addEventListener('click', async e => {
+    e.stopPropagation();
     const tag = btn.dataset.tag;
     if (!tag) return;
     closeNotificationHub();
     await openPersonProfile(tag);
   }));
-  host.querySelectorAll('.notification-view-memory').forEach(btn => btn.addEventListener('click', async () => {
+
+  host.querySelectorAll('.notification-route-profile').forEach(card=>card.addEventListener('click',async e=>{
+    if(e.target.closest('.inline-mention,button'))return;
+    const tag=card.dataset.profileTag;
+    if(!tag)return;
     closeNotificationHub();
-    try {
-      const targetBookId = btn.dataset.scrapbookId;
-      await loadSession(targetBookId);
-      if (!activeScrapbook || activeScrapbook.id !== targetBookId) {
-        showToast('That scrapbook is no longer shared with you.');
-        return;
-      }
-      showView('stream');
-      requestAnimationFrame(() => {
-        document.querySelector(`#timeline [data-entry-id="${CSS.escape(btn.dataset.entryId)}"]`)?.scrollIntoView({ behavior:'smooth', block:'start' });
-      });
-    } catch (err) {
-      showToast(err.message || 'That memory is no longer available.');
-    }
+    await openPersonProfile(tag);
   }));
+
+  host.querySelectorAll('.notification-route-memory').forEach(card=>card.addEventListener('click',async e=>{
+    if(e.target.closest('.inline-mention,button'))return;
+    await openNotificationMemory(card.dataset.scrapbookId,card.dataset.entryId);
+  }));
+
+  host.querySelectorAll('.notification-route-chat').forEach(card=>card.addEventListener('click',async e=>{
+    if(e.target.closest('.inline-mention,button'))return;
+    await openNotificationChat(card.dataset.chatId);
+  }));
+
+  host.querySelectorAll('.group-delete-approve').forEach(button=>button.addEventListener('click',async e=>{
+    e.stopPropagation();
+    const card=button.closest('.group-delete-notification');
+    await respondGroupDeleteRequest(card?.dataset.scrapbookId,true);
+  }));
+  host.querySelectorAll('.group-delete-decline').forEach(button=>button.addEventListener('click',async e=>{
+    e.stopPropagation();
+    const card=button.closest('.group-delete-notification');
+    await respondGroupDeleteRequest(card?.dataset.scrapbookId,false);
+  }));
+
   host.querySelectorAll('.notification-accept').forEach(btn => btn.addEventListener('click', async () => {
     await respondNotificationInvite(btn.closest('.invite-notification')?.dataset.inviteId, true);
   }));
@@ -1024,6 +1143,7 @@ function renderNotificationHub() {
     await respondNotificationInvite(btn.closest('.invite-notification')?.dataset.inviteId, false);
   }));
 }
+
 async function loadNotificationHub({ markRead = true } = {}) {
   try {
     const data = await api('/api/notifications');
