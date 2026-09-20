@@ -1261,6 +1261,33 @@ function renderPersonalPrivacy() {
 }
 function renderConnections() {
   renderFollowStats();
+  connectionsView.classList.remove('mobile-person-only-context');
+  const connectionsEyebrow = connectionsView.querySelector('.connections-head .eyebrow');
+  if (connectionsEyebrow) connectionsEyebrow.textContent = 'WHO SHARES THIS BOOK';
+
+  const phonePersonOnly = isPhoneUI() &&
+    mobileBookContextTag &&
+    me?.tag &&
+    mobileBookContextTag !== me.tag &&
+    mobileBookOptions().length === 0;
+
+  if (phonePersonOnly) {
+    const person = mobileContextProfile() || { tag:mobileBookContextTag, displayName:mobileBookContextTag };
+    connectionsView.classList.add('mobile-person-only-context');
+    connectionsView.classList.remove('mobile-personal-context','mobile-group-context');
+    if (connectionsEyebrow) connectionsEyebrow.textContent = 'PROFILE';
+    $('#connectionsTitle').textContent = '';
+    $('#connectionsSubtitle').textContent = `Viewing @${person.tag || mobileBookContextTag}. You do not share a scrapbook or group with this person yet.`;
+    $('#inviteForm').classList.add('hidden');
+    $('#unbindPanel').classList.add('hidden');
+    $('#unbindPanel').innerHTML = '';
+    $('#personalPrivacyPanel').classList.add('hidden');
+    $('#personalPrivacyPanel').innerHTML = '';
+    $('#peopleMap').innerHTML = `<button class="personal-owner-card profile-card-button" type="button" data-profile-tag="${escapeHtml(person.tag || mobileBookContextTag)}">${avatarHtml(person,'bound-avatar')}<strong>${escapeHtml(person.displayName || person.tag || mobileBookContextTag)}</strong><span>@${escapeHtml(person.tag || mobileBookContextTag)}</span></button>`;
+    wireProfileLinks($('#peopleMap'));
+    return;
+  }
+
   if (!activeScrapbook) {
     $('#connectionsTitle').textContent = 'Create your first scrapbook';
     $('#connectionsSubtitle').textContent = 'Choose Lovers, Group, or Personal.';
