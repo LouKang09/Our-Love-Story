@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui14" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui15" />
 </head>
 <body>
   <div id="app">
@@ -152,6 +152,7 @@
           <div class="mobile-book-actions">
             <button id="mobileNewMemoryBtn" class="primary" type="button">＋ New memory</button>
             <button id="mobileStreamBtn" class="ghost" type="button">Memory stream</button>
+            <button id="mobileLeaveScrapbookBtn" class="ghost mobile-leave-scrapbook hidden" type="button">Leave group</button>
             <button id="mobileDeleteScrapbookBtn" class="danger mobile-delete-scrapbook hidden" type="button">Delete scrapbook</button>
           </div>
         </section>
@@ -224,6 +225,7 @@
               <header id="chatHeader" class="chat-header"></header>
               <div id="chatMessages" class="chat-messages"></div>
               <form id="chatComposer" class="chat-composer">
+                <div id="chatReplyPreview" class="chat-reply-preview hidden"></div>
                 <div id="chatImagePreview" class="chat-image-preview hidden"></div>
                 <textarea id="chatText" rows="2" maxlength="2000" placeholder="Write a message..."></textarea>
                 <div class="chat-compose-actions">
@@ -536,6 +538,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-phoneui14" defer></script>
+  <script src="/app.js?v=20260920-phoneui15" defer></script>
 </body>
 </html>
