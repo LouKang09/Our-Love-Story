@@ -112,25 +112,144 @@ function isPhoneUI() {
   return window.matchMedia(PHONE_UI_QUERY).matches;
 }
 
+const NATIVE_PERMISSION_KEY = 'scrapella-native-permissions-v2';
+const nativePluginCache = {};
+function isNativeScrapellaApp() {
+  const cap = window.Capacitor;
+  if (!cap) return false;
+  try {
+    if (typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()) return true;
+    const platform = typeof cap.getPlatform === 'function' ? cap.getPlatform() : '';
+    return platform === 'ios' || platform === 'android';
+  } catch {
+    return false;
+  }
+}
+function nativePlugin(name) {
+  if (!isNativeScrapellaApp()) return null;
+  const cap = window.Capacitor;
+  if (cap?.Plugins?.[name]) return cap.Plugins[name];
+  if (typeof cap?.registerPlugin === 'function') {
+    nativePluginCache[name] ||= cap.registerPlugin(name);
+    return nativePluginCache[name];
+  }
+  return null;
+}
+function setNativePermissionState(kind, state, label) {
+  const row = document.querySelector(`[data-native-permission="${kind}"]`);
+  if (!row) return;
+  row.classList.remove('granted','denied','working');
+  if (state) row.classList.add(state);
+  const status = row.querySelector('b');
+  if (status) status.textContent = label || (state === 'granted' ? 'Allowed' : state === 'denied' ? 'Denied' : state === 'working' ? 'Waiting…' : 'Ready');
+}
+function closeNativePermissionGate(mark = 'done') {
+  const gate = $('#nativePermissionGate');
+  if (!gate) return;
+  try { localStorage.setItem(NATIVE_PERMISSION_KEY, mark); } catch {}
+  gate.classList.add('hidden');
+  document.body.classList.remove('native-permission-open');
+}
+async function maybeShowNativePermissionGate() {
+  if (!isNativeScrapellaApp()) return;
+  try {
+    if (localStorage.getItem(NATIVE_PERMISSION_KEY)) return;
+  } catch {}
+  const gate = $('#nativePermissionGate');
+  if (!gate) return;
+  gate.classList.remove('hidden');
+  document.body.classList.add('native-permission-open');
+
+  const push = nativePlugin('PushNotifications');
+  const camera = nativePlugin('Camera');
+  try {
+    if (push?.checkPermissions) {
+      const status = await push.checkPermissions();
+      if (status?.receive === 'granted') setNativePermissionState('notifications','granted','Allowed');
+    }
+  } catch {}
+  try {
+    if (camera?.checkPermissions) {
+      const status = await camera.checkPermissions();
+      if (status?.camera === 'granted') setNativePermissionState('camera','granted','Allowed');
+      if (status?.photos === 'granted' || status?.photos === 'limited') setNativePermissionState('photos','granted',status.photos === 'limited' ? 'Selected' : 'Allowed');
+    }
+  } catch {}
+}
+async function requestScrapellaNativePermissions() {
+  if (!isNativeScrapellaApp()) return closeNativePermissionGate('web');
+  const button = $('#nativePermissionsContinue');
+  const statusText = $('#nativePermissionStatus');
+  if (button) button.disabled = true;
+
+  const push = nativePlugin('PushNotifications');
+  const camera = nativePlugin('Camera');
+
+  try {
+    setNativePermissionState('notifications','working','Waiting…');
+    let result = push?.checkPermissions ? await push.checkPermissions() : null;
+    if (push?.requestPermissions && (!result || result.receive === 'prompt' || result.receive === 'prompt-with-rationale')) {
+      result = await push.requestPermissions();
+    }
+    const allowed = result?.receive === 'granted';
+    setNativePermissionState('notifications',allowed ? 'granted' : 'denied',allowed ? 'Allowed' : 'Not allowed');
+  } catch {
+    setNativePermissionState('notifications','denied','Unavailable');
+  }
+
+  try {
+    setNativePermissionState('camera','working','Waiting…');
+    const result = camera?.requestPermissions
+      ? await camera.requestPermissions({ permissions:['camera'] })
+      : null;
+    const allowed = result?.camera === 'granted';
+    setNativePermissionState('camera',allowed ? 'granted' : 'denied',allowed ? 'Allowed' : 'Not allowed');
+  } catch {
+    setNativePermissionState('camera','denied','Unavailable');
+  }
+
+  try {
+    setNativePermissionState('photos','working','Waiting…');
+    const result = camera?.requestPermissions
+      ? await camera.requestPermissions({ permissions:['photos'] })
+      : null;
+    const allowed = result?.photos === 'granted' || result?.photos === 'limited';
+    setNativePermissionState('photos',allowed ? 'granted' : 'denied',result?.photos === 'limited' ? 'Selected' : allowed ? 'Allowed' : 'Not allowed');
+  } catch {
+    setNativePermissionState('photos','denied','Unavailable');
+  }
+
+  if (statusText) statusText.textContent = 'You can change these permissions later in your phone settings.';
+  try { localStorage.setItem(NATIVE_PERMISSION_KEY, 'done'); } catch {}
+  window.setTimeout(() => closeNativePermissionGate('done'), 750);
+  if (button) button.disabled = false;
+}
+$('#nativePermissionsContinue')?.addEventListener('click', requestScrapellaNativePermissions);
+$('#nativePermissionsSkip')?.addEventListener('click', () => closeNativePermissionGate('skipped'));
+
 function runScrapellaBrandIntro() {
   const intro = $('#brandIntro');
-  if (!intro) {
+  const finish = () => {
     document.body.classList.remove('brand-intro-active');
+    window.setTimeout(maybeShowNativePermissionGate, 80);
+  };
+  if (!intro) {
+    finish();
     return;
   }
   if (!isPhoneUI()) {
     intro.remove();
-    document.body.classList.remove('brand-intro-active');
+    finish();
     return;
   }
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const hold = reduced ? 500 : 1700;
+  const hold = reduced ? 550 : 1740;
   window.setTimeout(() => {
     intro.classList.add('brand-intro-finish');
     window.setTimeout(() => {
       intro.remove();
-      document.body.classList.remove('brand-intro-active');
-    }, reduced ? 80 : 300);
+      finish();
+    }, reduced ? 80 : 260);
   }, hold);
 }
 runScrapellaBrandIntro();
