@@ -1670,8 +1670,13 @@ input:focus,textarea:focus,select:focus{
 .canvas-text-content p,
 .canvas-text-content div{margin:0 0 .6em}
 .canvas-font-serif{font-family:Georgia,"Times New Roman",serif}
+.canvas-font-classic{font-family:"Times New Roman",Times,serif}
+.canvas-font-elegant{font-family:"Palatino Linotype","Book Antiqua",Palatino,serif}
 .canvas-font-sans{font-family:Arial,Helvetica,sans-serif}
+.canvas-font-rounded{font-family:Verdana,Geneva,sans-serif}
+.canvas-font-casual{font-family:"Trebuchet MS",Arial,sans-serif}
 .canvas-font-hand{font-family:"Segoe Print","Bradley Hand",cursive}
+.canvas-font-script{font-family:"Brush Script MT","Segoe Script",cursive}
 .canvas-font-mono{font-family:"Courier New",Courier,monospace}
 
 .canvas-text-inspector{
@@ -6583,5 +6588,285 @@ html[data-theme="night"] .profile-image-viewer{
   }
   .mobile-page-arrow-next{
     right:6px;
+  }
+}
+
+
+/* =========================================================
+   PHONE UI V14 — canvas editor, instant scrapbook flow & bond
+   ========================================================= */
+@media(max-width:800px){
+  /* #1 Dark page controls: no pale Lined Paper / Fit pills. */
+  html[data-theme="night"] .canvas-lined-toggle,
+  html[data-theme="night"] .canvas-zoom-controls{
+    color:#f2e9e5!important;
+    background:#2d2427!important;
+    border-color:rgba(242,224,218,.14)!important;
+  }
+  html[data-theme="night"] .canvas-zoom-controls button{
+    color:#f2e9e5!important;
+    background:transparent!important;
+  }
+  html[data-theme="night"] .canvas-zoom-controls button:active{
+    background:#49363c!important;
+  }
+  html[data-theme="night"] #canvasZoomValue{
+    color:#e19aaa!important;
+  }
+  html[data-theme="night"] .canvas-lined-toggle span{
+    color:#f2e9e5!important;
+  }
+
+  /* #2 Journal-entry heading is a normal section, not a sticky overlay. */
+  #editorDialog .editor-head{
+    position:static!important;
+    inset:auto!important;
+    top:auto!important;
+    z-index:auto!important;
+    margin:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+  }
+
+  /* #3 Compact text controls in one visible floating panel. */
+  .canvas-text-inspector{
+    display:grid!important;
+    grid-template-columns:minmax(105px,1.45fr) auto 34px 34px;
+    grid-template-rows:auto auto;
+    gap:5px!important;
+    overflow:visible!important;
+    padding:6px!important;
+  }
+  .canvas-text-inspector select{
+    grid-column:1;
+    grid-row:1;
+    width:100%!important;
+    min-width:0!important;
+    height:34px;
+    min-height:34px!important;
+    padding:5px 25px 5px 8px!important;
+    font-size:10px!important;
+  }
+  .canvas-size-control{
+    grid-column:2;
+    grid-row:1;
+    gap:3px!important;
+  }
+  .canvas-size-step{
+    width:31px!important;
+    min-width:31px!important;
+    height:34px!important;
+    font-size:17px!important;
+  }
+  #canvasFontSizeValue{
+    min-width:38px!important;
+    font-size:9px!important;
+  }
+  #canvasBoldBtn{
+    grid-column:3;
+    grid-row:1;
+  }
+  #canvasItalicBtn{
+    grid-column:4;
+    grid-row:1;
+  }
+  .canvas-text-inspector>.rich-tool{
+    width:34px!important;
+    min-width:34px!important;
+    height:34px!important;
+    padding:0!important;
+  }
+  .canvas-align-control{
+    grid-column:1 / 3;
+    grid-row:2;
+    display:grid;
+    grid-template-columns:repeat(4,30px);
+    gap:4px;
+    align-items:center;
+  }
+  .canvas-align-control .rich-tool{
+    width:30px!important;
+    min-width:30px!important;
+    height:30px!important;
+    padding:0!important;
+    font-size:9px!important;
+  }
+  #canvasBringFrontBtn{
+    grid-column:3;
+    grid-row:2;
+    min-width:0!important;
+    height:30px!important;
+    padding:0 4px!important;
+    font-size:8px!important;
+  }
+  #canvasDeleteItemBtn{
+    grid-column:4;
+    grid-row:2;
+    min-width:0!important;
+    height:30px!important;
+    padding:0 4px!important;
+    font-size:0!important;
+  }
+  #canvasDeleteItemBtn::after{
+    content:"×";
+    font:800 17px/1 ui-sans-serif,system-ui,sans-serif;
+  }
+
+  /* Text stays readable on the light scrapbook paper even in app night mode. */
+  html[data-theme="night"] .canvas-text-item{
+    color:#352729!important;
+    background:rgba(255,250,241,.88)!important;
+  }
+  html[data-theme="night"] .canvas-text-content{
+    color:#352729!important;
+    caret-color:#6f3c46!important;
+    -webkit-text-fill-color:#352729!important;
+  }
+  html[data-theme="night"] .canvas-text-content:empty::before{
+    color:#8e7a76!important;
+    -webkit-text-fill-color:#8e7a76!important;
+  }
+
+  /* Move is editor-only and now sits below the text box instead of using page height. */
+  .canvas-text-item{
+    overflow:visible!important;
+  }
+  .canvas-drag-handle{
+    position:absolute!important;
+    z-index:10;
+    left:50%;
+    top:auto!important;
+    bottom:-28px!important;
+    width:auto;
+    min-width:70px;
+    height:25px;
+    display:grid;
+    place-items:center;
+    padding:0 9px!important;
+    border:1px solid rgba(146,86,97,.22);
+    border-radius:999px!important;
+    transform:translateX(-50%);
+    color:var(--rose-dark);
+    background:rgba(234,213,216,.95);
+    box-shadow:0 4px 10px rgba(55,32,35,.13);
+    touch-action:none;
+  }
+  .canvas-text-content{
+    width:100%;
+    height:100%;
+    padding:6px 7px!important;
+  }
+
+  /* Resizing the photo frame preserves the whole photo instead of cropping it. */
+  .canvas-photo-item img,
+  .saved-photo-item img{
+    object-fit:contain!important;
+    background:rgba(255,250,241,.9);
+  }
+
+  /* Phone-only deletion actions. */
+  .mobile-delete-scrapbook{
+    grid-column:1 / -1;
+    min-height:38px!important;
+  }
+  .phone-empty-delete{
+    display:inline-flex;
+    margin-top:9px;
+    min-height:40px;
+  }
+
+  /* #5 Lovers view: transparent dark surface, bigger heart and bond current. */
+  .couple-bind{
+    position:relative;
+    isolation:isolate;
+  }
+  .couple-bind>.bound-profile,
+  .couple-bind>.heart-bind{
+    position:relative;
+    z-index:2;
+  }
+  .heart-bind{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+  }
+  .heart-bind>span{
+    font-size:84px!important;
+    line-height:.82!important;
+  }
+  .heart-bind small{
+    margin-top:4px;
+  }
+  .heart-bind em,
+  .heart-bind b{
+    display:block;
+    max-width:118px;
+    font-family:ui-sans-serif,system-ui,sans-serif;
+    text-align:center;
+  }
+  .heart-bind em{
+    margin-top:5px;
+    color:var(--muted);
+    font-size:9px;
+    font-style:normal;
+  }
+  .heart-bind b{
+    color:var(--ink);
+    font-size:9px;
+    font-weight:750;
+  }
+  .bond-current-lines{
+    position:absolute;
+    z-index:1;
+    inset:0;
+    width:100%;
+    height:100%;
+    overflow:visible;
+    pointer-events:none;
+  }
+  .bond-current-lines path{
+    fill:none;
+    stroke:rgba(207,119,140,.72);
+    stroke-width:1.1;
+    stroke-linecap:round;
+    stroke-dasharray:2.6 2.2;
+    vector-effect:non-scaling-stroke;
+  }
+  html[data-theme="night"] .bond-current-lines path{
+    stroke:rgba(225,154,170,.8)!important;
+  }
+  html[data-theme="night"] .heart-bind b{
+    color:#f2e9e5!important;
+  }
+  html[data-theme="night"] .heart-bind em{
+    color:#c5b2ae!important;
+  }
+
+  /* Unbind state no longer turns into a cream card in night mode. */
+  html[data-theme="night"] .unbind-card,
+  html[data-theme="night"] .unbind-card.pending,
+  html[data-theme="night"] .unbind-card.archived{
+    color:#f2e9e5!important;
+    background:#2d2427!important;
+    border-color:rgba(242,224,218,.14)!important;
+    box-shadow:none!important;
+  }
+  html[data-theme="night"] .unbind-card p{
+    color:#b7a6a3!important;
+  }
+}
+
+@media(max-width:480px){
+  .canvas-text-inspector{
+    left:5px!important;
+    right:5px!important;
+  }
+  .couple-bind{
+    grid-template-columns:1fr 100px 1fr!important;
+    gap:7px!important;
+  }
+  .heart-bind>span{
+    font-size:76px!important;
   }
 }
