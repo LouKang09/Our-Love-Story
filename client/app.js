@@ -420,7 +420,7 @@ function bodyHtml(entry, interactive = false) {
 }
 
 function canvasFontClass(font) {
-  return ['serif','sans','hand','mono'].includes(font) ? `canvas-font-${font}` : 'canvas-font-serif';
+  return ['serif','classic','elegant','sans','rounded','casual','hand','script','mono'].includes(font) ? `canvas-font-${font}` : 'canvas-font-serif';
 }
 function normalizeCanvasSize(value) {
   return ['small','medium','large','wide'].includes(value) ? value : 'medium';
@@ -658,7 +658,8 @@ function savedCanvasHtml(entry) {
     const topCqw = (24 / meta.width * 100).toFixed(4);
     const padYCqw = (8 / meta.width * 100).toFixed(4);
     const padXCqw = (10 / meta.width * 100).toFixed(4);
-    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${sizeCqw}cqw;--saved-text-top:${topCqw}cqw;--saved-text-pad-y:${padYCqw}cqw;--saved-text-pad-x:${padXCqw}cqw;${weight}${style}"><div class="saved-text-content">${String(item.html || '')}</div></div>`;
+    const align=['left','center','right','justify'].includes(item.align)?item.align:'left';
+    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${sizeCqw}cqw;--saved-text-top:${topCqw}cqw;--saved-text-pad-y:${padYCqw}cqw;--saved-text-pad-x:${padXCqw}cqw;text-align:${align};${weight}${style}"><div class="saved-text-content" style="text-align:${align}">${String(item.html || '')}</div></div>`;
   }).join('')}</div>`;
 }
 function entryContentHtml(entry) {
@@ -2423,7 +2424,8 @@ function legacyEntryToCanvas(entry) {
       font:'serif',
       size:18,
       bold:false,
-      italic:false
+      italic:false,
+      align:'left'
     }));
   }
   return items;
@@ -2506,10 +2508,10 @@ function canvasItemHtml(item) {
     </div>`;
   }
   const size=Math.max(7,Math.min(42,Number(item.size)||18));
-  return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
+  return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'};${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
     <button class="canvas-remove-item" type="button" title="Remove text box">×</button>
-    <div class="canvas-drag-handle" title="Drag text box">✥ Move</div>
-    <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here…">${String(item.html || '')}</div>
+    <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here…" style="text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'}">${String(item.html || '')}</div>
+    <div class="canvas-drag-handle" title="Drag text box">＋ Move</div>
     <span class="canvas-resize-handle" aria-hidden="true"></span>
   </div>`;
 }
@@ -2567,6 +2569,9 @@ function updateCanvasInspector() {
   $('#canvasFontSizeValue').textContent=`${item.size || 18}px`;
   $('#canvasBoldBtn').classList.toggle('active',item.bold===true);
   $('#canvasItalicBtn').classList.toggle('active',item.italic===true);
+  const align=item.align || 'left';
+  [['canvasAlignLeftBtn','left'],['canvasAlignCenterBtn','center'],['canvasAlignRightBtn','right'],['canvasAlignJustifyBtn','justify']]
+    .forEach(([id,value])=>$('#'+id)?.classList.toggle('active',align===value));
   positionCanvasInspectorMobile();
 }
 function addCanvasText() {
@@ -2574,7 +2579,7 @@ function addCanvasText() {
   const item=clampCanvasItem({
     id:crypto.randomUUID?.() || `text-${Date.now()}-${Math.random()}`,
     type:'text',html:'',x:8,y:Math.min(70,8+count*8),w:70,h:18,
-    z:maxCanvasZ()+1,font:'serif',size:18,bold:false,italic:false
+    z:maxCanvasZ()+1,font:'serif',size:18,bold:false,italic:false,align:'left'
   });
   editingCanvasItems.push(item);
   selectedCanvasItemId=item.id;
@@ -2620,7 +2625,17 @@ function applyCanvasInline(command,value=null) {
 }
 function setCanvasTextFont(value) {
   const item=activeCanvasTextItem();if(!item)return;
-  const face={serif:'Georgia',sans:'Arial',hand:'Segoe Print',mono:'Courier New'}[value] || 'Georgia';
+  const face={
+    serif:'Georgia',
+    classic:'Times New Roman',
+    elegant:'Palatino Linotype',
+    sans:'Arial',
+    rounded:'Verdana',
+    casual:'Trebuchet MS',
+    hand:'Segoe Print',
+    script:'Brush Script MT',
+    mono:'Courier New'
+  }[value] || 'Georgia';
   if(!applyCanvasInline('fontName',face)){
     item.font=value;
     renderCanvasEditor();
@@ -2655,12 +2670,19 @@ function toggleCanvasTextStyle(kind) {
   item[kind]=!item[kind];
   renderCanvasEditor();
 }
+function setCanvasTextAlign(value) {
+  const item=activeCanvasTextItem(); if(!item)return;
+  const align=['left','center','right','justify'].includes(value)?value:'left';
+  item.align=align;
+  const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
+  if(el) el.style.textAlign=align;
+  updateCanvasInspector();
+}
 function syncCanvasTextHeight(content,itemEl,item) {
   const canvas=$('#scrapCanvas');
   const canvasHeight=canvas.offsetHeight || canvasSizeMeta(editingCanvasSize).height;
   if(!canvasHeight)return;
-  const dragH=itemEl.querySelector('.canvas-drag-handle')?.offsetHeight || 28;
-  const needed=content.scrollHeight+dragH+18;
+  const needed=content.scrollHeight+18;
   const neededPct=needed/canvasHeight*100;
   if(neededPct>item.h){
     item.h=Math.min(96-item.y,Math.max(item.h,neededPct));
@@ -2706,11 +2728,31 @@ function wireCanvasItems() {
       e.stopPropagation();
       selectedCanvasItemId=id;
       const r=rect(),sx=e.clientX,sy=e.clientY,ow=item.w,oh=item.h;
+      if(item.type==='photo' && !item.aspect){
+        const img=el.querySelector('img');
+        item.aspect=(img?.naturalWidth && img?.naturalHeight) ? img.naturalWidth/img.naturalHeight : 1;
+      }
       handle.setPointerCapture(e.pointerId);el.classList.add('resizing');
       const move=ev=>{
         if(canvasGesturePinching)return;
-        item.w=Math.max(item.type==='text'?18:14,Math.min(100-item.x,ow+(ev.clientX-sx)/r.width*100));
-        item.h=Math.max(item.type==='text'?8:10,Math.min(100-item.y,oh+(ev.clientY-sy)/r.height*100));
+        const dw=(ev.clientX-sx)/r.width*100;
+        const dh=(ev.clientY-sy)/r.height*100;
+        if(item.type==='photo' && isPhoneUI()){
+          const meta=canvasSizeMeta(editingCanvasSize);
+          const aspect=Math.max(.15,Math.min(8,Number(item.aspect)||1));
+          let nextW=ow+dw;
+          if(Math.abs(dh)>Math.abs(dw)){
+            const desiredH=oh+dh;
+            nextW=desiredH*aspect*meta.height/meta.width;
+          }
+          nextW=Math.max(14,Math.min(100-item.x,nextW));
+          const nextH=nextW*meta.width/(aspect*meta.height);
+          item.w=nextW;
+          item.h=Math.max(10,Math.min(100-item.y,nextH));
+        }else{
+          item.w=Math.max(item.type==='text'?18:14,Math.min(100-item.x,ow+dw));
+          item.h=Math.max(item.type==='text'?8:10,Math.min(100-item.y,oh+dh));
+        }
         el.style.width=`${item.w}%`;el.style.height=`${item.h}%`;
       };
       const up=()=>{
@@ -2722,7 +2764,15 @@ function wireCanvasItems() {
     });
     const content=el.querySelector('.canvas-text-content');
     if(content){
-      content.addEventListener('focus',()=>{selectedCanvasItemId=id;updateCanvasInspector();});
+      const bringTextFront=()=>{
+        selectedCanvasItemId=id;
+        item.z=Math.min(999,maxCanvasZ()+1);
+        el.style.zIndex=String(item.z);
+        canvas.querySelectorAll('.canvas-item').forEach(n=>n.classList.toggle('selected',n===el));
+        updateCanvasInspector();
+      };
+      content.addEventListener('pointerdown',bringTextFront);
+      content.addEventListener('focus',bringTextFront);
       content.addEventListener('input',()=>{
         item.html=content.innerHTML.slice(0,50000);
         syncCanvasTextHeight(content,el,item);
@@ -3537,7 +3587,7 @@ $('#canvasPhotoInput').addEventListener('change', async e => {
       const h=Math.max(12,Math.min(55,w*(4/5.4)/Math.max(.25,aspect)));
       editingCanvasItems.push(clampCanvasItem({
         id:crypto.randomUUID?.() || `photo-${Date.now()}-${idx}`,
-        type:'photo',src:uploaded.src,caption:'',
+        type:'photo',src:uploaded.src,caption:'',aspect,
         x:Math.min(58,6+(editingCanvasItems.length%4)*8),
         y:Math.min(62,7+(editingCanvasItems.length%5)*8),
         w,h,z:maxCanvasZ()+1
@@ -3559,6 +3609,11 @@ $('#canvasFontSizePlus').addEventListener('click',()=>stepCanvasTextSize(1));
 });
 $('#canvasBoldBtn').addEventListener('click',()=>toggleCanvasTextStyle('bold'));
 $('#canvasItalicBtn').addEventListener('click',()=>toggleCanvasTextStyle('italic'));
+[['canvasAlignLeftBtn','left'],['canvasAlignCenterBtn','center'],['canvasAlignRightBtn','right'],['canvasAlignJustifyBtn','justify']]
+  .forEach(([id,value])=>{
+    $('#'+id)?.addEventListener('pointerdown',e=>{rememberCanvasTextSelection();e.preventDefault();});
+    $('#'+id)?.addEventListener('click',()=>setCanvasTextAlign(value));
+  });
 $('#canvasBringFrontBtn').addEventListener('click',()=>{
   const item=editingCanvasItems.find(x=>x.id===selectedCanvasItemId);if(!item)return;
   item.z=Math.min(999,maxCanvasZ()+1);renderCanvasEditor();
