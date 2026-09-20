@@ -4964,43 +4964,65 @@ $('#privateChatTag').addEventListener('input', e => {
 $('#privateChatTag').addEventListener('blur', () => {
   if (isPhoneUI()) setTimeout(hideMobilePrivateChatSuggestions, 160);
 });
-function setPendingChatPhoto(file,input) {
-  if (!file) { clearPendingChatImage(); return; }
-  if (!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type)) {
-    showToast('Please choose a supported photo.');
-    if(input)input.value='';
+function validChatPhoto(file) {
+  return Boolean(file && /^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type) && file.size <= 16 * 1024 * 1024);
+}
+function setPendingChatPhotos(fileList,input,{append=false}={}) {
+  const selected=[...(fileList || [])];
+  if (!selected.length) {
+    if(!append) clearPendingChatImage();
     return;
   }
-  if (file.size > 16 * 1024 * 1024) {
-    showToast('That photo is too large to process.');
-    if(input)input.value='';
-    return;
+  const valid=[];
+  for(const file of selected){
+    if(!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type)){
+      showToast('One of the selected files is not a supported photo.');
+      continue;
+    }
+    if(file.size>16*1024*1024){
+      showToast(`${file.name || 'A photo'} is too large to process.`);
+      continue;
+    }
+    valid.push(file);
   }
-  clearPendingChatImage();
-  pendingChatFile=file;
-  pendingChatPreviewUrl=URL.createObjectURL(file);
+  const existing=append ? [...pendingChatFiles] : [];
+  const combined=[...existing,...valid].slice(0,10);
+  if(existing.length+valid.length>10) showToast('You can select up to 10 photos at once.');
+  if(!append) clearPendingChatImage();
+  else{
+    pendingChatPreviewUrls.forEach(()=>{});
+  }
+  if(append){
+    const newFiles=combined.slice(existing.length);
+    pendingChatFiles=combined;
+    pendingChatPreviewUrls=[...pendingChatPreviewUrls,...newFiles.map(file=>URL.createObjectURL(file))].slice(0,10);
+  }else{
+    pendingChatFiles=combined;
+    pendingChatPreviewUrls=combined.map(file=>URL.createObjectURL(file));
+  }
+  if(input)input.value='';
   renderPendingChatImage();
 }
-$('#chatPhotoInput').addEventListener('change',()=>setPendingChatPhoto($('#chatPhotoInput').files?.[0]||null,$('#chatPhotoInput')));
-$('#chatCameraInput')?.addEventListener('change',()=>setPendingChatPhoto($('#chatCameraInput').files?.[0]||null,$('#chatCameraInput')));
+$('#chatPhotoInput').addEventListener('change',()=>setPendingChatPhotos($('#chatPhotoInput').files,$('#chatPhotoInput')));
+$('#chatCameraInput')?.addEventListener('change',()=>setPendingChatPhotos($('#chatCameraInput').files,$('#chatCameraInput'),{append:true}));
 $('#chatGalleryBtn')?.addEventListener('click',()=>$('#chatPhotoInput')?.click());
 wireChatMicHold();
 $('#chatComposer').addEventListener('submit', async e => {
   e.preventDefault();
   if (!activeChatId) return;
   const text = $('#chatText').value.trim();
-  if (!text && !pendingChatFile && !pendingChatAudioFile) {
+  if (!text && !pendingChatFiles.length && !pendingChatAudioFile) {
     showToast('Write a message or attach media.');
     return;
   }
   const sendBtn = $('#chatSendBtn');
   sendBtn.disabled = true;
   try {
-    let image = '';
+    const images = [];
     let audio = '';
-    if (pendingChatFile) {
-      const uploaded = await uploadImage(pendingChatFile);
-      image = uploaded.src || '';
+    for(const file of pendingChatFiles){
+      const uploaded = await uploadImage(file);
+      if(uploaded.src) images.push(uploaded.src);
     }
     if (pendingChatAudioFile) {
       const uploaded = await uploadAttachment(pendingChatAudioFile);
@@ -5008,7 +5030,7 @@ $('#chatComposer').addEventListener('submit', async e => {
     }
     await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, {
       method:'POST',
-      body:JSON.stringify({ text, image, audio, replyTo:pendingChatReply?.id || '' })
+      body:JSON.stringify({ text, images, image:images[0] || '', audio, replyTo:pendingChatReply?.id || '' })
     });
     $('#chatText').value = '';
     clearPendingChatImage();
