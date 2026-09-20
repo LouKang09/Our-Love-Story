@@ -979,6 +979,65 @@ function wireCommentGestures(root) {
     main.addEventListener('contextmenu',e=>{if(isPhoneUI())e.preventDefault();});
   });
 }
+function pageHtml(entry) {
+  if (!entry) return '<div class="blank-page"><div><strong>A blank page.</strong><span>Some days are only waiting to happen.</span></div></div>';
+  const editable = me && entry.author === me.tag;
+  const time = formatEntryTime(entry.createdAt);
+  return `<div class="entry-page" data-entry-id="${escapeHtml(entry.id)}">
+    <div class="entry-date-row"><div class="entry-date">${formatDate(entry.date)}</div>${time ? `<time class="entry-time">${escapeHtml(time)}</time>` : ''}</div>
+    <h2>${escapeHtml(entry.title)}</h2>
+    <div class="entry-meta">${authorHtml(entry)}</div>
+    <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
+    ${commentsHtml(entry)}
+    ${editable ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this page</button></div>` : ''}
+  </div>`;
+}
+function chronologicalEntries() {
+  return [...entries].sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
+}
+function isMobileBook() { return window.matchMedia('(max-width: 800px)').matches; }
+function activeBookLabel() { return activeScrapbook?.name || 'My Scrapbooks'; }
+
+function renderBook() {
+  const ordered = chronologicalEntries();
+  const mobile = isMobileBook();
+  const step = mobile ? 1 : 2;
+  const maxIndex = Math.max(0, ordered.length - 1);
+  spreadIndex = Math.max(0, Math.min(spreadIndex, mobile ? maxIndex : Math.max(0, ordered.length - (ordered.length % 2 ? 1 : 2))));
+  if (mobile) {
+    leftPage.innerHTML = '';
+    rightPage.innerHTML = pageHtml(ordered[spreadIndex]);
+    $('#pageCounter').textContent = ordered.length ? `Page ${spreadIndex + 1} of ${ordered.length}` : 'Empty book';
+  } else {
+    leftPage.innerHTML = pageHtml(ordered[spreadIndex]);
+    rightPage.innerHTML = pageHtml(ordered[spreadIndex + 1]);
+    $('#pageCounter').textContent = ordered.length ? `Pages ${spreadIndex + 1}–${Math.min(spreadIndex + 2, ordered.length)} of ${ordered.length}` : 'Empty book';
+  }
+  $('#prevBtn').disabled = spreadIndex <= 0;
+  $('#nextBtn').disabled = spreadIndex + step >= ordered.length;
+  if ($('#mobilePrevBtn')) $('#mobilePrevBtn').disabled = spreadIndex <= 0;
+  if ($('#mobileNextBtn')) $('#mobileNextBtn').disabled = spreadIndex + step >= ordered.length;
+  wireEntryButtons(bookShell);
+}
+function renderTimeline() {
+  const ordered = chronologicalEntries().reverse();
+  $('#timeline').innerHTML = ordered.map(entry => {
+    const time = formatEntryTime(entry.createdAt);
+    return `<article class="timeline-item" data-entry-id="${escapeHtml(entry.id)}">
+      <div class="timeline-dot"></div>
+      <div class="stream-card">
+        <div class="entry-date-row"><div class="entry-date">${formatDate(entry.date)}</div>${time ? `<time class="entry-time">${escapeHtml(time)}</time>` : ''}</div>
+        <h2>${escapeHtml(entry.title)}</h2>
+        <div class="entry-meta">${authorHtml(entry)}</div>
+        <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
+        ${commentsHtml(entry)}
+        ${me && entry.author === me.tag ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button></div>` : ''}
+      </div>
+    </article>`;
+  }).join('');
+  wireEntryButtons($('#timeline'));
+}
+
 function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
   wireProfileLinks(root);
