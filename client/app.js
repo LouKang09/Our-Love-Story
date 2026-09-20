@@ -2972,9 +2972,10 @@ function showChatReactionPicker(message,bubble) {
 }
 function wireChatMessageGestures(host) {
   if(!host)return;
-  host.querySelectorAll('.chat-reaction-chip').forEach(button=>button.addEventListener('click',async e=>{
+  host.querySelectorAll('.chat-reaction-chip').forEach(button=>button.addEventListener('click',e=>{
     e.stopPropagation();
-    await toggleChatReaction(button.dataset.messageId,button.dataset.emoji);
+    const message=activeChatMessages.find(item=>item.id===button.dataset.messageId);
+    if(message) openReactionViewer('Message reactions',message.reactions || []);
   }));
   if(!isPhoneUI())return;
 
@@ -3085,11 +3086,12 @@ function renderChatMessages({stickBottom=true}={}) {
     const reactions=Array.isArray(message.reactions)?message.reactions:[];
     return `<article class="chat-message ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
       ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}">${avatarHtml(profile,'chat-message-avatar')}</button>`}
+      <span class="chat-swipe-reply-indicator" aria-hidden="true">↪</span>
       <div class="chat-bubble" data-message-id="${escapeHtml(message.id || '')}">
         ${!mine ? `<strong>${escapeHtml(profile.displayName || message.author || '')}</strong>` : ''}
-        ${reply ? `<div class="chat-reply-quote"><small>Reply to ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></div>` : ''}
+        ${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
         ${message.image ? `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(message.image)}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" /></button>` : ''}
-        ${message.audio ? `<audio class="chat-message-audio" controls preload="metadata" src="${escapeHtml(message.audio)}"></audio>` : ''}
+        ${chatVoiceHtml(message)}
         ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
         <time>${escapeHtml(chatWhen(message.createdAt))}</time>
         ${reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
@@ -3101,6 +3103,11 @@ function renderChatMessages({stickBottom=true}={}) {
     e.stopPropagation();
     openChatImageViewer(button.dataset.chatImage);
   }));
+  host.querySelectorAll('.chat-reply-quote[data-reply-target]').forEach(button=>button.addEventListener('click',e=>{
+    e.stopPropagation();
+    scrollChatToMessage(button.dataset.replyTarget);
+  }));
+  wireChatVoicePlayers(host);
   wireChatMessageGestures(host);
   requestAnimationFrame(() => {
     if(stickBottom) host.scrollTop=host.scrollHeight;
