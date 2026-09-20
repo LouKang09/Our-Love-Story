@@ -249,6 +249,7 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-night-cover-mobilechat-20260920');
   await backupNamedJsonDataOnce('pre-night-privacy-multipersonal-20260920');
   await backupNamedJsonDataOnce('pre-bulk-personal-privacy-20260920');
+  await backupNamedJsonDataOnce('pre-group-admin-chat-reactions-20260920');
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
