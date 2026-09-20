@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui16" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui17" />
 </head>
 <body class="auth-pending">
   <div id="app">
@@ -233,12 +233,15 @@
               <form id="chatComposer" class="chat-composer">
                 <div id="chatReplyPreview" class="chat-reply-preview hidden"></div>
                 <div id="chatImagePreview" class="chat-image-preview hidden"></div>
+                <div id="chatAudioPreview" class="chat-audio-preview hidden"></div>
                 <textarea id="chatText" rows="2" maxlength="2000" placeholder="Write a message..."></textarea>
                 <div class="chat-compose-actions">
-                  <label class="ghost chat-photo-button">📷 Photo<input id="chatPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
+                  <label class="ghost chat-photo-button" title="Choose photo">＋<input id="chatPhotoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden /></label>
+                  <label class="ghost chat-camera-button phone-only-chat-tool" title="Take photo">📷<input id="chatCameraInput" type="file" accept="image/*" capture="environment" hidden /></label>
+                  <button id="chatMicBtn" class="ghost chat-mic-button phone-only-chat-tool" type="button" aria-label="Record voice message" title="Record voice message">🎙</button>
                   <button id="chatSendBtn" class="primary" type="submit">Send</button>
                 </div>
-                <p class="helper">Chat attachments accept images only.</p>
+                <p class="helper chat-media-helper">Attach a photo or record a voice message.</p>
               </form>
             </div>
           </section>
@@ -525,6 +528,11 @@
       </form>
     </dialog>
 
+    <div id="chatImageViewer" class="chat-image-viewer hidden" role="dialog" aria-modal="true" aria-label="Photo viewer">
+      <button id="chatImageViewerClose" class="chat-image-viewer-close" type="button" aria-label="Close photo">×</button>
+      <img id="chatImageViewerImg" alt="Chat attachment" draggable="false" />
+    </div>
+
     <div id="profileImageViewer" class="profile-image-viewer hidden" role="dialog" aria-modal="true" aria-label="Profile photo viewer">
       <div class="profile-image-viewer-bar">
         <strong id="profileImageViewerTitle">Profile photo</strong>
@@ -544,6 +552,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-phoneui16" defer></script>
+  <script src="/app.js?v=20260920-phoneui17" defer></script>
 </body>
 </html>
