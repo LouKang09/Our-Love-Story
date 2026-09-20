@@ -3299,7 +3299,9 @@ function renderChatMessages({stickBottom=true}={}) {
         ${message.deleted
           ? '<p class="chat-message-deleted"><span>⊘</span> Message deleted</p>'
           : `${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
-             ${images.length ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>` : ''}
+             ${images.length ? (isPhoneUI()
+               ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>`
+               : `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(images[0])}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(images[0])}" alt="Chat photo" loading="lazy" /></button>`) : ''}
              ${chatVoiceHtml(message)}
              ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}`}
         <time>${escapeHtml(chatWhen(message.createdAt))}</time>
@@ -3332,6 +3334,13 @@ function renderPendingChatImage() {
     return;
   }
   host.classList.remove('hidden');
+  if(!isPhoneUI()){
+    const file=pendingChatFiles[0];
+    const url=pendingChatPreviewUrls[0] || '';
+    host.innerHTML=`<div><img src="${escapeHtml(url)}" alt="Photo to send" /><button id="removeChatImageBtn" type="button" aria-label="Remove attached photo">×</button><span>${escapeHtml(file?.name || 'Photo')}</span></div>`;
+    $('#removeChatImageBtn')?.addEventListener('click',()=>clearPendingChatImage());
+    return;
+  }
   host.innerHTML = `<div class="chat-pending-image-grid" data-count="${pendingChatFiles.length}">
     ${pendingChatFiles.map((file,index)=>`<div class="chat-pending-image-item">
       <img src="${escapeHtml(pendingChatPreviewUrls[index]||'')}" alt="Photo ${index+1} to send" />
@@ -5171,6 +5180,7 @@ function setPhoneMessageButtonVisual(phone) {
 }
 function syncResponsiveChrome() {
   const phone = isPhoneUI();
+  if($('#chatPhotoInput')) $('#chatPhotoInput').multiple = phone;
   const toolbar = document.querySelector('.toolbar');
   const modeSwitch = document.querySelector('.mode-switch');
   const pickerWrap = document.querySelector('.scrapbook-picker-wrap');
