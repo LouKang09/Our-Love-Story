@@ -1944,11 +1944,31 @@ async function handleApi(req, res, url) {
     social.mentions = social.mentions.filter(item =>
       !(item.kind === 'chat' && item.chatId === chat.id && item.messageId === message.id)
     );
-    for (const src of removedAssets) {
+
+    // A forwarded message may reference the same stored attachment. Only
+    // remove the physical upload after the last scrapbook/chat reference is gone.
+    const allEntries = await readEntries();
+    const stillReferenced = src =>
+      social.chatMessages.some(other =>
+        other.id !== message.id &&
+        (
+          other?.image === src ||
+          (Array.isArray(other?.images) && other.images.includes(src)) ||
+          other?.audio === src
+        )
+      ) ||
+      allEntries.some(entry =>
+        (Array.isArray(entry.photos) && entry.photos.some(photo => photo?.src === src)) ||
+        (Array.isArray(entry.canvasItems) && entry.canvasItems.some(item => item?.type === 'photo' && item?.src === src))
+      ) ||
+      Object.values(social.profiles || {}).some(profile => profile?.avatar === src);
+    const orphanedAssets = removedAssets.filter(src => !stillReferenced(src));
+
+    for (const src of orphanedAssets) {
       if (social.uploadOwners?.[src] === user) delete social.uploadOwners[src];
     }
     await writeSocial(social);
-    for (const src of removedAssets) {
+    for (const src of orphanedAssets) {
       try { await fsp.unlink(path.join(UPLOADS, path.basename(src))); }
       catch (err) { if (err?.code !== 'ENOENT') console.warn('Could not remove deleted chat attachment:', src, err?.message || err); }
     }
