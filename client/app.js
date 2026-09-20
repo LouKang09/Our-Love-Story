@@ -2123,20 +2123,149 @@ function renderChatList() {
   }).join('');
   host.querySelectorAll('.chat-list-item').forEach(btn => btn.addEventListener('click', () => openChat(btn.dataset.chatId)));
 }
+async function refreshManagedGroupChat(chatId, { reopenMembers = true } = {}) {
+  await loadChats();
+  const updated=chats.find(item=>item.id===chatId) || null;
+  if(activeChatId===chatId && updated){
+    await loadChatMessages(chatId);
+  }
+  if(reopenMembers && updated) openChatMembersDialog(updated);
+  return updated;
+}
+async function manageGroupAdmin(chat,target,makeAdmin) {
+  try {
+    await api(`/api/scrapbooks/${encodeURIComponent(chat.scrapbookId)}/admins/${encodeURIComponent(target)}`, {
+      method:makeAdmin?'PUT':'DELETE',
+      body:'{}'
+    });
+    showToast(makeAdmin?'Admin added.':'Admin removed.');
+    await refreshManagedGroupChat(chat.id);
+  } catch (err) {
+    showToast(err.message || 'Could not update the admin role.');
+  }
+}
+async function removeGroupMember(chat,target) {
+  if(!confirm(`Remove @${target} from ${chat.name}? They will lose access to the scrapbook and group chat.`))return;
+  try {
+    await api(`/api/scrapbooks/${encodeURIComponent(chat.scrapbookId)}/members/${encodeURIComponent(target)}`, { method:'DELETE', body:'{}' });
+    showToast(`@${target} was removed from the group.`);
+    await refreshManagedGroupChat(chat.id);
+  } catch (err) {
+    showToast(err.message || 'Could not remove that member.');
+  }
+}
+async function leaveGroupFromChat(chat) {
+  if(!confirm(`Leave "${chat.name}"? You will lose access to this scrapbook and group chat.`))return;
+  try {
+    await api(`/api/scrapbooks/${encodeURIComponent(chat.scrapbookId)}/leave`, { method:'POST', body:'{}' });
+    $('#chatMembersDialog')?.close();
+    if(activeChatId===chat.id){
+      activeChatId=null;
+      activeChatMessages=[];
+      messagesView?.classList.remove('chat-open');
+      $('#activeChat')?.classList.add('hidden');
+      $('#chatEmptyState')?.classList.remove('hidden');
+    }
+    await loadSession(activeScrapbook?.id===chat.scrapbookId ? null : activeScrapbook?.id || null);
+    await loadChats({ preserveActive:false });
+    showToast('You left the group.');
+  } catch (err) {
+    showToast(err.message || 'Could not leave the group.');
+  }
+}
+async function deleteGroupFromChat(chat) {
+  const delegated=chat.isOwner!==true;
+  const warning=delegated
+    ? `Request deletion of "${chat.name}"? The owner must approve before the group is deleted.`
+    : `Delete "${chat.name}" for everyone? Its scrapbook, messages, notifications, and related data will be removed.`;
+  if(!confirm(warning))return;
+  try {
+    const result=await api(`/api/scrapbooks/${encodeURIComponent(chat.scrapbookId)}`, { method:'DELETE' });
+    if(result.approvalRequired){
+      showToast('Deletion request sent to the group owner.');
+      await refreshManagedGroupChat(chat.id);
+      return;
+    }
+    $('#chatMembersDialog')?.close();
+    activeChatId=null;
+    activeChatMessages=[];
+    messagesView?.classList.remove('chat-open');
+    $('#activeChat')?.classList.add('hidden');
+    $('#chatEmptyState')?.classList.remove('hidden');
+    await loadSession(activeScrapbook?.id===chat.scrapbookId ? null : activeScrapbook?.id || null);
+    await loadChats({ preserveActive:false });
+    showToast('Group scrapbook deleted.');
+  } catch (err) {
+    showToast(err.message || 'Could not delete the group.');
+  }
+}
 function openChatMembersDialog(chat) {
   if (!chat || chat.type !== 'group') return;
   const members = Array.isArray(chat.members) ? chat.members : [];
+  const admins = new Set(Array.isArray(chat.admins) ? chat.admins : []);
   $('#chatMembersTitle').textContent = `${chat.name || 'Group chat'} · ${members.length} member${members.length === 1 ? '' : 's'}`;
   const host = $('#chatMembersList');
-  host.innerHTML = members.length ? members.map(member => `<button class="chat-member-row" type="button" data-profile-tag="${escapeHtml(member.tag || '')}">
-    ${avatarHtml(member,'chat-member-avatar')}
-    <span><strong>${escapeHtml(member.displayName || member.tag || 'Member')}</strong><small>@${escapeHtml(member.tag || '')}</small></span>
-    ${member.tag === me?.tag ? '<em>You</em>' : ''}
-  </button>`).join('') : '<p class="helper">No members found.</p>';
+
+  const addMember = chat.isAdmin ? `<form class="group-member-add" id="groupMemberAddForm">
+    <input id="groupMemberAddTag" placeholder="@tag to invite" autocomplete="off" />
+    <button class="primary" type="submit">Add</button>
+  </form>` : '';
+
+  const memberRows = members.length ? members.map(member => {
+    const isOwner = member.tag === chat.owner;
+    const isAdmin = admins.has(member.tag);
+    const canManage = chat.isAdmin && !isOwner && member.tag !== me?.tag;
+    const canPromote = chat.isOwner && !isOwner;
+    return `<article class="chat-member-row" data-member-tag="${escapeHtml(member.tag || '')}">
+      <button class="chat-member-profile" type="button" data-profile-tag="${escapeHtml(member.tag || '')}">
+        ${avatarHtml(member,'chat-member-avatar')}
+        <span><strong>${escapeHtml(member.displayName || member.tag || 'Member')}</strong><small>@${escapeHtml(member.tag || '')}</small></span>
+      </button>
+      <div class="chat-member-badges">${isOwner?'<em>Owner</em>':''}${!isOwner&&isAdmin?'<em>Admin</em>':''}${member.tag===me?.tag?'<em>You</em>':''}</div>
+      <div class="chat-member-actions">
+        ${canPromote ? `<button class="ghost chat-admin-toggle" type="button" data-tag="${escapeHtml(member.tag)}" data-make-admin="${isAdmin?'0':'1'}">${isAdmin?'Remove admin':'Make admin'}</button>` : ''}
+        ${canManage ? `<button class="danger chat-member-remove" type="button" data-tag="${escapeHtml(member.tag)}">Kick</button>` : ''}
+      </div>
+    </article>`;
+  }).join('') : '<p class="helper">No members found.</p>';
+
+  const managementActions = `<div class="group-member-footer">
+    ${!chat.isOwner ? '<button id="leaveGroupChatBtn" class="ghost" type="button">Leave group</button>' : ''}
+    ${chat.isAdmin ? `<button id="deleteGroupChatBtn" class="danger" type="button" ${chat.deleteRequest ? 'disabled' : ''}>${chat.isOwner?'Delete group':'Request deletion'}</button>` : ''}
+    ${chat.deleteRequest ? '<small>A deletion request is waiting for the owner.</small>' : ''}
+  </div>`;
+
+  host.innerHTML = addMember + memberRows + managementActions;
   wireProfileLinks(host);
-  host.querySelectorAll('.chat-member-row').forEach(row => row.addEventListener('click', () => {
+
+  host.querySelectorAll('.chat-member-profile').forEach(button=>button.addEventListener('click',()=>{
     $('#chatMembersDialog').close();
   }));
+  host.querySelectorAll('.chat-admin-toggle').forEach(button=>button.addEventListener('click',()=>{
+    manageGroupAdmin(chat,button.dataset.tag,button.dataset.makeAdmin==='1');
+  }));
+  host.querySelectorAll('.chat-member-remove').forEach(button=>button.addEventListener('click',()=>{
+    removeGroupMember(chat,button.dataset.tag);
+  }));
+
+  $('#groupMemberAddForm')?.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const input=$('#groupMemberAddTag');
+    const tag=String(input?.value||'').trim().replace(/^@/,'').toLowerCase();
+    if(!tag)return;
+    try{
+      await api(`/api/scrapbooks/${encodeURIComponent(chat.scrapbookId)}/invite`, {
+        method:'POST',
+        body:JSON.stringify({tag})
+      });
+      input.value='';
+      showToast(`Invitation sent to @${tag}.`);
+    }catch(err){
+      showToast(err.message || 'Could not invite that person.');
+    }
+  });
+  $('#leaveGroupChatBtn')?.addEventListener('click',()=>leaveGroupFromChat(chat));
+  $('#deleteGroupChatBtn')?.addEventListener('click',()=>deleteGroupFromChat(chat));
   $('#chatMembersDialog').showModal();
 }
 function syncMobileChatViewport() {
