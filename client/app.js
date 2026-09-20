@@ -36,6 +36,8 @@ let activeChatMessages = [];
 let chatUnreadCount = 0;
 let pendingChatFile = null;
 let pendingChatPreviewUrl = '';
+let pendingChatReply = null;
+let chatReactionPicker = null;
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
@@ -157,10 +159,14 @@ function renderMobileBookShelf() {
       </div>`;
   }
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
-  const canDeleteBook = Boolean(activeScrapbook && activeScrapbook.isOwner === true && !other);
+  const canDeleteBook = Boolean(activeScrapbook && !other && (activeScrapbook.isOwner === true || (activeScrapbook.type === 'group' && activeScrapbook.isGroupAdmin === true)));
+  const canLeaveGroup = Boolean(activeScrapbook && !other && activeScrapbook.type === 'group' && activeScrapbook.isOwner !== true);
   $('#mobileNewMemoryBtn')?.classList.toggle('hidden', !canWrite);
   if ($('#mobileStreamBtn')) $('#mobileStreamBtn').disabled = !activeScrapbook;
-  $('#mobileDeleteScrapbookBtn')?.classList.toggle('hidden', !canDeleteBook);
+  const deleteBtn = $('#mobileDeleteScrapbookBtn');
+  deleteBtn?.classList.toggle('hidden', !canDeleteBook);
+  if (deleteBtn && canDeleteBook) deleteBtn.textContent = activeScrapbook.isOwner === true ? 'Delete scrapbook' : 'Request group deletion';
+  $('#mobileLeaveScrapbookBtn')?.classList.toggle('hidden', !canLeaveGroup);
 }
 async function prepareMobileBookView() {
   if (!isPhoneUI()) {
@@ -698,10 +704,10 @@ function commentProfile(comment) {
   return authorProfiles[comment?.author] || { tag:comment?.author || '', displayName:comment?.author || 'Someone' };
 }
 function commentsEnabledForActiveBook() {
-  return Boolean(activeScrapbook && ['personal','group'].includes(activeScrapbook.type) && activeScrapbook.canComment !== false);
+  return Boolean(activeScrapbook && ['personal','group','couple'].includes(activeScrapbook.type) && activeScrapbook.canComment !== false);
 }
 function commentsHtml(entry) {
-  if (!activeScrapbook || !['personal','group'].includes(activeScrapbook.type)) return '';
+  if (!activeScrapbook || !['personal','group','couple'].includes(activeScrapbook.type)) return '';
   const comments = Array.isArray(entry.comments) ? entry.comments : [];
   const list = comments.length ? comments.map(comment => {
     const p = commentProfile(comment);
@@ -799,7 +805,7 @@ function wireEntryButtons(root) {
     });
   });
   root.querySelectorAll('.comment-delete').forEach(btn => btn.addEventListener('click', async () => {
-    if (!confirm('Delete this comment?')) return;
+    if (!confirm('Delete this comment? This cannot be undone.')) return;
     try {
       await api(`/api/entries/${encodeURIComponent(btn.dataset.entryId)}/comments/${encodeURIComponent(btn.dataset.commentId)}`, { method:'DELETE' });
       await refreshEntries();
@@ -1201,7 +1207,7 @@ async function savePersonalPrivacy(privacy) {
 
 function renderPersonalPrivacyQuick() {
   const panel = $('#personalPrivacyQuick');
-  if (!panel || !activeScrapbook || activeScrapbook.type !== 'personal' || activeScrapbook.owner !== me?.tag) {
+  if (!panel || (isPhoneUI() && currentMode !== 'book') || !activeScrapbook || activeScrapbook.type !== 'personal' || activeScrapbook.owner !== me?.tag) {
     panel?.classList.add('hidden');
     if (panel) panel.innerHTML = '';
     return;
@@ -2286,6 +2292,7 @@ async function refreshChatRealtime(payload = {}) {
 
 function showView(mode) {
   currentMode = mode;
+  renderPersonalPrivacyQuick();
   if (isPhoneUI()) {
     renderMobileBookShelf();
     syncResponsiveChrome();
@@ -2309,7 +2316,9 @@ function showView(mode) {
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
   $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || mode === 'messages' || (Boolean(activeScrapbook) && !canWrite));
   emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || mode === 'messages' || (!noBook && !noEntries));
-  $('#emptyDeleteScrapbookBtn')?.classList.toggle('hidden', !(isPhoneUI() && noEntries && activeScrapbook?.isOwner === true));
+  const canEmptyDelete = Boolean(isPhoneUI() && noEntries && activeScrapbook && (activeScrapbook.isOwner === true || (activeScrapbook.type === 'group' && activeScrapbook.isGroupAdmin === true)));
+  $('#emptyDeleteScrapbookBtn')?.classList.toggle('hidden', !canEmptyDelete);
+  if ($('#emptyDeleteScrapbookBtn') && canEmptyDelete) $('#emptyDeleteScrapbookBtn').textContent = activeScrapbook.isOwner === true ? 'Delete scrapbook' : 'Request group deletion';
 
   if (mode === 'home') {
     renderHome();
@@ -2673,17 +2682,46 @@ function setCanvasTextFont(value) {
     renderCanvasEditor();
   }
 }
+function canvasSelectionComputedSize() {
+  const item=activeCanvasTextItem();
+  if(!item)return 18;
+  const range=canvasTextSelection() || savedCanvasTextRange;
+  if(!range)return Number(item.size)||18;
+  let node=range.startContainer;
+  if(node?.nodeType===Node.TEXT_NODE) node=node.parentElement;
+  if(!(node instanceof Element)) return Number(item.size)||18;
+  const px=parseFloat(getComputedStyle(node).fontSize);
+  return Number.isFinite(px) ? Math.max(7,Math.min(42,Math.round(px))) : (Number(item.size)||18);
+}
+function applyCanvasSelectionFontSize(size) {
+  if(!restoreCanvasTextSelection())return false;
+  const sel=window.getSelection();
+  if(!sel||sel.isCollapsed||!sel.rangeCount)return false;
+  const range=sel.getRangeAt(0);
+  const item=activeCanvasTextItem();
+  const content=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
+  if(!content||!content.contains(range.commonAncestorContainer))return false;
+  const fragment=range.extractContents();
+  const span=document.createElement('span');
+  span.style.fontSize=`${size}px`;
+  span.appendChild(fragment);
+  range.insertNode(span);
+  const next=document.createRange();
+  next.selectNodeContents(span);
+  sel.removeAllRanges();
+  sel.addRange(next);
+  item.html=content.innerHTML.slice(0,50000);
+  savedCanvasTextRange=next.cloneRange();
+  return true;
+}
 function setCanvasTextSize(value) {
   const item=activeCanvasTextItem();if(!item)return;
   const size=Math.max(7,Math.min(42,Number(value)||18));
   const liveRange=canvasTextSelection();
   if(liveRange) savedCanvasTextRange=liveRange.cloneRange();
-  if(liveRange || savedCanvasTextRange){
-    const level=size<=9?1:size<=13?2:size<=18?3:size<=23?4:size<=29?5:size<=35?6:7;
-    if(applyCanvasInline('fontSize',String(level))){
-      $('#canvasFontSizeValue').textContent=`${size}px selection`;
-      return;
-    }
+  if((liveRange || savedCanvasTextRange) && applyCanvasSelectionFontSize(size)){
+    $('#canvasFontSizeValue').textContent=`${size}px selection`;
+    return;
   }
   item.size=size;
   $('#canvasFontSizeValue').textContent=`${size}px`;
@@ -2693,7 +2731,9 @@ function setCanvasTextSize(value) {
 function stepCanvasTextSize(delta) {
   const item=activeCanvasTextItem();
   if(!item)return;
-  setCanvasTextSize(Math.max(7,Math.min(42,(Number(item.size)||18)+delta)));
+  const hasSelection=Boolean(canvasTextSelection() || savedCanvasTextRange);
+  const base=hasSelection ? canvasSelectionComputedSize() : (Number(item.size)||18);
+  setCanvasTextSize(Math.max(7,Math.min(42,base+delta)));
 }
 function toggleCanvasTextStyle(kind) {
   const item=activeCanvasTextItem();if(!item)return;
@@ -3073,6 +3113,7 @@ $('#mobileStreamBtn')?.addEventListener('click', () => {
 });
 $('#mobileDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
 $('#emptyDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
+$('#mobileLeaveScrapbookBtn')?.addEventListener('click', leaveActiveGroup);
 $('#emptyAddBtn').addEventListener('click', () => activeScrapbook ? openEditor() : scrapbookDialog.showModal());
 $('#closeEditorBtn').addEventListener('click', closeEditor);
 $('#cancelEditorBtn').addEventListener('click', closeEditor);
@@ -3142,14 +3183,25 @@ $('#scrapbookForm').addEventListener('submit', async e => {
   } catch (err) { $('#scrapbookError').textContent = err.message; }
 });
 async function deleteActiveScrapbook() {
-  if (!isPhoneUI() || !activeScrapbook || activeScrapbook.isOwner !== true) return;
+  if (!isPhoneUI() || !activeScrapbook) return;
   const book = activeScrapbook;
-  const warning = book.type === 'personal'
-    ? `Delete "${book.name}" and all of its memories? This cannot be undone.`
-    : `Delete "${book.name}" for everyone and remove all of its memories and shared chat? This cannot be undone.`;
+  const canDelete = book.isOwner === true || (book.type === 'group' && book.isGroupAdmin === true);
+  if (!canDelete) return;
+  const delegatedAdmin = book.type === 'group' && book.isOwner !== true;
+  const warning = delegatedAdmin
+    ? `Request deletion of "${book.name}"? The group owner must approve before anything is removed.`
+    : (book.type === 'personal'
+      ? `Delete "${book.name}" and all of its memories? This cannot be undone.`
+      : `Delete "${book.name}" for everyone and remove all of its memories and shared chat? This cannot be undone.`);
   if (!confirm(warning)) return;
   try {
-    await api(`/api/scrapbooks/${encodeURIComponent(book.id)}`, { method:'DELETE' });
+    const result = await api(`/api/scrapbooks/${encodeURIComponent(book.id)}`, { method:'DELETE' });
+    if (result.approvalRequired) {
+      await loadSession(book.id);
+      showToast('Deletion request sent to the group owner for approval.');
+      renderMobileBookShelf();
+      return;
+    }
     localStorage.removeItem('activeScrapbookId');
     mobileBookContextTag = me?.tag || null;
     await loadSession(null);
@@ -3159,7 +3211,21 @@ async function deleteActiveScrapbook() {
     showToast(err.message || 'Could not delete the scrapbook.');
   }
 }
-
+async function leaveActiveGroup() {
+  if (!isPhoneUI() || !activeScrapbook || activeScrapbook.type !== 'group' || activeScrapbook.isOwner === true) return;
+  const book = activeScrapbook;
+  if (!confirm(`Leave "${book.name}"? You will lose access to its scrapbook and group chat, while memories you already posted remain preserved.`)) return;
+  try {
+    await api(`/api/scrapbooks/${encodeURIComponent(book.id)}/leave`, { method:'POST', body:'{}' });
+    localStorage.removeItem('activeScrapbookId');
+    mobileBookContextTag = me?.tag || null;
+    await loadSession(null);
+    showToast('You left the group.');
+    showView(activeScrapbook ? 'book' : 'home');
+  } catch (err) {
+    showToast(err.message || 'Could not leave the group.');
+  }
+}
 function hidePhoneInviteSuggestions() {
   const host = $('#inviteSuggestions');
   host?.classList.add('hidden');
@@ -3526,7 +3592,7 @@ function syncResponsiveChrome() {
 
   if (phone) {
     if (!mobileBookContextTag && me?.tag) mobileBookContextTag = me.tag;
-    [$('#createScrapbookBtn'), $('#profileBtn'), $('#messagesModeBtn'), $('#logoutBtn'), $('#notificationWrap'), $('#guideBtn')]
+    [$('#createScrapbookBtn'), $('#profileBtn'), $('#messagesModeBtn'), $('#notificationWrap'), $('#guideBtn'), $('#logoutBtn')]
       .filter(Boolean).forEach(el => mobileActions?.appendChild(el));
     if ($('#themeModeBtn')) mobileThemeSlot?.appendChild($('#themeModeBtn'));
     if ($('#scrapbookPicker')) mobileBookSlot?.appendChild($('#scrapbookPicker'));
