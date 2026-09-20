@@ -299,13 +299,16 @@ function mentionContext(input) {
   const atIndex = before.lastIndexOf('@');
   return { start:atIndex, end:caret, query:(match[2] || '').toLowerCase() };
 }
-function connectedMentionPeople(query = '') {
+function connectedMentionPeople(query = '', input = null) {
   const q = String(query || '').toLowerCase();
-  const pool = [
-    ...(following || []),
-    ...(followers || []),
-    ...((activeScrapbook?.profiles || []))
-  ];
+  const chat = input?.id === 'chatText' ? activeChat() : null;
+  const pool = chat?.type === 'group'
+    ? (Array.isArray(chat.members) ? chat.members : [])
+    : [
+        ...(following || []),
+        ...(followers || []),
+        ...((activeScrapbook?.profiles || []))
+      ];
   const seen = new Set();
   return pool.filter(person => {
     const tag = String(person?.tag || '').toLowerCase();
@@ -366,16 +369,19 @@ async function updateMentionSuggestions(input) {
   const context = mentionContext(input);
   if (!context) { closeMentionSuggestions(input); return; }
   const seq = ++mentionSuggestSeq;
-  let people = connectedMentionPeople(context.query);
-  try {
-    const data = await api(`/api/people?q=${encodeURIComponent(context.query)}`);
-    if (seq !== mentionSuggestSeq || document.activeElement !== input) return;
-    const merged = new Map();
-    [...people, ...(data.people || [])].forEach(person => {
-      if (person?.tag && person.tag !== me?.tag) merged.set(person.tag, person);
-    });
-    people = [...merged.values()].slice(0,8);
-  } catch {}
+  const groupChatMention = input?.id === 'chatText' && activeChat()?.type === 'group';
+  let people = connectedMentionPeople(context.query,input);
+  if (!groupChatMention) {
+    try {
+      const data = await api(`/api/people?q=${encodeURIComponent(context.query)}`);
+      if (seq !== mentionSuggestSeq || document.activeElement !== input) return;
+      const merged = new Map();
+      [...people, ...(data.people || [])].forEach(person => {
+        if (person?.tag && person.tag !== me?.tag) merged.set(person.tag, person);
+      });
+      people = [...merged.values()].slice(0,8);
+    } catch {}
+  }
   if (seq !== mentionSuggestSeq) return;
   renderMentionSuggestions(input, people, mentionContext(input));
 }
