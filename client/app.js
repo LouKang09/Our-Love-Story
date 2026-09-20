@@ -5146,7 +5146,7 @@ $('#chatComposer').addEventListener('submit', async e => {
     if(helper)helper.textContent='Sending message…';
     await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, {
       method:'POST',
-      body:JSON.stringify({ text, images, image:images[0] || '', audio, replyTo:pendingChatReply?.id || '' })
+      body:JSON.stringify({ text, images, audio, replyTo:pendingChatReply?.id || '' })
     });
     $('#chatText').value = '';
     clearPendingChatImage();
