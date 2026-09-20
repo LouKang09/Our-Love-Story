@@ -6870,3 +6870,366 @@ html[data-theme="night"] .profile-image-viewer{
     font-size:76px!important;
   }
 }
+
+
+/* =========================================================
+   PHONE UI V15 — text toolbar, group controls, chat gestures
+   ========================================================= */
+
+/* New group-management rows remain usable anywhere, while the
+   layout changes below are phone-scoped. */
+.chat-member-profile{
+  min-width:0;
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:9px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:inherit;
+  text-align:left;
+}
+.chat-member-profile>span:last-child{min-width:0}
+.chat-member-profile strong,
+.chat-member-profile small{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.chat-member-profile small{
+  color:var(--muted);
+}
+.chat-member-badges,
+.chat-member-actions{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.chat-member-badges em{
+  padding:3px 6px;
+  border-radius:999px;
+  background:var(--rose-soft);
+  color:var(--rose-dark);
+  font:800 8px ui-sans-serif,system-ui,sans-serif;
+  font-style:normal;
+}
+.group-member-add{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:7px;
+  margin-bottom:8px;
+}
+.group-member-footer{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  flex-wrap:wrap;
+  padding-top:9px;
+  border-top:1px solid var(--line);
+}
+.group-member-footer small{
+  width:100%;
+  color:var(--muted);
+  font:9px/1.4 ui-sans-serif,system-ui,sans-serif;
+}
+.group-delete-notification-actions{
+  grid-column:1/-1;
+  display:flex;
+  justify-content:flex-end;
+  gap:7px;
+}
+.notification-route-memory,
+.notification-route-chat,
+.notification-route-profile{
+  cursor:pointer;
+}
+
+/* Reply/reaction presentation is data-driven and harmless on desktop;
+   gesture behavior itself is enabled only on phones by JS. */
+.chat-reply-preview{
+  grid-column:1/-1;
+}
+.chat-reply-preview-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:7px 9px;
+  border-left:3px solid var(--rose);
+  border-radius:9px;
+  background:rgba(146,86,97,.09);
+}
+.chat-reply-preview-inner>div{min-width:0}
+.chat-reply-preview-inner small,
+.chat-reply-preview-inner strong,
+.chat-reply-preview-inner span{
+  display:block;
+}
+.chat-reply-preview-inner small{
+  color:var(--rose-dark);
+  font:800 8px ui-sans-serif,system-ui,sans-serif;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.chat-reply-preview-inner strong{
+  margin-top:1px;
+  font:750 10px ui-sans-serif,system-ui,sans-serif;
+}
+.chat-reply-preview-inner span{
+  margin-top:2px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--muted);
+  font:9px ui-sans-serif,system-ui,sans-serif;
+}
+#clearChatReplyBtn{
+  width:28px;
+  min-width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:rgba(146,86,97,.14);
+  color:var(--rose-dark);
+  font-size:17px;
+}
+.chat-reply-quote{
+  display:grid;
+  gap:2px;
+  margin:0 0 6px;
+  padding:6px 8px;
+  border-left:3px solid rgba(255,255,255,.42);
+  border-radius:7px;
+  background:rgba(255,255,255,.09);
+}
+.chat-reply-quote small{
+  color:inherit;
+  opacity:.74;
+  font:750 8px ui-sans-serif,system-ui,sans-serif;
+}
+.chat-reply-quote span{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  opacity:.82;
+  font:9px ui-sans-serif,system-ui,sans-serif;
+}
+.chat-reactions{
+  display:flex;
+  justify-content:flex-end;
+  gap:3px;
+  flex-wrap:wrap;
+  margin:5px -2px -2px 0;
+}
+.chat-reaction-chip{
+  min-width:30px;
+  height:24px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  padding:2px 6px;
+  border:1px solid rgba(146,86,97,.18);
+  border-radius:999px;
+  background:rgba(255,255,255,.12);
+  color:inherit;
+  font:9px ui-sans-serif,system-ui,sans-serif;
+}
+.chat-reaction-chip.mine{
+  border-color:var(--rose);
+  background:rgba(200,120,140,.18);
+}
+.chat-reaction-chip b{
+  font:800 8px ui-sans-serif,system-ui,sans-serif;
+}
+.chat-reaction-picker{
+  position:fixed;
+  z-index:2147483550;
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:3px;
+  padding:6px;
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:999px;
+  background:rgba(42,32,35,.97);
+  box-shadow:0 16px 40px rgba(0,0,0,.34);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.chat-reaction-picker button{
+  width:100%;
+  min-width:0;
+  height:38px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  font-size:20px;
+}
+.chat-reaction-picker button:active{
+  background:rgba(255,255,255,.12);
+  transform:scale(.93);
+}
+
+@media(max-width:800px){
+  /* #1/#2: selected text tool belongs at the phone viewport bottom. */
+  .canvas-text-inspector{
+    top:auto;
+    bottom:calc(8px + env(safe-area-inset-bottom));
+    max-height:min(104px,25svh);
+  }
+  .canvas-text-inspector.hidden{
+    display:none!important;
+  }
+  .canvas-text-item.long-dragging .canvas-text-content{
+    cursor:grabbing;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+
+  /* #4: privacy exists inside Book, not Messages or other phone sections. */
+  body:has(#messagesView:not(.hidden)) #personalPrivacyQuick,
+  body:has(#homeView:not(.hidden)) #personalPrivacyQuick,
+  body:has(#connectionsView:not(.hidden)) #personalPrivacyQuick,
+  body:has(#personProfileView:not(.hidden)) #personalPrivacyQuick,
+  body:has(#streamView:not(.hidden)) #personalPrivacyQuick{
+    display:none!important;
+  }
+
+  /* Exact phone action order is created in JS; keep its left edge aligned
+     with the Home / Book / People segmented control. */
+  .mobile-header-actions{
+    justify-content:flex-start!important;
+    padding-inline:0!important;
+  }
+  .mobile-header-actions .logout-btn{
+    margin:0!important;
+  }
+
+  /* #5: attachment and send glyphs are mathematically centered. */
+  .chat-photo-button,
+  #chatSendBtn{
+    position:relative;
+    display:grid!important;
+    place-items:center!important;
+    align-content:center!important;
+    justify-content:center!important;
+    padding:0!important;
+    line-height:1!important;
+  }
+  .chat-photo-button::before,
+  #chatSendBtn::before{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    display:grid!important;
+    place-items:center!important;
+    margin:0!important;
+    line-height:1!important;
+    transform:none!important;
+  }
+  .chat-photo-button::before{
+    content:"＋"!important;
+    font:500 24px/1 ui-sans-serif,system-ui,sans-serif!important;
+  }
+
+  .chat-bubble{
+    position:relative;
+    touch-action:pan-y;
+    will-change:transform;
+  }
+  .chat-message{
+    overflow:visible;
+  }
+  .chat-reactions{
+    margin-bottom:-10px;
+  }
+  .chat-reaction-chip{
+    min-width:32px;
+    height:25px;
+    background:#3d3034;
+  }
+  .chat-reply-preview{
+    margin-bottom:5px;
+  }
+  html[data-theme="night"] .chat-reply-preview-inner{
+    background:#3a2d31;
+    border-left-color:#d8879a;
+  }
+  html[data-theme="night"] .chat-reply-quote{
+    background:rgba(255,255,255,.055);
+  }
+
+  /* Group participant/admin management sheet. */
+  .chat-members-list{
+    gap:8px;
+  }
+  .chat-member-row{
+    grid-template-columns:minmax(0,1fr);
+    gap:7px;
+    padding:10px!important;
+  }
+  .chat-member-profile{
+    grid-template-columns:auto minmax(0,1fr);
+  }
+  .chat-member-badges,
+  .chat-member-actions{
+    justify-content:flex-start;
+    padding-left:51px;
+  }
+  .chat-member-actions button{
+    min-height:34px;
+    padding:6px 9px;
+    font-size:9px;
+  }
+  .group-member-add input{
+    min-width:0;
+  }
+  .group-member-add button{
+    min-width:62px;
+  }
+  .group-member-footer{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .group-member-footer button{
+    width:100%;
+  }
+
+  /* #6: whole notification cards are the target, not a tiny View button. */
+  .notification-route-memory,
+  .notification-route-chat,
+  .notification-route-profile{
+    -webkit-tap-highlight-color:transparent;
+  }
+  .notification-route-memory:active,
+  .notification-route-chat:active,
+  .notification-route-profile:active{
+    background:rgba(200,120,140,.12)!important;
+  }
+  .notification-view-memory{
+    display:none!important;
+  }
+  .group-delete-notification-actions{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+  .group-delete-notification-actions button{
+    min-height:38px;
+  }
+
+  .mobile-leave-scrapbook,
+  .mobile-delete-scrapbook{
+    grid-column:1/-1;
+  }
+}
