@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-phonebooks11" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui12" />
 </head>
 <body>
   <div id="app">
@@ -149,6 +149,10 @@
           <button id="mobileBookBackBtn" class="ghost mobile-book-back hidden" type="button">← My books</button>
           <div id="mobileBookContext" class="mobile-book-context"></div>
           <div id="mobileBookPickerSlot" class="mobile-book-picker-slot"></div>
+          <div class="mobile-book-actions">
+            <button id="mobileNewMemoryBtn" class="primary" type="button">＋ New memory</button>
+            <button id="mobileStreamBtn" class="ghost" type="button">Memory stream</button>
+          </div>
         </section>
         <div class="book-controls">
           <button id="prevBtn" class="round" aria-label="Previous pages">←</button>
@@ -175,7 +179,7 @@
       <section id="connectionsView" class="connections-view hidden">
         <div class="connections-head">
           <div><p class="eyebrow">WHO SHARES THIS BOOK</p><h2 id="connectionsTitle">Your people</h2><p id="connectionsSubtitle" class="muted"></p></div>
-          <form id="inviteForm" class="invite-form"><input id="inviteTag" placeholder="@friendtag" autocomplete="off" required /><button class="primary" type="submit">Invite</button></form>
+          <form id="inviteForm" class="invite-form"><input id="inviteTag" placeholder="@friendtag" autocomplete="off" required /><div id="inviteSuggestions" class="invite-suggestions hidden" role="listbox"></div><button class="primary invite-submit" type="submit">Invite</button></form>
         </div>
         <div id="peopleMap" class="people-map"></div>
         <div id="personalPrivacyPanel" class="personal-privacy-panel hidden"></div>
@@ -516,6 +520,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-phonebooks11" defer></script>
+  <script src="/app.js?v=20260920-phoneui12" defer></script>
 </body>
 </html>
