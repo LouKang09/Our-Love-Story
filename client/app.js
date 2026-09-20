@@ -2782,10 +2782,37 @@ async function imageAspectRatio(file) {
 async function fileToDataUrl(file) {
   return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 }
+async function compressImageForUpload(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) return file;
+  if (file.type === 'image/gif') return file;
+  if (file.size > 24 * 1024 * 1024) throw new Error(`${file.name} is too large to process.`);
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 1800;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { alpha:true });
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close?.();
+
+    const toBlob = quality => new Promise(resolve => canvas.toBlob(resolve, 'image/webp', quality));
+    let blob = await toBlob(.82);
+    if (blob && blob.size > 2.2 * 1024 * 1024) blob = await toBlob(.7);
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.webp', { type:'image/webp', lastModified:Date.now() });
+  } catch {
+    return file;
+  }
+}
 async function uploadImage(file) {
-  if (file.size > 8 * 1024 * 1024) throw new Error(`${file.name} is larger than 8 MB.`);
-  const dataUrl = await fileToDataUrl(file);
-  return api('/api/upload', { method:'POST', body:JSON.stringify({ dataUrl, name:file.name }) });
+  const compressed = await compressImageForUpload(file);
+  if (compressed.size > 8 * 1024 * 1024) throw new Error(`${file.name} is larger than 8 MB after compression.`);
+  const dataUrl = await fileToDataUrl(compressed);
+  return api('/api/upload', { method:'POST', body:JSON.stringify({ dataUrl, name:compressed.name || file.name }) });
 }
 
 function urlBase64ToUint8Array(base64String) {
