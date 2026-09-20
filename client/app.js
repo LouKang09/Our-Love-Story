@@ -729,6 +729,8 @@ function renderBook() {
   }
   $('#prevBtn').disabled = spreadIndex <= 0;
   $('#nextBtn').disabled = spreadIndex + step >= ordered.length;
+  if ($('#mobilePrevBtn')) $('#mobilePrevBtn').disabled = spreadIndex <= 0;
+  if ($('#mobileNextBtn')) $('#mobileNextBtn').disabled = spreadIndex + step >= ordered.length;
   wireEntryButtons(bookShell);
 }
 function renderTimeline() {
@@ -1510,9 +1512,11 @@ function positionGuideSpotlight() {
   const step = activeGuideSteps[guideIndex];
   const target = guideTarget(step);
   const spot = $('#guideSpotlight');
+  const card = $('#guideCard');
   if (!target) {
     spot.classList.add('guide-no-target');
     spot.style.cssText = '';
+    card?.classList.remove('guide-card-top');
     return;
   }
   const rect = target.getBoundingClientRect();
@@ -1522,6 +1526,13 @@ function positionGuideSpotlight() {
   spot.style.top = `${Math.max(4, rect.top - pad)}px`;
   spot.style.width = `${Math.min(window.innerWidth - 8, rect.width + pad * 2)}px`;
   spot.style.height = `${Math.min(window.innerHeight - 8, rect.height + pad * 2)}px`;
+
+  if (isPhoneUI() && card) {
+    const targetCenter = rect.top + rect.height / 2;
+    card.classList.toggle('guide-card-top', targetCenter > window.innerHeight / 2);
+  } else {
+    card?.classList.remove('guide-card-top');
+  }
 }
 function renderGuideStep() {
   if (!guideRunning) return;
@@ -1594,6 +1605,7 @@ async function finishGuide({ completed = true } = {}) {
   $('#guideOverlay').classList.add('hidden');
   document.body.classList.remove('guide-active');
   $('#guideSpotlight').style.cssText = '';
+  $('#guideCard')?.classList.remove('guide-card-top');
   showView('home');
   if (wasMandatory) maybeOpenReminderComposer();
 }
@@ -3456,6 +3468,12 @@ function turn(direction) {
 }
 $('#prevBtn').addEventListener('click', () => turn('prev'));
 $('#nextBtn').addEventListener('click', () => turn('next'));
+$('#mobilePrevBtn')?.addEventListener('click', () => turn('prev'));
+$('#mobileNextBtn')?.addEventListener('click', () => turn('next'));
+$('#mobileStreamBackBtn')?.addEventListener('click', () => {
+  if (!isPhoneUI()) return;
+  showView('book');
+});
 window.addEventListener('keydown', e => {
   if (editorDialog.open || scrapbookDialog.open || profileDialog.open || currentMode !== 'book') return;
   if (e.key === 'ArrowRight') turn('next'); if (e.key === 'ArrowLeft') turn('prev');
