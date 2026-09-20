@@ -8354,3 +8354,342 @@ html[data-theme="night"] .profile-image-viewer{
     opacity:.94;
   }
 }
+
+
+/* =========================================================
+   PHONE UI V21 — Messenger-style message menu + grouped photos
+   ========================================================= */
+@media(max-width:800px){
+  /* Full-screen gesture layer. The message action card follows the reference
+     interaction while staying inside the scrapbook palette. */
+  .chat-message-menu-overlay,
+  .chat-forward-picker{
+    position:fixed!important;
+    inset:0!important;
+    z-index:2147483640!important;
+    display:block!important;
+    width:auto!important;
+    height:auto!important;
+    padding:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:rgba(0,0,0,.44)!important;
+    box-shadow:none!important;
+    backdrop-filter:blur(2px);
+    -webkit-backdrop-filter:blur(2px);
+  }
+  .chat-message-menu-anchor{
+    position:absolute;
+    display:block;
+  }
+  .chat-message-reaction-bar{
+    width:100%;
+    padding:8px 10px 9px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:999px;
+    background:#24282d;
+    box-shadow:0 12px 32px rgba(0,0,0,.36);
+  }
+  .chat-message-reaction-bar>small{
+    display:block;
+    margin-bottom:5px;
+    color:#c9cbd0;
+    font:500 9px/1.2 ui-sans-serif,system-ui,sans-serif;
+    text-align:center;
+  }
+  .chat-message-reaction-bar>div{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    align-items:center;
+    gap:2px;
+  }
+  .chat-message-reaction-bar button{
+    width:100%;
+    min-width:0;
+    height:42px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:transparent;
+    font-size:25px;
+    line-height:1;
+  }
+  .chat-message-reaction-bar button:active{
+    background:rgba(255,255,255,.09);
+    transform:scale(.9);
+  }
+
+  .chat-message-action-sheet{
+    width:min(248px,72vw);
+    margin:8px 0 0 auto;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:17px;
+    background:rgba(37,40,45,.98);
+    box-shadow:0 16px 36px rgba(0,0,0,.4);
+  }
+  .chat-message-action-sheet>time{
+    display:block;
+    padding:11px 16px 7px;
+    color:#b8bbc0;
+    font:500 10px/1 ui-sans-serif,system-ui,sans-serif;
+    text-align:left;
+  }
+  .chat-message-action-sheet>button{
+    width:100%;
+    min-height:49px;
+    display:grid;
+    grid-template-columns:30px minmax(0,1fr);
+    align-items:center;
+    gap:11px;
+    padding:9px 15px;
+    border:0;
+    border-top:1px solid rgba(255,255,255,.035);
+    border-radius:0;
+    background:transparent;
+    color:#f7f7f8;
+    text-align:left;
+    font:500 15px/1.15 ui-sans-serif,system-ui,sans-serif;
+  }
+  .chat-message-action-sheet>button svg{
+    width:24px;
+    height:24px;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:1.8;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .chat-message-action-sheet>button:active{
+    background:rgba(255,255,255,.07);
+  }
+  .chat-message-action-sheet>button.danger{
+    color:#ff3f55;
+  }
+
+  /* Forward chooser uses the same dark action-sheet language. */
+  .chat-forward-sheet{
+    position:absolute;
+    left:12px;
+    right:12px;
+    bottom:calc(12px + env(safe-area-inset-bottom));
+    max-height:min(70svh,620px);
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr);
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:21px;
+    background:#24282d;
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+  .chat-forward-sheet>header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:13px 14px;
+    border-bottom:1px solid rgba(255,255,255,.07);
+    color:#fff;
+  }
+  .chat-forward-sheet>header strong{
+    font:800 14px/1.2 ui-sans-serif,system-ui,sans-serif;
+  }
+  .chat-forward-sheet>header button{
+    width:34px;
+    height:34px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:rgba(255,255,255,.08);
+    color:#fff;
+    font-size:21px;
+  }
+  .chat-forward-list{
+    overflow:auto;
+    padding:7px;
+  }
+  .chat-forward-list>button{
+    width:100%;
+    display:grid;
+    grid-template-columns:48px minmax(0,1fr);
+    align-items:center;
+    gap:10px;
+    padding:8px;
+    border:0;
+    border-radius:13px;
+    background:transparent;
+    color:#fff;
+    text-align:left;
+  }
+  .chat-forward-list>button:active{
+    background:rgba(255,255,255,.07);
+  }
+  .chat-forward-list .chat-list-avatar,
+  .chat-forward-list .chat-group-avatar{
+    width:44px!important;
+    height:44px!important;
+  }
+  .chat-forward-list span strong,
+  .chat-forward-list span small{
+    display:block;
+  }
+  .chat-forward-list span strong{
+    font:800 11px/1.2 ui-sans-serif,system-ui,sans-serif;
+  }
+  .chat-forward-list span small{
+    margin-top:2px;
+    color:#b9bbc0;
+    font:9px/1.2 ui-sans-serif,system-ui,sans-serif;
+  }
+
+  /* One message containing multiple photos becomes one grouped image card. */
+  .chat-image-group{
+    width:min(315px,76vw);
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:2px;
+    overflow:hidden;
+    margin:2px 0 7px;
+    border-radius:15px;
+    background:#171719;
+  }
+  .chat-image-group[data-image-count="1"]{
+    grid-template-columns:1fr;
+  }
+  .chat-image-group[data-image-count="3"] .chat-message-image-button:first-child,
+  .chat-image-group[data-image-count="5"] .chat-message-image-button:first-child{
+    grid-column:1/-1;
+  }
+  .chat-message-image-button{
+    position:relative;
+    width:100%!important;
+    min-width:0!important;
+    height:128px!important;
+    display:block!important;
+    padding:0!important;
+    overflow:hidden!important;
+    border:0!important;
+    border-radius:0!important;
+    background:#151515!important;
+  }
+  .chat-image-group[data-image-count="1"] .chat-message-image-button{
+    height:auto!important;
+    max-height:360px!important;
+  }
+  .chat-message-image{
+    width:100%!important;
+    height:100%!important;
+    min-height:128px;
+    display:block;
+    object-fit:cover!important;
+    border-radius:0!important;
+  }
+  .chat-image-group[data-image-count="1"] .chat-message-image{
+    height:auto!important;
+    max-height:360px!important;
+    object-fit:contain!important;
+  }
+
+  /* Composer preview keeps all selected photos visible before one grouped send. */
+  .chat-image-preview:not(.hidden){
+    width:100%;
+    display:block!important;
+  }
+  .chat-pending-image-grid{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:5px;
+    padding:6px;
+    border:1px solid var(--line);
+    border-radius:13px;
+    background:var(--paper-2);
+  }
+  .chat-pending-image-item{
+    position:relative;
+    min-width:0;
+    aspect-ratio:1/1;
+    overflow:hidden;
+    border-radius:9px;
+    background:#191719;
+  }
+  .chat-pending-image-item img{
+    width:100%;
+    height:100%;
+    display:block;
+    object-fit:cover;
+  }
+  .chat-pending-image-item button{
+    position:absolute;
+    top:3px;
+    right:3px;
+    width:20px;
+    height:20px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:rgba(0,0,0,.72);
+    color:#fff;
+    font-size:14px;
+    line-height:1;
+  }
+  .chat-pending-image-item span{
+    position:absolute;
+    left:4px;
+    bottom:3px;
+    min-width:17px;
+    height:17px;
+    display:grid;
+    place-items:center;
+    padding:0 3px;
+    border-radius:999px;
+    background:rgba(0,0,0,.68);
+    color:#fff;
+    font:700 8px/1 ui-sans-serif,system-ui,sans-serif;
+  }
+  .chat-pending-image-grid>small{
+    grid-column:1/-1;
+    color:var(--muted);
+    font:8px/1.2 ui-sans-serif,system-ui,sans-serif;
+  }
+  html[data-theme="night"] .chat-pending-image-grid{
+    background:#241d20;
+    border-color:#514047;
+  }
+
+  /* Explicit save control keeps image saving available even though native
+     browser context menus stay disabled on phone. */
+  .chat-image-viewer-actions{
+    position:absolute;
+    top:calc(12px + env(safe-area-inset-top));
+    right:14px;
+    z-index:3;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .chat-image-viewer-actions .chat-image-viewer-close,
+  .chat-image-viewer-save{
+    position:static!important;
+    width:42px;
+    height:42px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:1px solid rgba(255,255,255,.16);
+    border-radius:50%;
+    background:rgba(35,35,35,.82);
+    color:#fff;
+    font-size:24px;
+  }
+  .chat-image-viewer-save{
+    font-size:22px;
+    font-weight:800;
+  }
+}
