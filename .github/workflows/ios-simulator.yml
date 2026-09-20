@@ -33,6 +33,39 @@ jobs:
       - name: Generate iOS project
         run: npx cap add ios
 
+      - name: Configure iOS app permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+
+          plist_path = Path("ios/App/App/Info.plist")
+          with plist_path.open("rb") as fh:
+              plist = plistlib.load(fh)
+          plist["NSCameraUsageDescription"] = "Scrapella uses your camera when you choose to take a photo for a memory or message."
+          plist["NSPhotoLibraryUsageDescription"] = "Scrapella lets you choose photos from your library to add to scrapbooks and messages."
+          plist["NSPhotoLibraryAddUsageDescription"] = "Scrapella can save photos to your library when you choose to save them."
+          with plist_path.open("wb") as fh:
+              plistlib.dump(plist, fh)
+
+          app_delegate = Path("ios/App/App/AppDelegate.swift")
+          swift = app_delegate.read_text()
+          marker = "capacitorDidRegisterForRemoteNotifications"
+          if marker not in swift:
+              methods = """
+              func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+                  NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+              }
+
+              func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+                  NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+              }
+          """
+              pos = swift.rfind("}")
+              swift = swift[:pos] + methods + "\n" + swift[pos:]
+              app_delegate.write_text(swift)
+          PY
+
       - name: Create Scrapella native artwork
         run: |
           python3 -m venv .scrapella-venv
@@ -48,17 +81,19 @@ jobs:
           resources = root / "resources"
           resources.mkdir(exist_ok=True)
 
-          crop = logo.crop((28, 122, 246, 368))
+          # Keep the complete Scrapella lettering visible on the iOS icon.
+          artwork = logo.crop((22, 108, 490, 382))
           icon = Image.new("RGBA", (1024, 1024), cream)
-          scale = min(900 / crop.width, 900 / crop.height)
-          crop = crop.resize((round(crop.width * scale), round(crop.height * scale)), Image.Resampling.LANCZOS)
-          icon.alpha_composite(crop, ((1024 - crop.width) // 2, (1024 - crop.height) // 2))
-          icon = icon.convert("RGB")
-          icon.save(resources / "icon.png")
+          scale = min(920 / artwork.width, 920 / artwork.height)
+          artwork = artwork.resize((round(artwork.width * scale), round(artwork.height * scale)), Image.Resampling.LANCZOS)
+          icon.alpha_composite(artwork, ((1024 - artwork.width) // 2, (1024 - artwork.height) // 2))
+          icon.convert("RGB").save(resources / "icon.png")
 
           splash = Image.new("RGBA", (2732, 2732), cream)
-          full = logo.resize((1700, 1700), Image.Resampling.LANCZOS)
-          splash.alpha_composite(full, ((2732 - full.width)//2, (2732 - full.height)//2))
+          splash_art = logo.crop((18, 92, 494, 395))
+          scale = min(2100 / splash_art.width, 1300 / splash_art.height)
+          splash_art = splash_art.resize((round(splash_art.width * scale), round(splash_art.height * scale)), Image.Resampling.LANCZOS)
+          splash.alpha_composite(splash_art, ((2732 - splash_art.width)//2, (2732 - splash_art.height)//2))
           splash.convert("RGB").save(resources / "splash.png")
           PY
 
