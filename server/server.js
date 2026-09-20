@@ -771,7 +771,12 @@ function decorateChatMessage(social, message, user) {
   const raw = message?.reactions && typeof message.reactions === 'object' ? message.reactions : {};
   const reactions = Object.entries(raw).map(([emoji,tags]) => {
     const people = Array.isArray(tags) ? [...new Set(tags.filter(Boolean))] : [];
-    return { emoji, count:people.length, reactedByMe:people.includes(user) };
+    return {
+      emoji,
+      count:people.length,
+      reactedByMe:people.includes(user),
+      people:people.map(tag => publicProfileFor(social, tag))
+    };
   }).filter(item => item.count > 0);
   const replied = message?.replyTo ? social.chatMessages.find(item => item.id === message.replyTo && item.chatId === message.chatId) : null;
   return {
@@ -1889,11 +1894,17 @@ async function handleApi(req, res, url) {
     const emoji = ['❤️','👍','😂','😮','😢','😡'].includes(String(body.emoji || '')) ? String(body.emoji) : '';
     if (!emoji) return json(res, 400, { error:'Choose a supported reaction.' });
     message.reactions = message.reactions && typeof message.reactions === 'object' ? message.reactions : {};
-    const current = new Set(Array.isArray(message.reactions[emoji]) ? message.reactions[emoji] : []);
-    if (current.has(user)) current.delete(user);
-    else current.add(user);
-    if (current.size) message.reactions[emoji] = [...current];
-    else delete message.reactions[emoji];
+    const alreadyHadChosen = Array.isArray(message.reactions[emoji]) && message.reactions[emoji].includes(user);
+    for (const key of Object.keys(message.reactions)) {
+      const next = [...new Set((Array.isArray(message.reactions[key]) ? message.reactions[key] : []).filter(tag => tag && tag !== user))];
+      if (next.length) message.reactions[key] = next;
+      else delete message.reactions[key];
+    }
+    if (!alreadyHadChosen) {
+      const current = new Set(Array.isArray(message.reactions[emoji]) ? message.reactions[emoji] : []);
+      current.add(user);
+      message.reactions[emoji] = [...current];
+    }
     await writeSocial(social);
     for (const target of chatMembers(social,chat)) {
       emitLiveEvent(target, 'chat', { type:'reaction', chatId:chat.id, from:user, messageId:message.id });
@@ -1910,7 +1921,10 @@ async function handleApi(req, res, url) {
     const baseTags = book.type === 'personal' ? [book.owner] : book.members;
     const entryAuthors = entries.map(entry => entry.author);
     const commentTags = entries.flatMap(entry => Array.isArray(entry.comments) ? entry.comments.map(comment => comment.author) : []);
-    const profileTags = [...new Set([...baseTags, ...entryAuthors, ...commentTags].filter(Boolean))];
+    const reactionTags = entries.flatMap(entry => Array.isArray(entry.comments)
+      ? entry.comments.flatMap(comment => Object.values(comment?.reactions || {}).flatMap(tags => Array.isArray(tags) ? tags : []))
+      : []);
+    const profileTags = [...new Set([...baseTags, ...entryAuthors, ...commentTags, ...reactionTags].filter(Boolean))];
     const profiles = Object.fromEntries(profileTags.map(tag => [tag, publicProfileFor(social, tag)]));
     return json(res, 200, {
       entries,
@@ -2007,11 +2021,17 @@ async function handleApi(req, res, url) {
     const emoji = ['👍','❤️','😂','😮','😢','😡'].includes(String(body.emoji || '')) ? String(body.emoji) : '';
     if (!emoji) return json(res, 400, { error:'Choose a supported reaction.' });
     comment.reactions = comment.reactions && typeof comment.reactions === 'object' ? comment.reactions : {};
-    const current = new Set(Array.isArray(comment.reactions[emoji]) ? comment.reactions[emoji] : []);
-    if (current.has(user)) current.delete(user);
-    else current.add(user);
-    if (current.size) comment.reactions[emoji] = [...current];
-    else delete comment.reactions[emoji];
+    const alreadyHadChosen = Array.isArray(comment.reactions[emoji]) && comment.reactions[emoji].includes(user);
+    for (const key of Object.keys(comment.reactions)) {
+      const next = [...new Set((Array.isArray(comment.reactions[key]) ? comment.reactions[key] : []).filter(tag => tag && tag !== user))];
+      if (next.length) comment.reactions[key] = next;
+      else delete comment.reactions[key];
+    }
+    if (!alreadyHadChosen) {
+      const current = new Set(Array.isArray(comment.reactions[emoji]) ? comment.reactions[emoji] : []);
+      current.add(user);
+      comment.reactions[emoji] = [...current];
+    }
     await writeEntries(entries);
     emitLiveMany(realtimeBookViewers(social, book), 'entries', { type:'comment_reaction', scrapbookId:book.id, entryId:entry.id, commentId:comment.id, from:user });
     return json(res, 200, { ok:true });
