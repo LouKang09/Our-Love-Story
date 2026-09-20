@@ -8710,3 +8710,99 @@ html[data-theme="night"] .profile-image-viewer{
     font:700 8px/1.2 ui-sans-serif,system-ui,sans-serif;
   }
 }
+
+
+/* Scrapella brand launch */
+.sr-only{
+  position:absolute!important;
+  width:1px!important;height:1px!important;
+  padding:0!important;margin:-1px!important;
+  overflow:hidden!important;clip:rect(0,0,0,0)!important;
+  white-space:nowrap!important;border:0!important;
+}
+.brand-intro{display:none}
+.lock-brand-logo{
+  display:block;
+  width:min(360px,92%);
+  margin:-18px auto -4px;
+  object-fit:contain;
+}
+@media (max-width:800px){
+  body.brand-intro-active{overflow:hidden}
+  .brand-intro{
+    position:fixed;
+    inset:0;
+    z-index:100000;
+    display:grid;
+    place-items:center;
+    align-content:center;
+    gap:2px;
+    padding:24px;
+    background:#faf8f2;
+    color:#594a48;
+    opacity:1;
+  }
+  .brand-intro-stage{
+    position:relative;
+    width:min(96vw,560px);
+    aspect-ratio:1/1;
+  }
+  .brand-intro-stage img{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    user-select:none;
+    -webkit-user-drag:none;
+  }
+  .brand-intro-ghost{
+    opacity:.12;
+    filter:saturate(.78);
+  }
+  .brand-intro-reveal{
+    position:absolute;
+    inset:0;
+    overflow:hidden;
+    clip-path:inset(0 100% 0 0);
+    animation:scrapellaLogoTrace 1.55s cubic-bezier(.22,.68,.2,1) .08s forwards;
+  }
+  .brand-intro-pencil-track{
+    position:absolute;
+    left:6%;
+    top:31%;
+    width:88%;
+    height:37%;
+    overflow:visible;
+    pointer-events:none;
+    filter:drop-shadow(0 4px 3px rgba(72,52,44,.18));
+  }
+  .brand-intro>p{
+    margin:-9vw 0 0;
+    font:700 12px/1.2 ui-sans-serif,system-ui,sans-serif;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:#8c7b74;
+    opacity:0;
+    animation:scrapellaTagline .3s ease 1.42s forwards;
+  }
+  .brand-intro.brand-intro-finish{
+    animation:scrapellaIntroOut .30s ease forwards;
+    pointer-events:none;
+  }
+  .lock-brand-logo{
+    width:min(330px,94%);
+    margin:-28px auto -18px;
+  }
+}
+@keyframes scrapellaLogoTrace{
+  0%{clip-path:inset(0 100% 0 0)}
+  100%{clip-path:inset(0 0 0 0)}
+}
+@keyframes scrapellaTagline{to{opacity:1}}
+@keyframes scrapellaIntroOut{to{opacity:0;visibility:hidden}}
+@media (prefers-reduced-motion:reduce){
+  .brand-intro-reveal{animation:none;clip-path:inset(0)}
+  .brand-intro-pencil-track{display:none}
+  .brand-intro>p{animation:none;opacity:1}
+}
