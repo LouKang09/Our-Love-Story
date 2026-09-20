@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui13" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui14" />
 </head>
 <body>
   <div id="app">
@@ -152,6 +152,7 @@
           <div class="mobile-book-actions">
             <button id="mobileNewMemoryBtn" class="primary" type="button">＋ New memory</button>
             <button id="mobileStreamBtn" class="ghost" type="button">Memory stream</button>
+            <button id="mobileDeleteScrapbookBtn" class="danger mobile-delete-scrapbook hidden" type="button">Delete scrapbook</button>
           </div>
         </section>
         <div class="book-controls">
@@ -273,6 +274,7 @@
         <h2 id="emptyTitle">The first page is waiting.</h2>
         <p id="emptyText">Write a little piece of today and this book begins.</p>
         <button id="emptyAddBtn" class="primary">Write the first memory</button>
+        <button id="emptyDeleteScrapbookBtn" class="danger phone-empty-delete hidden" type="button">Delete scrapbook</button>
       </div>
     </main>
 
@@ -352,8 +354,13 @@
             <strong>Text box</strong>
             <select id="canvasFontSelect" aria-label="Text font">
               <option value="serif">Journal Serif</option>
+              <option value="classic">Classic Times</option>
+              <option value="elegant">Elegant Palatino</option>
               <option value="sans">Clean Sans</option>
+              <option value="rounded">Rounded Verdana</option>
+              <option value="casual">Casual Trebuchet</option>
               <option value="hand">Handwritten</option>
+              <option value="script">Script</option>
               <option value="mono">Typewriter</option>
             </select>
             <div class="canvas-size-control" role="group" aria-label="Text size">
@@ -364,7 +371,13 @@
             </div>
             <button id="canvasBoldBtn" class="rich-tool rich-bold" type="button" title="Bold">B</button>
             <button id="canvasItalicBtn" class="rich-tool rich-italic" type="button" title="Italic">I</button>
-            <button id="canvasBringFrontBtn" class="ghost" type="button">Bring front</button>
+            <div class="canvas-align-control" role="group" aria-label="Text alignment">
+              <button id="canvasAlignLeftBtn" class="rich-tool" type="button" title="Align left" aria-label="Align left">L</button>
+              <button id="canvasAlignCenterBtn" class="rich-tool" type="button" title="Align center" aria-label="Align center">C</button>
+              <button id="canvasAlignRightBtn" class="rich-tool" type="button" title="Align right" aria-label="Align right">R</button>
+              <button id="canvasAlignJustifyBtn" class="rich-tool" type="button" title="Justify" aria-label="Justify">J</button>
+            </div>
+            <button id="canvasBringFrontBtn" class="ghost" type="button">Front</button>
             <button id="canvasDeleteItemBtn" class="danger" type="button">Remove</button>
           </div>
 
@@ -523,6 +536,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-phoneui13" defer></script>
+  <script src="/app.js?v=20260920-phoneui14" defer></script>
 </body>
 </html>
