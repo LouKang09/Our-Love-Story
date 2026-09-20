@@ -843,6 +843,7 @@ function decorateChat(social, chat, user) {
       author:lastMessage.author,
       text:lastMessage.text || '',
       image:lastMessage.image || '',
+      audio:lastMessage.audio || '',
       createdAt:lastMessage.createdAt
     } : null
   };
