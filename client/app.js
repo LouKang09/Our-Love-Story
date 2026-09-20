@@ -112,6 +112,29 @@ function isPhoneUI() {
   return window.matchMedia(PHONE_UI_QUERY).matches;
 }
 
+function runScrapellaBrandIntro() {
+  const intro = $('#brandIntro');
+  if (!intro) {
+    document.body.classList.remove('brand-intro-active');
+    return;
+  }
+  if (!isPhoneUI()) {
+    intro.remove();
+    document.body.classList.remove('brand-intro-active');
+    return;
+  }
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hold = reduced ? 500 : 1700;
+  window.setTimeout(() => {
+    intro.classList.add('brand-intro-finish');
+    window.setTimeout(() => {
+      intro.remove();
+      document.body.classList.remove('brand-intro-active');
+    }, reduced ? 80 : 300);
+  }, hold);
+}
+runScrapellaBrandIntro();
+
 function phoneHistorySnapshot(mode = currentMode, overrides = {}) {
   return {
     journalPhone:true,
@@ -5706,7 +5729,9 @@ setInterval(() => refreshNotificationCount(), 60 * 1000);
 (async function boot() {
   try {
     config = await api('/api/config');
-    document.title = config.title; $('#lockTitle').textContent = config.title; $('#lockSubtitle').textContent = config.subtitle;
+    document.title = 'Scrapella';
+    $('#lockTitle').textContent = 'Scrapella';
+    $('#lockSubtitle').textContent = config.subtitle || 'Every ordinary day deserves to be remembered.';
     try {
       await enterApp();
     } catch (err) {
