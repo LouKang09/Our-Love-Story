@@ -5,25 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-scrapella01" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-scrapella02" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
     <div id="brandIntro" class="brand-intro" aria-label="Scrapella is opening">
       <div class="brand-intro-stage" aria-hidden="true">
-        <img class="brand-intro-ghost" src="/assets/scrapella-logo.webp" alt="" />
-        <div class="brand-intro-reveal"><img src="/assets/scrapella-logo.webp" alt="" /></div>
-        <svg class="brand-intro-pencil-track" viewBox="0 0 1000 420" preserveAspectRatio="none">
-          <path id="scrapellaPencilPath" d="M115 244 C142 148 230 145 263 229 C283 280 234 314 203 283 C179 258 194 222 232 220 C305 216 321 281 371 267 C410 257 402 215 437 213 C474 211 461 278 504 266 C544 254 543 198 582 204 C620 210 603 282 650 264 C691 249 690 189 732 193 C774 197 752 275 801 263 C848 251 858 202 896 212 C932 221 913 264 881 280" fill="none" stroke="transparent"/>
+        <svg class="brand-intro-logo" viewBox="0 0 512 512" role="img" aria-label="Scrapella">
+          <defs>
+            <mask id="scrapellaWriteMask">
+              <rect width="512" height="512" fill="black"/>
+              <path class="brand-write-stroke s1" pathLength="1" d="M174 202 C150 180 112 183 101 213 C91 242 126 247 154 260 C181 273 178 306 153 324 C127 343 96 331 96 306 C96 284 115 270 143 262"/>
+              <path class="brand-write-stroke s2" pathLength="1" d="M191 268 C194 248 216 241 226 254 C237 269 224 290 207 291 C195 292 189 282 191 268"/>
+              <path class="brand-write-stroke s3" pathLength="1" d="M226 286 C234 263 235 245 239 242 C243 251 243 269 245 283 C249 258 257 243 268 252"/>
+              <path class="brand-write-stroke s4" pathLength="1" d="M271 275 C271 257 283 247 296 251 C310 256 309 278 299 288 C288 298 272 289 272 275 C279 286 294 289 308 278"/>
+              <path class="brand-write-stroke s5" pathLength="1" d="M312 252 C316 270 318 299 319 328 C320 343 326 342 329 326 C333 304 329 271 335 250 C339 237 349 239 353 251 C357 267 349 282 337 285"/>
+              <path class="brand-write-stroke s6" pathLength="1" d="M351 271 C361 271 375 266 374 255 C373 245 360 245 354 255 C347 267 353 288 371 291 C382 293 388 286 392 279"/>
+              <path class="brand-write-stroke s7" pathLength="1" d="M383 274 C391 249 394 208 398 185 C401 168 409 162 414 175 C420 191 407 218 397 239 C389 257 391 284 405 290"/>
+              <path class="brand-write-stroke s8" pathLength="1" d="M407 274 C416 248 419 207 423 183 C426 166 435 161 440 175 C446 192 433 219 424 239 C416 258 418 285 434 290"/>
+              <path class="brand-write-stroke s9" pathLength="1" d="M438 276 C439 258 451 248 463 252 C476 257 476 276 466 286 C455 297 440 290 440 277 C448 286 463 289 480 272"/>
+            </mask>
+            <path id="scrapellaPencilPath" d="M174 202 C150 180 112 183 101 213 C91 242 126 247 154 260 C181 273 178 306 153 324 C127 343 96 331 96 306 C96 284 115 270 143 262 C166 255 181 258 191 268 C194 248 216 241 226 254 C237 269 224 290 207 291 C212 286 220 284 226 286 C234 263 235 245 239 242 C243 251 243 269 245 283 C249 258 257 243 268 252 C271 257 270 267 271 275 C271 257 283 247 296 251 C310 256 309 278 299 288 C303 285 306 281 308 278 C312 264 312 256 312 252 C316 270 318 299 319 328 C320 343 326 342 329 326 C333 304 329 271 335 250 C339 237 349 239 353 251 C357 267 349 282 337 285 C342 279 347 274 351 271 C361 271 375 266 374 255 C373 245 360 245 354 255 C347 267 353 288 371 291 C379 292 386 287 392 279 C389 270 386 274 383 274 C391 249 394 208 398 185 C401 168 409 162 414 175 C420 191 407 218 397 239 C389 257 391 284 405 290 C407 285 408 279 407 274 C416 248 419 207 423 183 C426 166 435 161 440 175 C446 192 433 219 424 239 C416 258 418 285 434 290 C436 286 437 281 438 276 C439 258 451 248 463 252 C476 257 476 276 466 286 C455 297 440 290 440 277 C448 286 463 289 480 272" fill="none"/>
+          </defs>
+
+          <image class="brand-intro-faint" href="/assets/scrapella-logo.webp" x="0" y="0" width="512" height="512" preserveAspectRatio="xMidYMid meet"/>
+          <image class="brand-intro-written" href="/assets/scrapella-logo.webp" x="0" y="0" width="512" height="512" preserveAspectRatio="xMidYMid meet" mask="url(#scrapellaWriteMask)"/>
+          <image class="brand-intro-final" href="/assets/scrapella-logo.webp" x="0" y="0" width="512" height="512" preserveAspectRatio="xMidYMid meet"/>
           <g class="brand-intro-pencil">
             <g transform="rotate(-18)">
-              <rect x="-30" y="-7" width="48" height="14" rx="5" fill="#e6b14e"/>
-              <rect x="-20" y="-7" width="29" height="14" fill="#f3cf73"/>
-              <polygon points="18,-7 31,0 18,7" fill="#d6b28a"/>
-              <polygon points="27,-3 34,0 27,3" fill="#3c302c"/>
-              <rect x="-34" y="-7" width="7" height="14" rx="3" fill="#df8b82"/>
+              <rect x="-27" y="-6" width="43" height="12" rx="4" fill="#e6b14e"/>
+              <rect x="-18" y="-6" width="26" height="12" fill="#f3cf73"/>
+              <polygon points="16,-6 29,0 16,6" fill="#d6b28a"/>
+              <polygon points="25,-3 32,0 25,3" fill="#3c302c"/>
+              <rect x="-31" y="-6" width="7" height="12" rx="3" fill="#df8b82"/>
             </g>
-            <animateMotion dur="1.55s" begin=".08s" fill="freeze" rotate="auto">
+            <animateMotion dur="1.62s" begin=".06s" fill="freeze" rotate="auto">
               <mpath href="#scrapellaPencilPath"/>
             </animateMotion>
           </g>
@@ -31,6 +47,23 @@
       </div>
       <p>Stories worth keeping.</p>
     </div>
+
+    <section id="nativePermissionGate" class="native-permission-gate hidden" aria-label="Scrapella permissions">
+      <div class="native-permission-card">
+        <img src="/assets/scrapella-logo.webp" alt="Scrapella" />
+        <p class="eyebrow">ONE-TIME SETUP</p>
+        <h2>Let Scrapella work like an app.</h2>
+        <p class="native-permission-copy">Allow notifications for scrapbook updates, the camera for taking photos, and photo access when you want to add memories from your gallery.</p>
+        <div class="native-permission-list">
+          <div data-native-permission="notifications"><span>🔔</span><div><strong>Notifications</strong><small>Messages, reactions and scrapbook reminders.</small></div><b>Ready</b></div>
+          <div data-native-permission="camera"><span>📷</span><div><strong>Camera</strong><small>Take a photo without leaving Scrapella.</small></div><b>Ready</b></div>
+          <div data-native-permission="photos"><span>🖼️</span><div><strong>Photos</strong><small>Choose memories from your photo library or gallery.</small></div><b>Ready</b></div>
+        </div>
+        <button id="nativePermissionsContinue" class="primary wide" type="button">Continue</button>
+        <button id="nativePermissionsSkip" class="native-permission-skip" type="button">Not now</button>
+        <p id="nativePermissionStatus" class="helper" aria-live="polite"></p>
+      </div>
+    </section>
     <div id="sessionSplash" class="session-splash" aria-live="polite" aria-label="Opening your scrapbook">
       <div class="session-splash-card">
         <span aria-hidden="true">♡</span>
@@ -579,6 +612,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-scrapella01" defer></script>
+  <script src="/app.js?v=20260920-scrapella02" defer></script>
 </body>
 </html>
