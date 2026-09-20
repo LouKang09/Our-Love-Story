@@ -3189,7 +3189,7 @@ function wireChatMessageGestures(host) {
     };
 
     bubble.addEventListener('pointerdown',e=>{
-      if(e.pointerType==='mouse'||e.target.closest('button,audio'))return;
+      if(e.pointerType==='mouse'||e.target.closest('audio,button:not(.chat-message-image-button)'))return;
       gestureActive=true;
       closeChatReactionPicker();
       startX=e.clientX;
@@ -5077,6 +5077,10 @@ document.addEventListener('pointerdown',e=>{
 });
 
 $('#chatImageViewerClose')?.addEventListener('click',closeChatImageViewer);
+$('#chatImageViewerSave')?.addEventListener('click',async e=>{
+  e.stopPropagation();
+  if(chatImageViewerSrc)await saveChatImage(chatImageViewerSrc,0);
+});
 $('#chatImageViewer')?.addEventListener('pointerdown',e=>{if(e.target===$('#chatImageViewer'))closeChatImageViewer();});
 $('#profileImageViewerClose').addEventListener('click', closeProfileImageViewer);
 document.addEventListener('keydown', e => {
