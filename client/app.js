@@ -2296,6 +2296,8 @@ async function closeMobileChat() {
     activeChatId = null;
     activeChatMessages = [];
     clearPendingChatImage();
+    clearPendingChatReply();
+    closeChatReactionPicker();
     if ($('#chatText')) $('#chatText').value = '';
     $('#activeChat')?.classList.add('hidden');
     $('#chatEmptyState')?.classList.remove('hidden');
@@ -2322,9 +2324,187 @@ function renderChatHeader(chat) {
   host.querySelector('.chat-mobile-back')?.addEventListener('click', closeMobileChat);
   host.querySelector('.chat-member-count')?.addEventListener('click', () => openChatMembersDialog(chat));
 }
-function renderChatMessages() {
+function chatReplySnippet(message) {
+  if (!message) return '';
+  if (message.text) return String(message.text).replace(/\s+/g,' ').trim().slice(0,110);
+  if (message.image) return '📷 Photo';
+  return 'Message';
+}
+function renderChatReplyPreview() {
+  const host=$('#chatReplyPreview');
+  if(!host)return;
+  if(!pendingChatReply){
+    host.classList.add('hidden');
+    host.innerHTML='';
+    return;
+  }
+  const profile=pendingChatReply.profile || {};
+  host.classList.remove('hidden');
+  host.innerHTML=`<div class="chat-reply-preview-inner">
+    <div><small>Replying to</small><strong>${escapeHtml(profile.displayName || pendingChatReply.author || 'Message')}</strong><span>${escapeHtml(chatReplySnippet(pendingChatReply))}</span></div>
+    <button id="clearChatReplyBtn" type="button" aria-label="Cancel reply">×</button>
+  </div>`;
+  $('#clearChatReplyBtn')?.addEventListener('click',clearPendingChatReply);
+}
+function setPendingChatReply(message) {
+  if(!message)return;
+  pendingChatReply=message;
+  renderChatReplyPreview();
+  $('#chatText')?.focus({preventScroll:true});
+}
+function clearPendingChatReply() {
+  pendingChatReply=null;
+  renderChatReplyPreview();
+}
+function closeChatReactionPicker() {
+  if(chatReactionPicker){
+    chatReactionPicker.remove();
+    chatReactionPicker=null;
+  }
+}
+async function toggleChatReaction(messageId,emoji='❤️') {
+  if(!activeChatId||!messageId)return;
+  try{
+    const data=await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages/${encodeURIComponent(messageId)}/reactions`,{
+      method:'POST',
+      body:JSON.stringify({emoji})
+    });
+    const idx=activeChatMessages.findIndex(message=>message.id===messageId);
+    if(idx>=0&&data.message) activeChatMessages[idx]=data.message;
+    renderChatMessages({stickBottom:false});
+  }catch(err){
+    showToast(err.message || 'Could not add that reaction.');
+  }
+}
+function showChatReactionPicker(message,bubble) {
+  if(!isPhoneUI()||!message||!bubble)return;
+  closeChatReactionPicker();
+  const picker=document.createElement('div');
+  picker.className='chat-reaction-picker';
+  picker.setAttribute('role','menu');
+  picker.innerHTML=['❤️','👍','😂','😮','😢','😡'].map(emoji=>
+    `<button type="button" data-emoji="${emoji}" aria-label="React ${emoji}">${emoji}</button>`
+  ).join('');
+  document.body.appendChild(picker);
+  chatReactionPicker=picker;
+  const rect=bubble.getBoundingClientRect();
+  const width=Math.min(330,window.innerWidth-16);
+  picker.style.width=`${width}px`;
+  const left=Math.max(8,Math.min(window.innerWidth-width-8,rect.left+(rect.width-width)/2));
+  picker.style.left=`${left}px`;
+  requestAnimationFrame(()=>{
+    const h=picker.offsetHeight||52;
+    const above=rect.top-h-8;
+    picker.style.top=`${above>=8?above:Math.min(window.innerHeight-h-8,rect.bottom+8)}px`;
+  });
+  picker.querySelectorAll('button').forEach(button=>button.addEventListener('pointerdown',async e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    const emoji=button.dataset.emoji;
+    closeChatReactionPicker();
+    await toggleChatReaction(message.id,emoji);
+  }));
+}
+function wireChatMessageGestures(host) {
+  if(!host)return;
+  host.querySelectorAll('.chat-reaction-chip').forEach(button=>button.addEventListener('click',async e=>{
+    e.stopPropagation();
+    await toggleChatReaction(button.dataset.messageId,button.dataset.emoji);
+  }));
+  if(!isPhoneUI())return;
+
+  host.querySelectorAll('.chat-bubble[data-message-id]').forEach(bubble=>{
+    const message=activeChatMessages.find(item=>item.id===bubble.dataset.messageId);
+    if(!message)return;
+    let lastTap=0;
+    let holdTimer=null;
+    let startX=0,startY=0;
+    let swiping=false,longPressed=false,cancelled=false;
+
+    const resetTransform=()=>{
+      bubble.style.transition='transform .16s ease';
+      bubble.style.transform='';
+      setTimeout(()=>{bubble.style.transition='';},180);
+    };
+
+    bubble.addEventListener('pointerdown',e=>{
+      if(e.pointerType==='mouse')return;
+      closeChatReactionPicker();
+      startX=e.clientX;
+      startY=e.clientY;
+      swiping=false;
+      longPressed=false;
+      cancelled=false;
+      holdTimer=setTimeout(()=>{
+        if(cancelled||swiping)return;
+        longPressed=true;
+        showChatReactionPicker(message,bubble);
+      },430);
+    });
+
+    bubble.addEventListener('pointermove',e=>{
+      if(e.pointerType==='mouse')return;
+      const dx=e.clientX-startX;
+      const dy=e.clientY-startY;
+      if(Math.abs(dy)>12 && Math.abs(dy)>Math.abs(dx)){
+        cancelled=true;
+        clearTimeout(holdTimer);
+        if(swiping)resetTransform();
+        swiping=false;
+        return;
+      }
+      if(dx>12 && Math.abs(dx)>Math.abs(dy)*1.1){
+        swiping=true;
+        cancelled=true;
+        clearTimeout(holdTimer);
+        bubble.style.transition='none';
+        bubble.style.transform=`translateX(${Math.min(72,Math.max(0,dx))}px)`;
+      }else if(Math.hypot(dx,dy)>10){
+        cancelled=true;
+        clearTimeout(holdTimer);
+      }
+    });
+
+    const finish=e=>{
+      clearTimeout(holdTimer);
+      const dx=(e?.clientX ?? startX)-startX;
+      if(swiping){
+        resetTransform();
+        if(dx>=56){
+          setPendingChatReply(message);
+          showToast('Replying to this message.');
+        }
+        swiping=false;
+        return;
+      }
+      if(longPressed){
+        longPressed=false;
+        return;
+      }
+      if(cancelled)return;
+      const now=Date.now();
+      if(now-lastTap<320){
+        lastTap=0;
+        toggleChatReaction(message.id,'❤️');
+      }else{
+        lastTap=now;
+      }
+    };
+    bubble.addEventListener('pointerup',finish);
+    bubble.addEventListener('pointercancel',()=>{
+      clearTimeout(holdTimer);
+      if(swiping)resetTransform();
+      swiping=false;
+      cancelled=true;
+    });
+    bubble.addEventListener('contextmenu',e=>e.preventDefault());
+  });
+}
+function renderChatMessages({stickBottom=true}={}) {
   const host = $('#chatMessages');
   if (!host) return;
+  const previousTop=host.scrollTop;
+  const previousHeight=host.scrollHeight;
   if (!activeChatMessages.length) {
     host.innerHTML = '<div class="chat-messages-empty"><span>♡</span><p>This conversation is just getting started.</p></div>';
     return;
@@ -2332,18 +2512,26 @@ function renderChatMessages() {
   host.innerHTML = activeChatMessages.map(message => {
     const mine = message.author === me?.tag;
     const profile = message.profile || {};
-    return `<article class="chat-message ${mine ? 'mine' : 'theirs'}">
+    const reply=message.replyTo;
+    const reactions=Array.isArray(message.reactions)?message.reactions:[];
+    return `<article class="chat-message ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
       ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}">${avatarHtml(profile,'chat-message-avatar')}</button>`}
-      <div class="chat-bubble">
+      <div class="chat-bubble" data-message-id="${escapeHtml(message.id || '')}">
         ${!mine ? `<strong>${escapeHtml(profile.displayName || message.author || '')}</strong>` : ''}
+        ${reply ? `<div class="chat-reply-quote"><small>Reply to ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></div>` : ''}
         ${message.image ? `<img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" />` : ''}
         ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
         <time>${escapeHtml(chatWhen(message.createdAt))}</time>
+        ${reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
       </div>
     </article>`;
   }).join('');
   wireProfileLinks(host);
-  requestAnimationFrame(() => { host.scrollTop = host.scrollHeight; });
+  wireChatMessageGestures(host);
+  requestAnimationFrame(() => {
+    if(stickBottom) host.scrollTop=host.scrollHeight;
+    else host.scrollTop=Math.max(0,previousTop+(host.scrollHeight-previousHeight));
+  });
 }
 function renderPendingChatImage() {
   const host = $('#chatImagePreview');
@@ -2394,6 +2582,10 @@ async function loadChatMessages(chatId = activeChatId) {
 }
 async function openChat(chatId) {
   if (!chatId) return;
+  if(activeChatId && activeChatId!==chatId){
+    clearPendingChatReply();
+    closeChatReactionPicker();
+  }
   activeChatId = chatId;
   if (currentMode !== 'messages') showView('messages');
   messagesView?.classList.add('chat-open');
@@ -3722,10 +3914,11 @@ $('#chatComposer').addEventListener('submit', async e => {
     }
     await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, {
       method:'POST',
-      body:JSON.stringify({ text, image })
+      body:JSON.stringify({ text, image, replyTo:pendingChatReply?.id || '' })
     });
     $('#chatText').value = '';
     clearPendingChatImage();
+    clearPendingChatReply();
     await loadChatMessages(activeChatId);
     await loadChats();
   } catch (err) {
@@ -3735,6 +3928,7 @@ $('#chatComposer').addEventListener('submit', async e => {
     $('#chatText').focus({ preventScroll:true });
   }
 });
+wireMentionAutocomplete($('#chatText'));
 $('#chatText').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.shiftKey || e.isComposing || isPhoneUI()) return;
   e.preventDefault();
@@ -3748,6 +3942,9 @@ $('#notificationBtn').addEventListener('click', async () => {
 $('#notificationCloseBtn').addEventListener('click', closeNotificationHub);
 document.addEventListener('pointerdown', e => {
   if (!$('#notificationPanel').classList.contains('hidden') && !e.target.closest('#notificationWrap')) closeNotificationHub();
+});
+document.addEventListener('pointerdown',e=>{
+  if(chatReactionPicker && !e.target.closest('.chat-reaction-picker')) closeChatReactionPicker();
 });
 
 $('#profileImageViewerClose').addEventListener('click', closeProfileImageViewer);
