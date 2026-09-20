@@ -1,6 +1,6 @@
 {
-  "appId": "com.loukang.ourlovestory",
-  "appName": "Our Love Story",
+  "appId": "com.loukang.scrapella",
+  "appName": "Scrapella",
   "webDir": "client",
   "server": {
     "url": "https://our-love-story-production-47c9.up.railway.app",
@@ -8,7 +8,11 @@
     "androidScheme": "https"
   },
   "android": {
-    "backgroundColor": "#21191b",
+    "backgroundColor": "#faf8f2",
     "zoomEnabled": false
+  },
+  "ios": {
+    "backgroundColor": "#faf8f2",
+    "contentInset": "automatic"
   }
 }
