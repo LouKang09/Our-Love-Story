@@ -3014,39 +3014,146 @@ async function deleteChatMessage(messageId) {
     showToast(err.message || 'Could not delete that message.');
   }
 }
+async function copyChatMessage(message) {
+  const value=String(message?.text || '').trim();
+  if(!value){ showToast('There is no text to copy.'); return; }
+  try{
+    await navigator.clipboard.writeText(value);
+    showToast('Message copied.');
+  }catch{
+    const area=document.createElement('textarea');
+    area.value=value;
+    area.style.position='fixed';
+    area.style.opacity='0';
+    document.body.appendChild(area);
+    area.select();
+    try{document.execCommand('copy');showToast('Message copied.');}
+    catch{showToast('Could not copy that message.');}
+    area.remove();
+  }
+}
+async function forwardOwnChatMessage(message) {
+  if(!message||message.author!==me?.tag)return;
+  closeChatReactionPicker();
+  await loadChats();
+  const targets=chats.filter(chat=>chat.id!==activeChatId);
+  if(!targets.length){showToast('There is no other conversation to forward this to.');return;}
+  const overlay=document.createElement('div');
+  overlay.className='chat-reaction-picker chat-forward-picker';
+  overlay.innerHTML=`<section class="chat-forward-sheet" role="dialog" aria-modal="true" aria-label="Forward message">
+    <header><strong>Forward message</strong><button type="button" data-close-forward aria-label="Close">×</button></header>
+    <div class="chat-forward-list">${targets.map(chat=>`<button type="button" data-forward-chat="${escapeHtml(chat.id)}">${chatAvatarHtml(chat)}<span><strong>${escapeHtml(chat.name||'Conversation')}</strong><small>${chat.type==='group'?'Group chat':'Private message'}</small></span></button>`).join('')}</div>
+  </section>`;
+  document.body.appendChild(overlay);
+  chatReactionPicker=overlay;
+  const close=()=>closeChatReactionPicker();
+  overlay.addEventListener('pointerdown',e=>{if(e.target===overlay)close();});
+  overlay.querySelector('[data-close-forward]')?.addEventListener('click',close);
+  overlay.querySelectorAll('[data-forward-chat]').forEach(button=>button.addEventListener('click',async()=>{
+    const targetId=button.dataset.forwardChat;
+    button.disabled=true;
+    try{
+      await api(`/api/chats/${encodeURIComponent(targetId)}/messages`,{
+        method:'POST',
+        body:JSON.stringify({
+          text:message.text||'',
+          images:chatMessageImages(message),
+          audio:message.audio||'',
+          replyTo:''
+        })
+      });
+      close();
+      await loadChats();
+      showToast('Message forwarded.');
+    }catch(err){
+      button.disabled=false;
+      showToast(err.message||'Could not forward that message.');
+    }
+  }));
+}
+function chatActionIcon(kind) {
+  const icons={
+    reply:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8 4 12l5 4"/><path d="M5 12h8a7 7 0 0 1 7 7"/></svg>',
+    forward:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 8 5 4-5 4"/><path d="M19 12h-8a7 7 0 0 0-7 7"/></svg>',
+    copy:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>',
+    save:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>',
+    delete:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="m7 7 1 13h8l1-13"/><path d="M10 11v5M14 11v5"/></svg>'
+  };
+  return icons[kind]||'';
+}
 function showChatReactionPicker(message,bubble) {
   if(!isPhoneUI()||!message||!bubble)return;
   closeChatReactionPicker();
-  const picker=document.createElement('div');
-  picker.className='chat-reaction-picker';
-  picker.setAttribute('role','menu');
-  const canDelete=message.author===me?.tag && !message.deleted;
-  picker.innerHTML=['❤️','👍','😂','😮','😢','😡'].map(emoji=>
-    `<button type="button" data-emoji="${emoji}" aria-label="React ${emoji}">${emoji}</button>`
-  ).join('') + (canDelete ? '<button type="button" class="chat-delete-message-action" data-delete-message="1">Delete message</button>' : '');
-  document.body.appendChild(picker);
-  chatReactionPicker=picker;
+  const images=chatMessageImages(message);
+  const mine=message.author===me?.tag;
+  const overlay=document.createElement('div');
+  overlay.className='chat-reaction-picker chat-message-menu-overlay';
+  overlay.setAttribute('role','presentation');
+  const actions=[
+    {id:'reply',label:'Reply',show:!message.deleted},
+    {id:'forward',label:'Forward',show:mine&&!message.deleted},
+    {id:'copy',label:'Copy',show:!message.deleted&&Boolean(String(message.text||'').trim())},
+    {id:'save',label:images.length>1?'Save photos':'Save image',show:!message.deleted&&images.length>0},
+    {id:'delete',label:'Delete',show:mine&&!message.deleted,danger:true}
+  ].filter(action=>action.show);
+  overlay.innerHTML=`<div class="chat-message-menu-anchor">
+    <div class="chat-message-reaction-bar" role="menu" aria-label="React to message">
+      <small>React to message</small>
+      <div>${['❤️','😂','😮','😢','😡','👍'].map(emoji=>`<button type="button" data-emoji="${emoji}" aria-label="React ${emoji}">${emoji}</button>`).join('')}</div>
+    </div>
+    <section class="chat-message-action-sheet" role="menu" aria-label="Message actions">
+      <time>${escapeHtml(chatWhen(message.createdAt))}</time>
+      ${actions.map(action=>`<button type="button" data-message-action="${action.id}" class="${action.danger?'danger':''}">${chatActionIcon(action.id)}<span>${escapeHtml(action.label)}</span></button>`).join('')}
+    </section>
+  </div>`;
+  document.body.appendChild(overlay);
+  chatReactionPicker=overlay;
+
   const rect=bubble.getBoundingClientRect();
-  const width=Math.min(330,window.innerWidth-16);
-  picker.style.width=`${width}px`;
-  const left=Math.max(8,Math.min(window.innerWidth-width-8,rect.left+(rect.width-width)/2));
-  picker.style.left=`${left}px`;
+  const anchor=overlay.querySelector('.chat-message-menu-anchor');
+  const width=Math.min(370,window.innerWidth-20);
+  anchor.style.width=`${width}px`;
   requestAnimationFrame(()=>{
-    const h=picker.offsetHeight||52;
-    const above=rect.top-h-8;
-    picker.style.top=`${above>=8?above:Math.min(window.innerHeight-h-8,rect.bottom+8)}px`;
+    const h=anchor.offsetHeight||320;
+    let top=rect.top-h*.42;
+    top=Math.max(8,Math.min(window.innerHeight-h-8,top));
+    anchor.style.top=`${top}px`;
+    anchor.style.left=`${Math.max(10,window.innerWidth-width-10)}px`;
   });
-  picker.querySelectorAll('button').forEach(button=>button.addEventListener('pointerdown',async e=>{
-    e.preventDefault();
+
+  overlay.addEventListener('pointerdown',e=>{if(e.target===overlay)closeChatReactionPicker();});
+  overlay.querySelectorAll('[data-emoji]').forEach(button=>button.addEventListener('click',async e=>{
     e.stopPropagation();
-    if(button.dataset.deleteMessage){
-      closeChatReactionPicker();
-      await deleteChatMessage(message.id);
-      return;
-    }
     const emoji=button.dataset.emoji;
     closeChatReactionPicker();
     await toggleChatReaction(message.id,emoji);
+  }));
+  overlay.querySelectorAll('[data-message-action]').forEach(button=>button.addEventListener('click',async e=>{
+    e.stopPropagation();
+    const action=button.dataset.messageAction;
+    if(action==='reply'){
+      closeChatReactionPicker();
+      setPendingChatReply(message);
+      return;
+    }
+    if(action==='forward'){
+      await forwardOwnChatMessage(message);
+      return;
+    }
+    if(action==='copy'){
+      closeChatReactionPicker();
+      await copyChatMessage(message);
+      return;
+    }
+    if(action==='save'){
+      closeChatReactionPicker();
+      await saveChatImages(message);
+      return;
+    }
+    if(action==='delete'){
+      closeChatReactionPicker();
+      await deleteChatMessage(message.id);
+    }
   }));
 }
 function wireChatMessageGestures(host) {
