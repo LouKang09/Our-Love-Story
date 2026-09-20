@@ -1143,8 +1143,13 @@ input:focus,textarea:focus,select:focus{
 .rich-copy p,.rich-copy div{margin:0 0 1em}
 .rich-copy p:last-child,.rich-copy div:last-child{margin-bottom:0}
 .fmt-font-serif{font-family:Georgia,"Times New Roman",serif}
+.fmt-font-classic{font-family:"Times New Roman",Times,serif}
+.fmt-font-elegant{font-family:"Palatino Linotype","Book Antiqua",Palatino,serif}
 .fmt-font-sans{font-family:Arial,Helvetica,sans-serif}
+.fmt-font-rounded{font-family:Verdana,Geneva,sans-serif}
+.fmt-font-casual{font-family:"Trebuchet MS",Arial,sans-serif}
 .fmt-font-hand{font-family:"Segoe Print","Bradley Hand",cursive}
+.fmt-font-script{font-family:"Brush Script MT","Segoe Script",cursive}
 .fmt-font-mono{font-family:"Courier New",Courier,monospace}
 .fmt-size-1{font-size:.72em}
 .fmt-size-2{font-size:.84em}
