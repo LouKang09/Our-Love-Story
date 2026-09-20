@@ -84,7 +84,7 @@ jobs:
           # Keep the complete Scrapella lettering visible on the iOS icon.
           artwork = logo.crop((22, 108, 490, 382))
           icon = Image.new("RGBA", (1024, 1024), cream)
-          scale = min(920 / artwork.width, 920 / artwork.height)
+          scale = min(790 / artwork.width, 790 / artwork.height)
           artwork = artwork.resize((round(artwork.width * scale), round(artwork.height * scale)), Image.Resampling.LANCZOS)
           icon.alpha_composite(artwork, ((1024 - artwork.width) // 2, (1024 - artwork.height) // 2))
           icon.convert("RGB").save(resources / "icon.png")
