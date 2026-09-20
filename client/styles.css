@@ -5597,3 +5597,597 @@ html[data-theme="night"] .profile-image-viewer{
     background:#292124!important;
   }
 }
+
+
+/* =========================================================
+   V10 — Compact mobile navigation, discovery & floating chat
+   ========================================================= */
+
+/* The scrapbook title/picker now live in Profile, not the persistent header. */
+.topbar{
+  min-height:auto;
+  padding:10px clamp(12px,3vw,42px);
+}
+.toolbar{
+  width:100%;
+  margin-left:0;
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:10px;
+}
+.header-actions{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+}
+.header-actions .small-circle,
+.header-actions .notification-btn,
+.header-actions .guide-btn,
+.messages-icon-btn{
+  width:40px;
+  min-width:40px;
+  height:40px;
+  padding:0;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--line);
+  border-radius:50%;
+  color:var(--ink);
+  background:rgba(255,255,255,.68);
+  box-shadow:0 6px 16px rgba(60,39,36,.05);
+}
+.messages-icon-btn{
+  position:relative;
+}
+.messages-icon-btn svg,
+.chat-send-button svg{
+  width:20px;
+  height:20px;
+  fill:currentColor;
+}
+.messages-icon-btn .messages-badge{
+  position:absolute;
+  top:-5px;
+  right:-5px;
+}
+.mode-switch{
+  width:100%;
+  min-width:0;
+  display:grid;
+  grid-template-columns:.9fr .8fr 1.45fr .9fr;
+  overflow:visible;
+}
+.mode-switch button{
+  min-width:0;
+  padding:9px 10px;
+  text-align:center;
+}
+.toolbar>#newEntryBtn{
+  justify-self:end;
+}
+.profile-chip{
+  min-width:40px;
+}
+
+/* Profile now owns scrapbook switching and appearance settings. */
+.profile-scrapbook-settings,
+.appearance-settings{
+  display:grid;
+  gap:12px;
+  margin-top:8px;
+  padding:15px;
+  border:1px solid var(--line);
+  border-radius:15px;
+  background:rgba(255,250,241,.72);
+}
+.profile-settings-heading h3{
+  margin:2px 0 0;
+  font-size:22px;
+  font-weight:500;
+}
+.profile-book-brand{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  color:var(--ink);
+  background:rgba(255,255,255,.66);
+  text-align:left;
+}
+.profile-book-heart{
+  width:42px;
+  height:42px;
+  flex:0 0 42px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  color:#fff;
+  background:var(--rose);
+  font-size:23px;
+}
+.profile-book-brand>span:last-child{
+  min-width:0;
+}
+.profile-book-brand small,
+.profile-book-brand strong{
+  display:block;
+}
+.profile-book-brand small{
+  color:var(--muted);
+  font:800 8px ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.12em;
+}
+.profile-book-brand strong{
+  margin-top:2px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:18px;
+  font-weight:600;
+}
+.appearance-settings{
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+}
+.appearance-settings strong{
+  display:block;
+  font:750 13px ui-sans-serif,system-ui,sans-serif;
+}
+.appearance-settings p{
+  margin:3px 0 0;
+  color:var(--muted);
+  font:10px/1.4 ui-sans-serif,system-ui,sans-serif;
+}
+.appearance-settings .theme-mode-btn{
+  width:auto;
+  min-width:112px;
+  height:40px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  padding:0 13px;
+  border-radius:999px;
+  font-size:16px;
+}
+.appearance-settings .theme-mode-btn b{
+  font:750 10px ui-sans-serif,system-ui,sans-serif;
+}
+
+/* Home begins with discovery instead of the large self-profile hero. */
+.home-view{
+  padding-top:20px;
+}
+.home-search-section{
+  position:relative;
+  display:grid;
+  gap:13px;
+}
+.home-search-copy h2{
+  margin:2px 0 7px;
+  font-size:clamp(30px,5vw,44px);
+  font-weight:500;
+  line-height:1;
+}
+.home-search-copy>p:last-child{
+  margin:0;
+  color:var(--muted);
+  line-height:1.5;
+}
+.home-search-form{
+  display:block;
+  margin-top:2px;
+}
+.home-search-form input{
+  min-height:52px;
+  font-size:15px;
+}
+.home-search-results{
+  max-height:330px;
+  overflow:auto;
+  display:grid;
+  gap:7px;
+  padding:7px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:rgba(255,250,241,.94);
+  box-shadow:0 14px 30px rgba(60,39,36,.1);
+}
+.home-search-person{
+  min-width:0;
+}
+.home-search-follow{
+  min-width:76px;
+}
+.home-suggestions-inline{
+  min-width:0;
+  margin-top:5px;
+  padding-top:14px;
+  border-top:1px solid var(--line);
+}
+.home-suggestions-heading h3{
+  margin:2px 0 10px;
+  font-size:21px;
+  font-weight:500;
+}
+.home-suggestions{
+  display:flex;
+  gap:9px;
+  overflow-x:auto;
+  padding:2px 1px 8px;
+  scroll-snap-type:x proximity;
+  overscroll-behavior-inline:contain;
+  scrollbar-width:thin;
+}
+.home-suggestion-card{
+  flex:0 0 min(310px,86vw);
+  scroll-snap-align:start;
+}
+.home-section-head{
+  align-items:flex-start;
+}
+.home-count{
+  flex:0 0 auto;
+  color:var(--ink);
+  background:rgba(255,255,255,.74);
+  font-weight:750;
+}
+
+/* Message search is suggestion-first: no separate Start button. */
+.private-chat-form{
+  position:relative;
+  display:block;
+}
+.private-chat-form input{
+  width:100%;
+}
+.private-chat-suggestions{
+  position:absolute;
+  z-index:80;
+  left:0;
+  right:0;
+  top:calc(100% + 6px);
+  max-height:280px;
+  overflow:auto;
+  padding:6px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:rgba(255,250,241,.98);
+  box-shadow:0 16px 36px rgba(60,39,36,.16);
+}
+.private-chat-suggestion{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:9px;
+  border:0;
+  border-radius:10px;
+  color:var(--ink);
+  background:transparent;
+  text-align:left;
+}
+.private-chat-suggestion:hover,
+.private-chat-suggestion:focus-visible{
+  background:var(--rose-soft);
+}
+.private-chat-suggestion>span:last-child{
+  min-width:0;
+}
+.private-chat-suggestion strong,
+.private-chat-suggestion small{
+  display:block;
+}
+.private-chat-suggestion strong{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font:750 12px ui-sans-serif,system-ui,sans-serif;
+}
+.private-chat-suggestion small{
+  margin-top:2px;
+  color:var(--muted);
+  font:10px ui-sans-serif,system-ui,sans-serif;
+}
+.private-chat-suggestion-empty{
+  margin:0;
+  padding:11px;
+  color:var(--muted);
+  font:11px ui-sans-serif,system-ui,sans-serif;
+}
+
+/* Simple Messenger-like composer actions. */
+.chat-photo-button,
+#chatSendBtn{
+  width:44px;
+  min-width:44px;
+  height:44px;
+  min-height:44px;
+  flex:0 0 44px;
+  padding:0;
+  border-radius:50%;
+}
+.chat-photo-button{
+  font-size:0;
+}
+.chat-photo-button>span{
+  display:block;
+  font:400 25px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.chat-photo-button::before{
+  content:none!important;
+}
+.chat-send-button{
+  display:grid!important;
+  place-items:center;
+}
+.chat-send-button svg{
+  width:21px;
+  height:21px;
+}
+
+/* Strong night-mode contrast for counters and suggestion/search controls. */
+html[data-theme="night"] .home-count,
+html[data-theme="night"] .home-search-results,
+html[data-theme="night"] .private-chat-suggestions,
+html[data-theme="night"] .profile-scrapbook-settings,
+html[data-theme="night"] .appearance-settings,
+html[data-theme="night"] .profile-book-brand{
+  color:var(--ink);
+  background:#2d2427;
+  border-color:var(--line);
+}
+html[data-theme="night"] .home-count{
+  background:#44363a;
+}
+html[data-theme="night"] .home-search-follow.ghost,
+html[data-theme="night"] .home-follow-suggestion.ghost,
+html[data-theme="night"] .follow-stat-button{
+  color:var(--ink)!important;
+}
+html[data-theme="night"] .private-chat-suggestion{
+  color:var(--ink);
+}
+html[data-theme="night"] .private-chat-suggestion:hover,
+html[data-theme="night"] .private-chat-suggestion:focus-visible{
+  background:#49363c;
+}
+html[data-theme="night"] .header-actions .small-circle,
+html[data-theme="night"] .messages-icon-btn{
+  color:var(--ink);
+  background:rgba(55,44,47,.9);
+}
+
+/* Phone layout: one stable nav row and a conversation that owns the viewport below it. */
+@media(max-width:800px){
+  .topbar{
+    padding:8px 9px;
+  }
+  .toolbar{
+    grid-template-columns:1fr;
+    gap:7px;
+  }
+  .header-actions{
+    width:100%;
+    gap:6px;
+  }
+  .header-actions .profile-chip{
+    margin-left:auto;
+  }
+  .profile-chip{
+    width:40px;
+    max-width:40px;
+    height:40px;
+    padding:4px;
+    justify-content:center;
+    border-radius:50%;
+  }
+  .profile-chip span:last-child{
+    display:none;
+  }
+  .mini-avatar{
+    width:30px;
+    height:30px;
+  }
+  .logout-btn{
+    min-height:40px;
+    padding:8px 11px;
+    font-size:11px;
+  }
+  .mode-switch{
+    width:100%;
+    max-width:none;
+    grid-template-columns:.9fr .78fr 1.4fr .88fr;
+    overflow:visible;
+  }
+  .mode-switch button{
+    width:100%;
+    padding:9px 4px;
+    font-size:11px;
+  }
+  .toolbar>#newEntryBtn{
+    width:100%;
+    justify-self:stretch;
+    padding:9px 14px;
+  }
+
+  .home-view{
+    width:min(100% - 16px,760px);
+    padding:14px 0 52px;
+  }
+  .home-search-section{
+    padding:17px 14px;
+  }
+  .home-search-copy h2{
+    font-size:31px;
+  }
+  .home-search-copy>p:last-child{
+    font-size:13px;
+  }
+  .home-search-person{
+    grid-template-columns:auto minmax(0,1fr) auto;
+    gap:8px;
+    padding:9px;
+  }
+  .home-search-follow{
+    min-width:68px;
+    padding:8px 10px;
+    font-size:10px;
+  }
+  .home-section{
+    margin-top:21px;
+  }
+  .home-section-head{
+    gap:9px;
+  }
+  .home-section-head h3{
+    margin-top:2px;
+    font-size:23px;
+    line-height:1.08;
+  }
+  .home-count{
+    margin-top:1px;
+    padding:6px 8px;
+    font-size:10px;
+  }
+  .home-suggestion-card{
+    flex-basis:min(285px,84vw);
+  }
+
+  .messages-view.chat-open{
+    position:fixed;
+    z-index:29;
+    top:var(--mobile-chat-top,0px);
+    right:0;
+    bottom:0;
+    left:0;
+    width:100%;
+    height:auto;
+    margin:0;
+    padding:4px;
+    background:var(--paper);
+  }
+  .messages-view.chat-open .messages-shell,
+  .messages-view.chat-open .chat-panel,
+  .messages-view.chat-open .active-chat{
+    width:100%;
+    height:100%;
+    min-height:0;
+    max-height:none;
+  }
+  .messages-view.chat-open .messages-shell{
+    border-radius:14px;
+  }
+  .messages-view.chat-open .chat-panel{
+    display:block;
+  }
+  .messages-view.chat-open .active-chat{
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr) auto;
+  }
+  .messages-view.chat-open .chat-messages{
+    min-height:0;
+    overflow:auto;
+  }
+  .messages-view.chat-open .chat-composer{
+    position:relative;
+    bottom:auto;
+    z-index:5;
+  }
+  .chat-composer{
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:end;
+    padding:8px 9px calc(8px + env(safe-area-inset-bottom));
+  }
+  .chat-composer textarea{
+    grid-column:1;
+    grid-row:1;
+    min-height:44px;
+    max-height:92px;
+    resize:none;
+  }
+  .chat-compose-actions{
+    grid-column:2;
+    grid-row:1;
+    align-items:center;
+    justify-content:flex-end;
+    gap:5px;
+  }
+  .chat-photo-button,
+  #chatSendBtn{
+    flex:0 0 42px;
+    width:42px;
+    min-width:42px;
+    height:42px;
+    min-height:42px;
+  }
+  .private-chat-form{
+    grid-template-columns:1fr!important;
+  }
+}
+
+@media(max-width:480px){
+  .header-actions .small-circle,
+  .header-actions .notification-btn,
+  .header-actions .guide-btn,
+  .messages-icon-btn,
+  .profile-chip{
+    width:38px;
+    min-width:38px;
+    height:38px;
+  }
+  .header-actions{
+    gap:5px;
+  }
+  .logout-btn{
+    padding:7px 9px;
+    font-size:10px;
+  }
+  .mode-switch button{
+    padding:8px 2px;
+    font-size:10px;
+  }
+  .home-search-copy h2{
+    font-size:28px;
+  }
+  .home-section-head{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+  }
+  .home-section-head h3{
+    font-size:21px;
+  }
+  .home-suggestion-card{
+    flex-basis:82vw;
+    grid-template-columns:auto minmax(0,1fr);
+  }
+  .home-follow-suggestion{
+    grid-column:2;
+    justify-self:start;
+  }
+  .chat-composer{
+    grid-template-columns:minmax(0,1fr) auto!important;
+  }
+  .chat-composer textarea{
+    grid-column:1!important;
+    grid-row:1!important;
+  }
+  .chat-compose-actions{
+    grid-column:2!important;
+    grid-row:1!important;
+    justify-content:flex-end!important;
+  }
+  .chat-photo-button,
+  #chatSendBtn{
+    flex:0 0 40px!important;
+    width:40px!important;
+    min-width:40px!important;
+    height:40px!important;
+    min-height:40px!important;
+  }
+}
