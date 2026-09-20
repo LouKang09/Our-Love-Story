@@ -148,6 +148,7 @@ function closePhoneTransientLayer() {
   if (!$('#notificationPanel')?.classList.contains('hidden')) { closeNotificationHub(); return true; }
   if (!$('#chatImageViewer')?.classList.contains('hidden')) { closeChatImageViewer(); return true; }
   if (!$('#profileImageViewer')?.classList.contains('hidden')) { closeProfileImageViewer(); return true; }
+  if (reactionViewer) { closeReactionViewer(); return true; }
   if (chatReactionPicker) { closeChatReactionPicker(); return true; }
   if (commentReactionPicker) { closeCommentReactionPicker(); return true; }
   if (guideRunning && !guideMandatory) { finishGuide({ completed:false }); return true; }
@@ -3358,8 +3359,11 @@ function wireChatMicHold() {
   if(!mic)return;
   mic.addEventListener('pointerdown',e=>{
     if(!isPhoneUI())return;
-    if(chatMediaRecorder?.state==='recording')return;
     chatMicPointerId=e.pointerId;
+    if(chatMediaRecorder?.state==='recording'){
+      chatMicHoldActive=false;
+      return;
+    }
     chatMicStartX=e.clientX;
     chatMicCancelled=false;
     chatMicHoldActive=false;
