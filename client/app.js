@@ -2612,7 +2612,8 @@ function renderChatList() {
   }
   host.innerHTML = chats.map(chat => {
     const last = chat.lastMessage;
-    const preview = last ? (last.deleted ? 'Message deleted' : (last.text || (last.image ? '📷 Photo' : (last.audio ? '🎙 Voice message' : 'New message')))) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
+    const lastImages=last ? chatMessageImages(last) : [];
+    const preview = last ? (last.deleted ? 'Message deleted' : (last.text || (lastImages.length ? (lastImages.length===1 ? '📷 Photo' : `📷 ${lastImages.length} photos`) : (last.audio ? '🎙 Voice message' : 'New message')))) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
     return `<button class="chat-list-item ${chat.id === activeChatId ? 'active' : ''}" type="button" data-chat-id="${escapeHtml(chat.id)}">
       ${chatAvatarHtml(chat)}
       <span class="chat-list-copy"><strong>${escapeHtml(chat.name || 'Conversation')}</strong><small>${escapeHtml(preview)}</small></span>
@@ -2947,7 +2948,8 @@ function chatReplySnippet(message) {
   if (!message) return '';
   if (message.deleted) return 'Message deleted';
   if (message.text) return String(message.text).replace(/\s+/g,' ').trim().slice(0,110);
-  if (message.image) return '📷 Photo';
+  const images=chatMessageImages(message);
+  if (images.length) return images.length===1 ? '📷 Photo' : `📷 ${images.length} photos`;
   if (message.audio) return '🎙 Voice message';
   return 'Message';
 }
@@ -3287,6 +3289,7 @@ function renderChatMessages({stickBottom=true}={}) {
     const mine = message.author === me?.tag;
     const profile = message.profile || {};
     const reply=message.replyTo;
+    const images=chatMessageImages(message);
     const reactions=Array.isArray(message.reactions)?message.reactions:[];
     return `<article class="chat-message ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
       ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}">${avatarHtml(profile,'chat-message-avatar')}</button>`}
@@ -3296,7 +3299,7 @@ function renderChatMessages({stickBottom=true}={}) {
         ${message.deleted
           ? '<p class="chat-message-deleted"><span>⊘</span> Message deleted</p>'
           : `${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
-             ${message.image ? `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(message.image)}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(message.image)}" alt="Chat photo" loading="lazy" /></button>` : ''}
+             ${images.length ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>` : ''}
              ${chatVoiceHtml(message)}
              ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}`}
         <time>${escapeHtml(chatWhen(message.createdAt))}</time>
@@ -3323,20 +3326,36 @@ function renderChatMessages({stickBottom=true}={}) {
 function renderPendingChatImage() {
   const host = $('#chatImagePreview');
   if (!host) return;
-  if (!pendingChatFile || !pendingChatPreviewUrl) {
+  if (!pendingChatFiles.length || !pendingChatPreviewUrls.length) {
     host.classList.add('hidden');
     host.innerHTML = '';
     return;
   }
   host.classList.remove('hidden');
-  host.innerHTML = `<div><img src="${pendingChatPreviewUrl}" alt="Photo to send" /><button id="removeChatImageBtn" type="button" aria-label="Remove attached photo">×</button><span>${escapeHtml(pendingChatFile.name || 'Photo')}</span></div>`;
-  $('#removeChatImageBtn')?.addEventListener('click', () => clearPendingChatImage());
+  host.innerHTML = `<div class="chat-pending-image-grid" data-count="${pendingChatFiles.length}">
+    ${pendingChatFiles.map((file,index)=>`<div class="chat-pending-image-item">
+      <img src="${escapeHtml(pendingChatPreviewUrls[index]||'')}" alt="Photo ${index+1} to send" />
+      <button type="button" data-remove-chat-image="${index}" aria-label="Remove photo ${index+1}">×</button>
+      <span>${index+1}</span>
+    </div>`).join('')}
+    <small>${pendingChatFiles.length} / 10 selected</small>
+  </div>`;
+  host.querySelectorAll('[data-remove-chat-image]').forEach(button=>button.addEventListener('click',()=>{
+    clearPendingChatImage(Number(button.dataset.removeChatImage));
+  }));
 }
-function clearPendingChatImage() {
-  if (pendingChatPreviewUrl) URL.revokeObjectURL(pendingChatPreviewUrl);
-  pendingChatPreviewUrl = '';
-  pendingChatFile = null;
+function clearPendingChatImage(index = null) {
+  if (Number.isInteger(index) && index >= 0 && index < pendingChatFiles.length) {
+    const [url]=pendingChatPreviewUrls.splice(index,1);
+    if(url)URL.revokeObjectURL(url);
+    pendingChatFiles.splice(index,1);
+  } else {
+    pendingChatPreviewUrls.forEach(url=>{if(url)URL.revokeObjectURL(url);});
+    pendingChatPreviewUrls=[];
+    pendingChatFiles=[];
+  }
   if ($('#chatPhotoInput')) $('#chatPhotoInput').value = '';
+  if ($('#chatCameraInput')) $('#chatCameraInput').value = '';
   renderPendingChatImage();
 }
 function renderPendingChatAudio() {
