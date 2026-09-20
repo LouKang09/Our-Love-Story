@@ -787,7 +787,11 @@ function decorateChatMessage(social, message, user) {
     deleted:Boolean(message.deletedAt),
     deletedAt:message.deletedAt || null,
     text:message.deletedAt ? '' : (message.text || ''),
-    image:message.deletedAt ? '' : (message.image || ''),
+    images:message.deletedAt ? [] : [...new Set([
+      ...(Array.isArray(message.images) ? message.images : []),
+      message.image || ''
+    ].filter(Boolean))].slice(0,10),
+    image:message.deletedAt ? '' : (message.image || (Array.isArray(message.images) ? message.images[0] || '' : '')),
     audio:message.deletedAt ? '' : (message.audio || ''),
     replyTo:replied ? {
       id:replied.id,
@@ -795,7 +799,11 @@ function decorateChatMessage(social, message, user) {
       profile:publicProfileFor(social, replied.author),
       deleted:Boolean(replied.deletedAt),
       text:replied.deletedAt ? '' : String(replied.text || '').slice(0,180),
-      image:replied.deletedAt ? '' : (replied.image || ''),
+      images:replied.deletedAt ? [] : [...new Set([
+        ...(Array.isArray(replied.images) ? replied.images : []),
+        replied.image || ''
+      ].filter(Boolean))].slice(0,10),
+      image:replied.deletedAt ? '' : (replied.image || (Array.isArray(replied.images) ? replied.images[0] || '' : '')),
       audio:replied.deletedAt ? '' : (replied.audio || '')
     } : null,
     reactions,
@@ -828,7 +836,11 @@ function decorateChat(social, chat, user) {
         author:lastMessage.author,
         deleted:Boolean(lastMessage.deletedAt),
         text:lastMessage.deletedAt ? 'Message deleted' : (lastMessage.text || ''),
-        image:lastMessage.deletedAt ? '' : (lastMessage.image || ''),
+        images:lastMessage.deletedAt ? [] : [...new Set([
+          ...(Array.isArray(lastMessage.images) ? lastMessage.images : []),
+          lastMessage.image || ''
+        ].filter(Boolean))].slice(0,10),
+        image:lastMessage.deletedAt ? '' : (lastMessage.image || (Array.isArray(lastMessage.images) ? lastMessage.images[0] || '' : '')),
         audio:lastMessage.deletedAt ? '' : (lastMessage.audio || ''),
         createdAt:lastMessage.createdAt
       } : null
@@ -927,7 +939,11 @@ async function deleteScrapbookCompletely(social, book, actor) {
     }
   }
   for (const message of removedMessages) {
-    if (message?.image?.startsWith('/uploads/')) candidateAssets.add(message.image);
+    const messageImages = [...new Set([
+      ...(Array.isArray(message?.images) ? message.images : []),
+      message?.image || ''
+    ].filter(Boolean))];
+    for (const src of messageImages) if (src.startsWith('/uploads/')) candidateAssets.add(src);
     if (message?.audio?.startsWith('/uploads/')) candidateAssets.add(message.audio);
   }
 
@@ -948,7 +964,11 @@ async function deleteScrapbookCompletely(social, book, actor) {
       (Array.isArray(entry.photos) && entry.photos.some(photo => photo?.src === src)) ||
       (Array.isArray(entry.canvasItems) && entry.canvasItems.some(item => item?.type === 'photo' && item?.src === src))
     ) ||
-    social.chatMessages.some(message => message?.image === src || message?.audio === src) ||
+    social.chatMessages.some(message =>
+      message?.image === src ||
+      (Array.isArray(message?.images) && message.images.includes(src)) ||
+      message?.audio === src
+    ) ||
     Object.values(social.profiles || {}).some(profile => profile?.avatar === src);
 
   const orphanedAssets = [...candidateAssets].filter(src => !assetStillUsed(src));
@@ -1823,15 +1843,21 @@ async function handleApi(req, res, url) {
     if (!chat || !canAccessChat(social, chat, user)) return forbidden(res, 'You do not have access to this chat.');
     const body = await readBody(req, 128 * 1024);
     const text = String(body.text || '').trim().slice(0, 2000);
-    const image = String(body.image || '');
+    const requestedImages = [
+      ...(Array.isArray(body.images) ? body.images : []),
+      body.image || ''
+    ].map(value => String(value || '')).filter(Boolean);
+    const images = [...new Set(requestedImages)].slice(0,10);
+    if (requestedImages.length > 10) return json(res, 400, { error:'You can send up to 10 photos at once.' });
+    const image = images[0] || '';
     const audio = String(body.audio || '');
     const replyTo = String(body.replyTo || '');
     const repliedMessage = replyTo ? social.chatMessages.find(item => item.id === replyTo && item.chatId === chat.id) : null;
     if (replyTo && (!repliedMessage || repliedMessage.deletedAt)) return json(res, 400, { error:'That replied message is no longer available.' });
-    if (!text && !image && !audio) return json(res, 400, { error:'Write a message or attach media.' });
-    if (image) {
-      if (!image.startsWith('/uploads/')) return json(res, 400, { error:'Chat photos must be uploaded first.' });
-      if (social.uploadOwners?.[image] !== user) return forbidden(res, 'You can only send photos you uploaded.');
+    if (!text && !images.length && !audio) return json(res, 400, { error:'Write a message or attach media.' });
+    for (const src of images) {
+      if (!src.startsWith('/uploads/')) return json(res, 400, { error:'Chat photos must be uploaded first.' });
+      if (social.uploadOwners?.[src] !== user) return forbidden(res, 'You can only send photos you uploaded.');
     }
     if (audio) {
       if (!audio.startsWith('/uploads/')) return json(res, 400, { error:'Chat audio must be uploaded first.' });
@@ -1842,6 +1868,7 @@ async function handleApi(req, res, url) {
       chatId:chat.id,
       author:user,
       text,
+      images,
       image,
       audio,
       replyTo:repliedMessage?.id || null,
@@ -1877,7 +1904,7 @@ async function handleApi(req, res, url) {
           title:chat.type === 'group'
             ? `${actor.displayName || displayTag(user)} · ${decorateChat(social,chat,target).name}`
             : `${actor.displayName || displayTag(user)} sent you a message`,
-          body:text || (image ? 'Sent a photo' : 'Sent a voice message'),
+          body:text || (images.length ? (images.length === 1 ? 'Sent a photo' : `Sent ${images.length} photos`) : 'Sent a voice message'),
           tag:`chat-${chat.id}`,
           url:`/?messages=${encodeURIComponent(chat.id)}`
         });
@@ -1901,8 +1928,13 @@ async function handleApi(req, res, url) {
     if (message.author !== user) return forbidden(res, 'You can only delete messages you sent.');
     if (message.deletedAt) return json(res, 200, { message:decorateChatMessage(social,message,user) });
 
-    const removedAssets = [message.image,message.audio].filter(src => typeof src === 'string' && src.startsWith('/uploads/'));
+    const removedAssets = [...new Set([
+      ...(Array.isArray(message.images) ? message.images : []),
+      message.image || '',
+      message.audio || ''
+    ].filter(src => typeof src === 'string' && src.startsWith('/uploads/')))];
     message.text = '';
+    message.images = [];
     message.image = '';
     message.audio = '';
     message.reactions = {};
@@ -2239,7 +2271,10 @@ const server = http.createServer(async (req, res) => {
         const book = social.scrapbooks.find(b => b.id === entry.scrapbookId);
         if (!book || !canViewBook(social, book, viewer)) return forbidden(res, 'You do not have access to this scrapbook photo.');
       } else {
-        const chatMessage = social.chatMessages?.find(message => message?.image === assetPath);
+        const chatMessage = social.chatMessages?.find(message =>
+          message?.image === assetPath ||
+          (Array.isArray(message?.images) && message.images.includes(assetPath))
+        );
         if (chatMessage) {
           const chat = social.chats?.find(item => item.id === chatMessage.chatId);
           if (!chat || !canAccessChat(social, chat, viewer)) return forbidden(res, 'You do not have access to this chat photo.');
