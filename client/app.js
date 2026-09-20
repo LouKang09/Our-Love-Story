@@ -877,6 +877,21 @@ function commentNodeHtml(entry, comment, childrenMap, depth = 0) {
 function commentsHtml(entry) {
   if (!activeScrapbook || !['personal','group','couple'].includes(activeScrapbook.type)) return '';
   const comments = Array.isArray(entry.comments) ? entry.comments : [];
+  if (!isPhoneUI()) {
+    const list = comments.length ? comments.map(comment => {
+      const p = commentProfile(comment);
+      const canDelete = me && (comment.author === me.tag || activeScrapbook.owner === me.tag);
+      return `<article class="memory-comment" data-comment-id="${escapeHtml(comment.id || '')}">
+        <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
+        <p>${mentionTextHtml(comment.text || '')}</p>
+        ${canDelete ? `<button class="comment-delete" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="Delete comment">×</button>` : ''}
+      </article>`;
+    }).join('') : '<p class="comments-empty">No comments yet. Leave the first little note.</p>';
+    const composer = commentsEnabledForActiveBook()
+      ? `<form class="comment-form" data-entry-id="${escapeHtml(entry.id)}"><textarea maxlength="600" rows="2" placeholder="Write a comment… Tag someone with @tag"></textarea><button class="primary" type="submit">Post</button></form>`
+      : '';
+    return `<section class="memory-comments"><div class="comments-head"><strong>Comments</strong><span>${comments.length}</span></div><div class="comments-list">${list}</div>${composer}</section>`;
+  }
   const childrenMap = new Map();
   comments.forEach(comment => {
     if (!comment.parentId) return;
