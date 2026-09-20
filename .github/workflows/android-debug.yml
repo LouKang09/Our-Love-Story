@@ -1,7 +1,14 @@
-name: Android Debug APK
+name: Scrapella Android Debug APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "capacitor.config.json"
+      - "package.json"
+      - "client/assets/**"
+      - ".github/workflows/android-debug.yml"
 
 permissions:
   contents: read
@@ -9,7 +16,7 @@ permissions:
 jobs:
   build-android-debug:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -32,6 +39,39 @@ jobs:
       - name: Generate Android project
         run: npx cap add android
 
+      - name: Create Scrapella native artwork
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          root = Path(".")
+          logo = Image.open(root / "client/assets/scrapella-logo.webp").convert("RGBA")
+          cream = (250, 248, 242, 255)
+          resources = root / "resources"
+          resources.mkdir(exist_ok=True)
+
+          # Official app icon: exact S/heart/scrapbook crop from the chosen logo.
+          crop = logo.crop((28, 122, 246, 368))
+          icon = Image.new("RGBA", (1024, 1024), cream)
+          scale = min(900 / crop.width, 900 / crop.height)
+          crop = crop.resize((round(crop.width * scale), round(crop.height * scale)), Image.Resampling.LANCZOS)
+          icon.alpha_composite(crop, ((1024 - crop.width) // 2, (1024 - crop.height) // 2))
+          icon.save(resources / "icon.png")
+
+          # Native static launch canvas; the live two-second pencil animation starts in the WebView.
+          splash = Image.new("RGBA", (2732, 2732), cream)
+          full = logo.resize((1700, 1700), Image.Resampling.LANCZOS)
+          splash.alpha_composite(full, ((2732 - full.width)//2, (2732 - full.height)//2))
+          splash.save(resources / "splash.png")
+          PY
+
+      - name: Generate Android icons and splash assets
+        run: |
+          npm install --no-save --no-audit --no-fund @capacitor/assets
+          npx capacitor-assets generate --android
+
       - name: Sync Capacitor
         run: npx cap sync android
 
@@ -41,10 +81,10 @@ jobs:
           cd android
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload Android APK
+      - name: Upload Scrapella Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: our-love-story-android-debug
+          name: scrapella-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
