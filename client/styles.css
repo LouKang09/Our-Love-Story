@@ -6146,3 +6146,244 @@ html[data-theme="night"] .profile-image-viewer{
     min-height:360px;
   }
 }
+
+
+/* =========================================================
+   PHONE UI V12 — Book actions, invite autocomplete, dark fixes
+   ========================================================= */
+@media(max-width:800px){
+  /* #1: New Memory and Memory Stream belong inside Book on phones. */
+  .toolbar>#newEntryBtn{
+    display:none!important;
+  }
+  #streamModeBtn{
+    display:none!important;
+  }
+  .mode-switch{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  .mobile-book-actions{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:8px;
+  }
+  .mobile-book-actions button{
+    min-height:42px;
+    padding:9px 10px;
+    font:750 11px ui-sans-serif,system-ui,sans-serif;
+  }
+  .mobile-book-actions button:disabled{
+    opacity:.5;
+    cursor:not-allowed;
+  }
+
+  /* Phone People invite is suggestion-first. Desktop keeps the Invite button. */
+  .invite-form{
+    position:relative;
+    min-width:0;
+    width:min(100%,420px);
+    display:block;
+  }
+  .invite-form input{
+    width:100%;
+  }
+  .invite-submit{
+    display:none!important;
+  }
+  .invite-suggestions{
+    position:absolute;
+    z-index:90;
+    left:0;
+    right:0;
+    top:calc(100% + 6px);
+    max-height:280px;
+    overflow:auto;
+    padding:6px;
+    border:1px solid var(--line);
+    border-radius:13px;
+    background:rgba(255,250,241,.98);
+    box-shadow:0 16px 36px rgba(60,39,36,.16);
+  }
+  .invite-suggestion{
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:9px;
+    border:0;
+    border-radius:10px;
+    color:var(--ink);
+    background:transparent;
+    text-align:left;
+  }
+  .invite-suggestion:hover,
+  .invite-suggestion:focus-visible{
+    background:var(--rose-soft);
+  }
+  .invite-suggestion>span:last-child{
+    min-width:0;
+  }
+  .invite-suggestion strong,
+  .invite-suggestion small{
+    display:block;
+  }
+  .invite-suggestion strong{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font:750 12px ui-sans-serif,system-ui,sans-serif;
+  }
+  .invite-suggestion small{
+    margin-top:2px;
+    color:var(--muted);
+    font:10px ui-sans-serif,system-ui,sans-serif;
+  }
+  .invite-suggestion-empty{
+    margin:0;
+    padding:10px;
+    color:var(--muted);
+    font:10px ui-sans-serif,system-ui,sans-serif;
+  }
+
+  /* Correct the phone Messages paper-plane color in night mode. */
+  html[data-theme="night"] .mobile-header-actions .phone-message-icon{
+    color:#fff!important;
+    background:#3a3033!important;
+    border-color:rgba(242,224,218,.18)!important;
+    box-shadow:none!important;
+  }
+  html[data-theme="night"] .mobile-header-actions .phone-message-icon.active,
+  html[data-theme="night"] .mobile-header-actions .phone-message-icon.has-unread{
+    color:#fff!important;
+    background:#543943!important;
+  }
+  html[data-theme="night"] .invite-suggestions{
+    color:var(--ink)!important;
+    background:#2d2527!important;
+    border-color:var(--line)!important;
+  }
+  html[data-theme="night"] .invite-suggestion{
+    color:var(--ink)!important;
+  }
+  html[data-theme="night"] .invite-suggestion:hover,
+  html[data-theme="night"] .invite-suggestion:focus-visible{
+    background:#49363c!important;
+  }
+
+  /* #2: a modal owns the viewport while New Scrapbook is open. */
+  html:has(#scrapbookDialog[open]),
+  body:has(#scrapbookDialog[open]){
+    overflow:hidden!important;
+    overscroll-behavior:none!important;
+  }
+  #scrapbookDialog[open]{
+    overscroll-behavior:contain;
+  }
+
+  /* #3: precisely center the mobile chat controls. */
+  .chat-mobile-back{
+    display:grid!important;
+    place-items:center!important;
+    padding:0!important;
+    line-height:1!important;
+  }
+  .chat-mobile-back>span{
+    display:grid;
+    place-items:center;
+    width:100%;
+    height:100%;
+    line-height:1;
+    transform:translateY(-1px);
+  }
+  .chat-photo-button,
+  #chatSendBtn{
+    display:grid!important;
+    place-items:center!important;
+    align-content:center!important;
+    justify-content:center!important;
+    padding:0!important;
+    line-height:1!important;
+  }
+  .chat-photo-button::before,
+  #chatSendBtn::before{
+    margin:0!important;
+    line-height:1!important;
+    transform:none!important;
+  }
+  .chat-photo-button::before{
+    content:"＋"!important;
+    font:500 24px/1 ui-sans-serif,system-ui,sans-serif!important;
+  }
+  #chatSendBtn::before{
+    content:"➤"!important;
+    font:700 20px/1 ui-sans-serif,system-ui,sans-serif!important;
+  }
+
+  /* #4/#5: phone night mode uses an actual dark reading surface.
+     Desktop keeps the original paper-style night behavior. */
+  html[data-theme="night"] .paper-page,
+  html[data-theme="night"] .stream-card{
+    color:#f2e9e5!important;
+    border-color:rgba(242,224,218,.12)!important;
+    background:
+      linear-gradient(90deg,rgba(255,255,255,.018),transparent 8%),
+      radial-gradient(circle at 14% 9%,rgba(255,255,255,.028),transparent 24%),
+      #2b2426!important;
+    box-shadow:none!important;
+  }
+  html[data-theme="night"] .paper-page .entry-date,
+  html[data-theme="night"] .paper-page h2,
+  html[data-theme="night"] .paper-page .entry-meta,
+  html[data-theme="night"] .stream-card .entry-date,
+  html[data-theme="night"] .stream-card h2,
+  html[data-theme="night"] .stream-card .entry-meta{
+    color:#f2e9e5!important;
+  }
+  html[data-theme="night"] .paper-page .muted,
+  html[data-theme="night"] .stream-card .muted{
+    color:#b7a6a3!important;
+  }
+  html[data-theme="night"] .memory-comments{
+    border-top-color:rgba(242,224,218,.13)!important;
+  }
+  html[data-theme="night"] .comments-head strong{
+    color:#e19aaa!important;
+  }
+  html[data-theme="night"] .comments-head span{
+    color:#fff!important;
+    background:#543943!important;
+  }
+  html[data-theme="night"] .memory-comment{
+    color:#f2e9e5!important;
+    background:#342a2d!important;
+    border-color:rgba(242,224,218,.12)!important;
+  }
+  html[data-theme="night"] .memory-comment p,
+  html[data-theme="night"] .comment-author strong{
+    color:#f2e9e5!important;
+  }
+  html[data-theme="night"] .comment-author small{
+    color:#b7a6a3!important;
+  }
+  html[data-theme="night"] .comment-form textarea{
+    color:#f2e9e5!important;
+    background:#211b1d!important;
+    border-color:rgba(242,224,218,.14)!important;
+  }
+  html[data-theme="night"] .comment-form textarea::placeholder{
+    color:#9f8f8c!important;
+    opacity:1;
+  }
+
+  /* Keep the scrapbook canvas itself readable as authored, but remove
+     the bright outer paper that was clashing with night mode. */
+  html[data-theme="night"] .saved-canvas{
+    box-shadow:0 0 0 1px rgba(242,224,218,.07);
+  }
+}
+
+@media(max-width:480px){
+  .mobile-book-actions{
+    grid-template-columns:1fr;
+  }
+}
