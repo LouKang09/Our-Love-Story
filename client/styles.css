@@ -5862,10 +5862,12 @@ html[data-theme="night"] .profile-image-viewer{
   .connections-view{
     padding-top:24px;
   }
-  .connections-view.mobile-personal-context .connections-head h2{
+  .connections-view.mobile-personal-context .connections-head h2,
+  .connections-view.mobile-person-only-context .connections-head h2{
     display:none;
   }
-  .connections-view.mobile-personal-context .connections-head{
+  .connections-view.mobile-personal-context .connections-head,
+  .connections-view.mobile-person-only-context .connections-head{
     margin-bottom:18px;
   }
 
