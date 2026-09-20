@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Our Little Book of Us</title>
-  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui12" />
+  <link rel="stylesheet" href="/styles.css?v=20260920-phoneui13" />
 </head>
 <body>
   <div id="app">
@@ -161,13 +161,16 @@
           <button id="closeBookViewBtn" class="ghost close-book-view-btn" type="button">Close book</button>
         </div>
         <div id="bookShell" class="book-shell">
+          <button id="mobilePrevBtn" class="mobile-page-arrow mobile-page-arrow-prev" type="button" aria-label="Previous page">←</button>
           <article id="leftPage" class="paper-page left-page"></article>
           <div class="book-gutter"></div>
           <article id="rightPage" class="paper-page right-page"></article>
+          <button id="mobileNextBtn" class="mobile-page-arrow mobile-page-arrow-next" type="button" aria-label="Next page">→</button>
         </div>
       </section>
 
       <section id="streamView" class="stream-view hidden">
+        <button id="mobileStreamBackBtn" class="ghost mobile-stream-back" type="button">← Back to book</button>
         <div class="stream-heading">
           <p class="eyebrow">MEMORY STREAM</p>
           <h2>Everything, in the order you lived it.</h2>
@@ -520,6 +523,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260920-phoneui12" defer></script>
+  <script src="/app.js?v=20260920-phoneui13" defer></script>
 </body>
 </html>
