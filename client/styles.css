@@ -5600,463 +5600,436 @@ html[data-theme="night"] .profile-image-viewer{
 
 
 /* =========================================================
-   V10 — Compact mobile navigation, discovery & floating chat
+   PHONE UI V11 — isolated from desktop
    ========================================================= */
 
-/* The scrapbook title/picker now live in Profile, not the persistent header. */
-.topbar{
-  min-height:auto;
-  padding:10px clamp(12px,3vw,42px);
-}
-.toolbar{
-  width:100%;
-  margin-left:0;
-  display:grid;
-  grid-template-columns:auto minmax(0,1fr) auto;
-  align-items:center;
-  gap:10px;
-}
-.header-actions{
-  display:flex;
-  align-items:center;
-  gap:7px;
-  min-width:0;
-}
-.header-actions .small-circle,
-.header-actions .notification-btn,
-.header-actions .guide-btn,
-.messages-icon-btn{
-  width:40px;
-  min-width:40px;
-  height:40px;
-  padding:0;
-  display:grid;
-  place-items:center;
-  border:1px solid var(--line);
-  border-radius:50%;
-  color:var(--ink);
-  background:rgba(255,255,255,.68);
-  box-shadow:0 6px 16px rgba(60,39,36,.05);
-}
-.messages-icon-btn{
-  position:relative;
-}
-.messages-icon-btn svg,
-.chat-send-button svg{
-  width:20px;
-  height:20px;
-  fill:currentColor;
-}
-.messages-icon-btn .messages-badge{
-  position:absolute;
-  top:-5px;
-  right:-5px;
-}
-.mode-switch{
-  width:100%;
-  min-width:0;
-  display:grid;
-  grid-template-columns:.9fr .8fr 1.45fr .9fr;
-  overflow:visible;
-}
-.mode-switch button{
-  min-width:0;
-  padding:9px 10px;
-  text-align:center;
-}
-.toolbar>#newEntryBtn{
-  justify-self:end;
-}
-.profile-chip{
-  min-width:40px;
+.mobile-header-actions,
+.mobile-book-shelf,
+.mobile-theme-slot{
+  display:none;
 }
 
-/* Profile now owns scrapbook switching and appearance settings. */
-.profile-scrapbook-settings,
-.appearance-settings{
-  display:grid;
-  gap:12px;
-  margin-top:8px;
-  padding:15px;
-  border:1px solid var(--line);
-  border-radius:15px;
-  background:rgba(255,250,241,.72);
-}
-.profile-settings-heading h3{
-  margin:2px 0 0;
-  font-size:22px;
-  font-weight:500;
-}
-.profile-book-brand{
-  width:100%;
-  display:flex;
-  align-items:center;
-  gap:11px;
-  padding:10px 12px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  color:var(--ink);
-  background:rgba(255,255,255,.66);
-  text-align:left;
-}
-.profile-book-heart{
-  width:42px;
-  height:42px;
-  flex:0 0 42px;
-  display:grid;
-  place-items:center;
-  border-radius:50%;
-  color:#fff;
-  background:var(--rose);
-  font-size:23px;
-}
-.profile-book-brand>span:last-child{
-  min-width:0;
-}
-.profile-book-brand small,
-.profile-book-brand strong{
-  display:block;
-}
-.profile-book-brand small{
-  color:var(--muted);
-  font:800 8px ui-sans-serif,system-ui,sans-serif;
-  letter-spacing:.12em;
-}
-.profile-book-brand strong{
-  margin-top:2px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font-size:18px;
-  font-weight:600;
-}
-.appearance-settings{
-  grid-template-columns:minmax(0,1fr) auto;
-  align-items:center;
-}
-.appearance-settings strong{
-  display:block;
-  font:750 13px ui-sans-serif,system-ui,sans-serif;
-}
-.appearance-settings p{
-  margin:3px 0 0;
-  color:var(--muted);
-  font:10px/1.4 ui-sans-serif,system-ui,sans-serif;
-}
-.appearance-settings .theme-mode-btn{
-  width:auto;
-  min-width:112px;
-  height:40px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:7px;
-  padding:0 13px;
-  border-radius:999px;
-  font-size:16px;
-}
-.appearance-settings .theme-mode-btn b{
-  font:750 10px ui-sans-serif,system-ui,sans-serif;
-}
-
-/* Home begins with discovery instead of the large self-profile hero. */
-.home-view{
-  padding-top:20px;
-}
-.home-search-section{
-  position:relative;
-  display:grid;
-  gap:13px;
-}
-.home-search-copy h2{
-  margin:2px 0 7px;
-  font-size:clamp(30px,5vw,44px);
-  font-weight:500;
-  line-height:1;
-}
-.home-search-copy>p:last-child{
-  margin:0;
-  color:var(--muted);
-  line-height:1.5;
-}
-.home-search-form{
-  display:block;
-  margin-top:2px;
-}
-.home-search-form input{
-  min-height:52px;
-  font-size:15px;
-}
-.home-search-results{
-  max-height:330px;
-  overflow:auto;
-  display:grid;
-  gap:7px;
-  padding:7px;
-  border:1px solid var(--line);
-  border-radius:14px;
-  background:rgba(255,250,241,.94);
-  box-shadow:0 14px 30px rgba(60,39,36,.1);
-}
-.home-search-person{
-  min-width:0;
-}
-.home-search-follow{
-  min-width:76px;
-}
-.home-suggestions-inline{
-  min-width:0;
-  margin-top:5px;
-  padding-top:14px;
-  border-top:1px solid var(--line);
-}
-.home-suggestions-heading h3{
-  margin:2px 0 10px;
-  font-size:21px;
-  font-weight:500;
-}
-.home-suggestions{
-  display:flex;
-  gap:9px;
-  overflow-x:auto;
-  padding:2px 1px 8px;
-  scroll-snap-type:x proximity;
-  overscroll-behavior-inline:contain;
-  scrollbar-width:thin;
-}
-.home-suggestion-card{
-  flex:0 0 min(310px,86vw);
-  scroll-snap-align:start;
-}
-.home-section-head{
-  align-items:flex-start;
-}
-.home-count{
-  flex:0 0 auto;
-  color:var(--ink);
-  background:rgba(255,255,255,.74);
-  font-weight:750;
-}
-
-/* Message search is suggestion-first: no separate Start button. */
-.private-chat-form{
-  position:relative;
-  display:block;
-}
-.private-chat-form input{
-  width:100%;
-}
-.private-chat-suggestions{
-  position:absolute;
-  z-index:80;
-  left:0;
-  right:0;
-  top:calc(100% + 6px);
-  max-height:280px;
-  overflow:auto;
-  padding:6px;
-  border:1px solid var(--line);
-  border-radius:13px;
-  background:rgba(255,250,241,.98);
-  box-shadow:0 16px 36px rgba(60,39,36,.16);
-}
-.private-chat-suggestion{
-  width:100%;
-  display:flex;
-  align-items:center;
-  gap:9px;
-  padding:9px;
-  border:0;
-  border-radius:10px;
-  color:var(--ink);
-  background:transparent;
-  text-align:left;
-}
-.private-chat-suggestion:hover,
-.private-chat-suggestion:focus-visible{
-  background:var(--rose-soft);
-}
-.private-chat-suggestion>span:last-child{
-  min-width:0;
-}
-.private-chat-suggestion strong,
-.private-chat-suggestion small{
-  display:block;
-}
-.private-chat-suggestion strong{
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  font:750 12px ui-sans-serif,system-ui,sans-serif;
-}
-.private-chat-suggestion small{
-  margin-top:2px;
-  color:var(--muted);
-  font:10px ui-sans-serif,system-ui,sans-serif;
-}
-.private-chat-suggestion-empty{
-  margin:0;
-  padding:11px;
-  color:var(--muted);
-  font:11px ui-sans-serif,system-ui,sans-serif;
-}
-
-/* Simple Messenger-like composer actions. */
-.chat-photo-button,
-#chatSendBtn{
-  width:44px;
-  min-width:44px;
-  height:44px;
-  min-height:44px;
-  flex:0 0 44px;
-  padding:0;
-  border-radius:50%;
-}
-.chat-photo-button{
-  font-size:0;
-}
-.chat-photo-button>span{
-  display:block;
-  font:400 25px/1 ui-sans-serif,system-ui,sans-serif;
-}
-.chat-photo-button::before{
-  content:none!important;
-}
-.chat-send-button{
-  display:grid!important;
-  place-items:center;
-}
-.chat-send-button svg{
-  width:21px;
-  height:21px;
-}
-
-/* Strong night-mode contrast for counters and suggestion/search controls. */
-html[data-theme="night"] .home-count,
-html[data-theme="night"] .home-search-results,
-html[data-theme="night"] .private-chat-suggestions,
-html[data-theme="night"] .profile-scrapbook-settings,
-html[data-theme="night"] .appearance-settings,
-html[data-theme="night"] .profile-book-brand{
-  color:var(--ink);
-  background:#2d2427;
-  border-color:var(--line);
-}
-html[data-theme="night"] .home-count{
-  background:#44363a;
-}
-html[data-theme="night"] .home-search-follow.ghost,
-html[data-theme="night"] .home-follow-suggestion.ghost,
-html[data-theme="night"] .follow-stat-button{
-  color:var(--ink)!important;
-}
-html[data-theme="night"] .private-chat-suggestion{
-  color:var(--ink);
-}
-html[data-theme="night"] .private-chat-suggestion:hover,
-html[data-theme="night"] .private-chat-suggestion:focus-visible{
-  background:#49363c;
-}
-html[data-theme="night"] .header-actions .small-circle,
-html[data-theme="night"] .messages-icon-btn{
-  color:var(--ink);
-  background:rgba(55,44,47,.9);
-}
-
-/* Phone layout: one stable nav row and a conversation that owns the viewport below it. */
 @media(max-width:800px){
+  /* ---- Header: phone only ---- */
   .topbar{
-    padding:8px 9px;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:8px;
+    padding:9px 10px;
+  }
+  .topbar>.brand-button,
+  .topbar>.scrapbook-picker-wrap{
+    display:none!important;
   }
   .toolbar{
-    grid-template-columns:1fr;
-    gap:7px;
-  }
-  .header-actions{
+    order:1;
     width:100%;
-    gap:6px;
+    margin:0;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:7px;
+    overflow:visible;
+    padding:0;
   }
-  .header-actions .profile-chip{
-    margin-left:auto;
-  }
-  .profile-chip{
-    width:40px;
-    max-width:40px;
-    height:40px;
-    padding:4px;
-    justify-content:center;
-    border-radius:50%;
-  }
-  .profile-chip span:last-child{
-    display:none;
-  }
-  .mini-avatar{
-    width:30px;
-    height:30px;
-  }
-  .logout-btn{
-    min-height:40px;
-    padding:8px 11px;
-    font-size:11px;
+  .toolbar>#newEntryBtn{
+    order:-1;
+    width:100%;
+    min-height:42px;
+    padding:9px 14px;
   }
   .mode-switch{
     width:100%;
     max-width:none;
-    grid-template-columns:.9fr .78fr 1.4fr .88fr;
+    display:grid;
+    grid-template-columns:.9fr .78fr 1.45fr .9fr;
+    gap:2px;
+    flex:0 0 auto;
     overflow:visible;
   }
   .mode-switch button{
+    min-width:0;
     width:100%;
-    padding:9px 4px;
+    padding:9px 3px;
     font-size:11px;
+    text-align:center;
   }
-  .toolbar>#newEntryBtn{
+  .mobile-header-actions{
+    order:2;
     width:100%;
-    justify-self:stretch;
-    padding:9px 14px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .mobile-header-actions .small-circle,
+  .mobile-header-actions .profile-chip,
+  .mobile-header-actions .messages-mode-btn,
+  .mobile-header-actions .notification-btn,
+  .mobile-header-actions .guide-btn{
+    width:40px;
+    min-width:40px;
+    height:40px;
+    padding:0;
+    display:grid!important;
+    place-items:center;
+    border:1px solid var(--line);
+    border-radius:50%;
+    color:var(--ink);
+    background:rgba(255,255,255,.68);
+    box-shadow:0 6px 16px rgba(60,39,36,.05);
+  }
+  .mobile-header-actions .profile-chip{
+    max-width:40px;
+  }
+  .mobile-header-actions .profile-chip span:last-child{
+    display:none;
+  }
+  .mobile-header-actions .logout-btn{
+    min-height:40px;
+    padding:8px 14px;
+    white-space:nowrap;
+  }
+  .phone-message-icon{
+    position:relative;
+    font-size:0!important;
+  }
+  .phone-message-icon svg{
+    width:21px;
+    height:21px;
+    fill:currentColor;
+  }
+  .phone-message-icon .messages-badge{
+    position:absolute;
+    top:-5px;
+    right:-5px;
+    font-size:8px;
+  }
+  .mobile-header-actions .notification-wrap{
+    position:relative;
   }
 
-  .home-view{
-    width:min(100% - 16px,760px);
-    padding:14px 0 52px;
+  /* ---- #1 Profile header no longer sticks over the photo ---- */
+  #profileDialog .editor-head{
+    position:static!important;
+    top:auto!important;
+    z-index:auto!important;
+    margin:0!important;
+    padding:0!important;
+    background:transparent!important;
+    border-bottom:0!important;
+    box-shadow:none!important;
+  }
+  #profileDialog .small-card{
+    scroll-padding-top:0;
+  }
+
+  /* ---- Theme is a phone profile setting ---- */
+  .mobile-theme-slot{
+    display:block;
+  }
+  .mobile-theme-slot:empty{
+    display:none;
+  }
+  .mobile-theme-slot .theme-mode-btn{
+    width:100%;
+    min-width:0;
+    height:50px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    padding:0 14px;
+    border:1px solid var(--line);
+    border-radius:14px;
+    color:var(--ink);
+    background:rgba(255,255,255,.55);
+  }
+  .mobile-theme-slot .theme-mode-btn b{
+    font:750 12px ui-sans-serif,system-ui,sans-serif;
+  }
+
+  /* ---- #2 Scrapbook selector now lives inside Book on phones ---- */
+  .book-view{
+    padding-top:12px;
+  }
+  .mobile-book-shelf{
+    width:min(680px,100%);
+    margin:0 auto 14px;
+    display:grid;
+    gap:10px;
+    padding:14px;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:rgba(255,250,241,.66);
+    box-shadow:0 10px 30px rgba(60,39,36,.06);
+  }
+  .mobile-book-back{
+    justify-self:start;
+    padding:8px 11px;
+    font-size:10px;
+  }
+  .mobile-book-context-person{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .mobile-book-context-avatar{
+    width:46px;
+    height:46px;
+  }
+  .mobile-book-context-person>span{
+    min-width:0;
+  }
+  .mobile-book-context-person strong,
+  .mobile-book-context-person small{
+    display:block;
+  }
+  .mobile-book-context-person strong{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:22px;
+    font-weight:500;
+  }
+  .mobile-book-context-person small{
+    margin-top:2px;
+    color:var(--muted);
+    font:10px/1.35 ui-sans-serif,system-ui,sans-serif;
+  }
+  .mobile-book-picker-slot select{
+    width:100%;
+    min-height:48px;
+    font:750 12px ui-sans-serif,system-ui,sans-serif;
+  }
+
+  /* ---- Home phone discovery remains compact; desktop remains old ---- */
+  .home-hero{
+    display:none!important;
   }
   .home-search-section{
-    padding:17px 14px;
+    padding:18px 15px;
   }
-  .home-search-copy h2{
-    font-size:31px;
+  #homeSearchForm{
+    display:block;
   }
-  .home-search-copy>p:last-child{
-    font-size:13px;
+  #homeSearchForm>button{
+    display:none!important;
   }
-  .home-search-person{
-    grid-template-columns:auto minmax(0,1fr) auto;
-    gap:8px;
-    padding:9px;
+  #homeSearchInput{
+    width:100%;
   }
-  .home-search-follow{
-    min-width:68px;
-    padding:8px 10px;
-    font-size:10px;
+  #homeSuggestionsSection{
+    margin-top:10px;
+    padding-top:14px;
+    border-top:1px solid var(--line);
   }
-  .home-section{
-    margin-top:21px;
+  #homeSuggestionsSection .home-section-head{
+    margin-bottom:10px;
   }
-  .home-section-head{
+  #homeSuggestionsSection .home-section-head h3{
+    font-size:21px;
+  }
+  .home-suggestions{
+    display:flex;
     gap:9px;
-  }
-  .home-section-head h3{
-    margin-top:2px;
-    font-size:23px;
-    line-height:1.08;
-  }
-  .home-count{
-    margin-top:1px;
-    padding:6px 8px;
-    font-size:10px;
+    overflow-x:auto;
+    padding:2px 1px 8px;
+    scroll-snap-type:x proximity;
+    overscroll-behavior-inline:contain;
   }
   .home-suggestion-card{
-    flex-basis:min(285px,84vw);
+    flex:0 0 min(300px,84vw);
+    scroll-snap-align:start;
+  }
+  .home-section-head{
+    align-items:flex-start;
+  }
+  .home-count{
+    flex:0 0 auto;
+    padding:6px 8px;
+    border:1px solid var(--line);
+    border-radius:999px;
+    color:var(--ink);
+    background:rgba(255,255,255,.68);
+    font:750 10px ui-sans-serif,system-ui,sans-serif;
+  }
+
+  /* ---- #4 Follow People is redundant on phone ---- */
+  .connections-view .follow-panel{
+    display:none!important;
+  }
+  .connections-view{
+    padding-top:24px;
+  }
+  .connections-view.mobile-personal-context .connections-head h2{
+    display:none;
+  }
+  .connections-view.mobile-personal-context .connections-head{
+    margin-bottom:18px;
+  }
+
+  /* ---- #5/#6 Profile-like transparent People hierarchy ---- */
+  .people-map{
+    min-height:380px;
+    padding:8px 0 18px;
+    border:0!important;
+    border-radius:0;
+    background:transparent!important;
+    box-shadow:none!important;
+  }
+  .group-network{
+    width:100%;
+    min-height:430px;
+    background:transparent!important;
+  }
+  .network-person,
+  .personal-owner-card,
+  .bound-profile,
+  .profile-card-button{
+    border:0!important;
+    outline:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+    color:var(--ink)!important;
+  }
+  .network-person{
+    padding:0!important;
+  }
+  .network-person strong{
+    color:var(--ink)!important;
+    font-weight:800!important;
+  }
+  .network-person>span:last-child,
+  .personal-owner-card>span:not(.avatar),
+  .bound-profile>span:last-child{
+    color:var(--ink)!important;
+    font-weight:800!important;
+    opacity:.94;
+  }
+  .personal-owner-card{
+    width:auto;
+    padding:0!important;
+  }
+  .personal-owner-card strong{
+    color:var(--ink)!important;
+    font-weight:700;
+  }
+  .personal-owner-card small{
+    border:1px solid rgba(146,86,97,.25);
+  }
+  .group-network svg{
+    pointer-events:none;
+  }
+
+  /* ---- #3 Reminder blends into night mode ---- */
+  html[data-theme="night"] #profileDialog .notification-settings{
+    color:var(--ink)!important;
+    background:#332a2d!important;
+    border-color:var(--line)!important;
+    box-shadow:none!important;
+  }
+  html[data-theme="night"] #profileDialog .notification-settings>div strong,
+  html[data-theme="night"] #profileDialog .notification-settings label{
+    color:var(--ink)!important;
+  }
+  html[data-theme="night"] #profileDialog .notification-settings>div p,
+  html[data-theme="night"] #profileDialog .notification-settings .helper{
+    color:var(--muted)!important;
+  }
+  html[data-theme="night"] #profileDialog .notification-settings input{
+    color:var(--ink)!important;
+    background:#211b1d!important;
+    border-color:var(--line)!important;
+  }
+  html[data-theme="night"] .mobile-book-shelf,
+  html[data-theme="night"] .mobile-theme-slot .theme-mode-btn{
+    color:var(--ink)!important;
+    background:#2d2427!important;
+    border-color:var(--line)!important;
+  }
+  html[data-theme="night"] .home-count{
+    color:#fff!important;
+    background:#44363a!important;
+  }
+  html[data-theme="night"] .people-map,
+  html[data-theme="night"] .group-network,
+  html[data-theme="night"] .network-person,
+  html[data-theme="night"] .personal-owner-card,
+  html[data-theme="night"] .bound-profile,
+  html[data-theme="night"] .profile-card-button{
+    color:#fff!important;
+    background:transparent!important;
+  }
+  html[data-theme="night"] .network-person strong,
+  html[data-theme="night"] .network-person>span:last-child,
+  html[data-theme="night"] .personal-owner-card strong,
+  html[data-theme="night"] .personal-owner-card>span:not(.avatar),
+  html[data-theme="night"] .bound-profile strong,
+  html[data-theme="night"] .bound-profile>span:last-child{
+    color:#fff!important;
+    font-weight:800!important;
+  }
+
+  /* ---- Mobile Messages from the prior approved phone update ---- */
+  .private-chat-form{
+    position:relative;
+    grid-template-columns:1fr!important;
+  }
+  .private-chat-start{
+    display:none!important;
+  }
+  .private-chat-suggestions{
+    position:absolute;
+    z-index:80;
+    left:0;
+    right:0;
+    top:calc(100% + 6px);
+    max-height:280px;
+    overflow:auto;
+    padding:6px;
+    border:1px solid var(--line);
+    border-radius:13px;
+    background:rgba(255,250,241,.98);
+    box-shadow:0 16px 36px rgba(60,39,36,.16);
+  }
+  .private-chat-suggestion{
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:9px;
+    border:0;
+    border-radius:10px;
+    color:var(--ink);
+    background:transparent;
+    text-align:left;
+  }
+  .private-chat-suggestion>span:last-child{
+    min-width:0;
+  }
+  .private-chat-suggestion strong,
+  .private-chat-suggestion small{
+    display:block;
+  }
+  .private-chat-suggestion strong{
+    font:750 12px ui-sans-serif,system-ui,sans-serif;
+  }
+  .private-chat-suggestion small{
+    margin-top:2px;
+    color:var(--muted);
+    font:10px ui-sans-serif,system-ui,sans-serif;
+  }
+  .private-chat-suggestion-empty{
+    margin:0;
+    padding:10px;
+    color:var(--muted);
+    font:10px ui-sans-serif,system-ui,sans-serif;
+  }
+  html[data-theme="night"] .private-chat-suggestions{
+    color:var(--ink);
+    background:#2d2527;
+    border-color:var(--line);
   }
 
   .messages-view.chat-open{
@@ -6080,12 +6053,6 @@ html[data-theme="night"] .messages-icon-btn{
     min-height:0;
     max-height:none;
   }
-  .messages-view.chat-open .messages-shell{
-    border-radius:14px;
-  }
-  .messages-view.chat-open .chat-panel{
-    display:block;
-  }
   .messages-view.chat-open .active-chat{
     display:grid;
     grid-template-rows:auto minmax(0,1fr) auto;
@@ -6099,95 +6066,81 @@ html[data-theme="night"] .messages-icon-btn{
     bottom:auto;
     z-index:5;
   }
-  .chat-composer{
-    grid-template-columns:minmax(0,1fr) auto;
-    align-items:end;
-    padding:8px 9px calc(8px + env(safe-area-inset-bottom));
-  }
-  .chat-composer textarea{
-    grid-column:1;
-    grid-row:1;
-    min-height:44px;
-    max-height:92px;
-    resize:none;
-  }
-  .chat-compose-actions{
-    grid-column:2;
-    grid-row:1;
-    align-items:center;
-    justify-content:flex-end;
-    gap:5px;
-  }
   .chat-photo-button,
   #chatSendBtn{
-    flex:0 0 42px;
     width:42px;
     min-width:42px;
     height:42px;
     min-height:42px;
+    padding:0!important;
+    flex:0 0 42px;
+    display:grid!important;
+    place-items:center;
+    border-radius:50%;
+    font-size:0!important;
   }
-  .private-chat-form{
-    grid-template-columns:1fr!important;
+  .chat-photo-button::before{
+    content:"＋";
+    font:400 25px/1 ui-sans-serif,system-ui,sans-serif;
+  }
+  #chatSendBtn::before{
+    content:"➤";
+    display:block;
+    font:700 20px/1 ui-sans-serif,system-ui,sans-serif;
+    transform:rotate(-8deg);
+  }
+  .chat-composer{
+    grid-template-columns:minmax(0,1fr) auto!important;
+    align-items:end;
+  }
+  .chat-composer textarea{
+    grid-column:1!important;
+    grid-row:1!important;
+    resize:none;
+  }
+  .chat-compose-actions{
+    grid-column:2!important;
+    grid-row:1!important;
+    justify-content:flex-end!important;
+    align-items:center!important;
+    gap:5px;
+  }
+  .chat-composer>.helper{
+    display:none;
   }
 }
 
 @media(max-width:480px){
-  .header-actions .small-circle,
-  .header-actions .notification-btn,
-  .header-actions .guide-btn,
-  .messages-icon-btn,
-  .profile-chip{
+  .mobile-header-actions{
+    gap:5px;
+  }
+  .mobile-header-actions .small-circle,
+  .mobile-header-actions .profile-chip,
+  .mobile-header-actions .messages-mode-btn,
+  .mobile-header-actions .notification-btn,
+  .mobile-header-actions .guide-btn{
     width:38px;
     min-width:38px;
     height:38px;
   }
-  .header-actions{
-    gap:5px;
-  }
-  .logout-btn{
-    padding:7px 9px;
+  .mobile-header-actions .logout-btn{
+    padding:7px 10px;
     font-size:10px;
   }
   .mode-switch button{
     padding:8px 2px;
     font-size:10px;
   }
-  .home-search-copy h2{
-    font-size:28px;
+  .mobile-book-shelf{
+    padding:12px;
   }
-  .home-section-head{
-    display:grid;
-    grid-template-columns:minmax(0,1fr) auto;
-  }
-  .home-section-head h3{
-    font-size:21px;
+  .mobile-book-context-person strong{
+    font-size:20px;
   }
   .home-suggestion-card{
     flex-basis:82vw;
-    grid-template-columns:auto minmax(0,1fr);
   }
-  .home-follow-suggestion{
-    grid-column:2;
-    justify-self:start;
-  }
-  .chat-composer{
-    grid-template-columns:minmax(0,1fr) auto!important;
-  }
-  .chat-composer textarea{
-    grid-column:1!important;
-    grid-row:1!important;
-  }
-  .chat-compose-actions{
-    grid-column:2!important;
-    grid-row:1!important;
-    justify-content:flex-end!important;
-  }
-  .chat-photo-button,
-  #chatSendBtn{
-    flex:0 0 40px!important;
-    width:40px!important;
-    min-width:40px!important;
-    height:40px!important;
-    min-height:40px!important;
+  .people-map{
+    min-height:360px;
   }
 }
