@@ -5051,6 +5051,11 @@ function setPendingChatPhotos(fileList,input,{append=false}={}) {
     if(!append) clearPendingChatImage();
     return;
   }
+  if(append && pendingChatFiles.length >= 10){
+    if(input)input.value='';
+    showToast('10 photos selected. Remove one before adding another.');
+    return;
+  }
   const valid=[];
   for(const file of selected){
     if(!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type)){
@@ -5064,27 +5069,50 @@ function setPendingChatPhotos(fileList,input,{append=false}={}) {
     valid.push(file);
   }
   const existing=append ? [...pendingChatFiles] : [];
-  const combined=[...existing,...valid].slice(0,10);
-  if(existing.length+valid.length>10) showToast('You can select up to 10 photos at once.');
+  const available=Math.max(0,10-existing.length);
+  const accepted=valid.slice(0,available);
+  if(valid.length>available) showToast(available ? `Only ${available} more photo${available===1?'':'s'} can be added.` : '10 photos selected. Remove one before adding another.');
   if(!append) clearPendingChatImage();
-  else{
-    pendingChatPreviewUrls.forEach(()=>{});
-  }
   if(append){
-    const newFiles=combined.slice(existing.length);
-    pendingChatFiles=combined;
-    pendingChatPreviewUrls=[...pendingChatPreviewUrls,...newFiles.map(file=>URL.createObjectURL(file))].slice(0,10);
+    pendingChatFiles=[...existing,...accepted];
+    pendingChatPreviewUrls=[...pendingChatPreviewUrls,...accepted.map(file=>URL.createObjectURL(file))];
   }else{
-    pendingChatFiles=combined;
-    pendingChatPreviewUrls=combined.map(file=>URL.createObjectURL(file));
+    pendingChatFiles=accepted;
+    pendingChatPreviewUrls=accepted.map(file=>URL.createObjectURL(file));
   }
   if(input)input.value='';
   renderPendingChatImage();
 }
 $('#chatPhotoInput').addEventListener('change',()=>setPendingChatPhotos($('#chatPhotoInput').files,$('#chatPhotoInput')));
 $('#chatCameraInput')?.addEventListener('change',()=>setPendingChatPhotos($('#chatCameraInput').files,$('#chatCameraInput'),{append:true}));
-$('#chatGalleryBtn')?.addEventListener('click',()=>$('#chatPhotoInput')?.click());
+$('#chatGalleryBtn')?.addEventListener('click',()=>{
+  if(pendingChatFiles.length>=10){
+    showToast('10 photos selected. Remove one before adding another.');
+    return;
+  }
+  $('#chatPhotoInput')?.click();
+});
 wireChatMicHold();
+async function uploadChatPhotoBatch(files,onProgress){
+  const queue=[...(files || [])];
+  if(!queue.length)return [];
+  const results=new Array(queue.length);
+  let nextIndex=0;
+  let completed=0;
+  const worker=async()=>{
+    while(true){
+      const index=nextIndex++;
+      if(index>=queue.length)return;
+      const uploaded=await uploadImage(queue[index]);
+      results[index]=uploaded?.src || '';
+      completed+=1;
+      onProgress?.(completed,queue.length);
+    }
+  };
+  const workerCount=Math.min(3,queue.length);
+  await Promise.all(Array.from({length:workerCount},()=>worker()));
+  return results.filter(Boolean);
+}
 $('#chatComposer').addEventListener('submit', async e => {
   e.preventDefault();
   if (!activeChatId) return;
@@ -5094,18 +5122,28 @@ $('#chatComposer').addEventListener('submit', async e => {
     return;
   }
   const sendBtn = $('#chatSendBtn');
+  const helper=$('.chat-media-helper');
+  const originalHelper=helper?.innerHTML || '';
   sendBtn.disabled = true;
+  sendBtn.setAttribute('aria-busy','true');
   try {
-    const images = [];
-    let audio = '';
-    for(const file of pendingChatFiles){
-      const uploaded = await uploadImage(file);
-      if(uploaded.src) images.push(uploaded.src);
+    const filesToSend=[...pendingChatFiles].slice(0,10);
+    if(filesToSend.length){
+      if(helper)helper.textContent=`Preparing ${filesToSend.length} photo${filesToSend.length===1?'':'s'}…`;
+      showToast(`Sending ${filesToSend.length} photo${filesToSend.length===1?'':'s'}…`);
     }
+    const images = await uploadChatPhotoBatch(filesToSend,(done,total)=>{
+      if(helper)helper.textContent=`Uploading photos ${done}/${total}…`;
+      sendBtn.setAttribute('aria-label',`Sending photos ${done} of ${total}`);
+    });
+    let audio = '';
     if (pendingChatAudioFile) {
+      if(helper)helper.textContent='Uploading voice message…';
       const uploaded = await uploadAttachment(pendingChatAudioFile);
       audio = uploaded.src || '';
     }
+    if(filesToSend.length && images.length!==filesToSend.length) throw new Error('One or more photos could not be uploaded.');
+    if(helper)helper.textContent='Sending message…';
     await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, {
       method:'POST',
       body:JSON.stringify({ text, images, image:images[0] || '', audio, replyTo:pendingChatReply?.id || '' })
@@ -5116,12 +5154,14 @@ $('#chatComposer').addEventListener('submit', async e => {
     if(chatMediaRecorder?.state==='recording')chatMediaRecorder.stop();
     stopChatMediaStream();
     clearPendingChatReply();
-    await loadChatMessages(activeChatId);
-    await loadChats();
+    await Promise.all([loadChatMessages(activeChatId),loadChats()]);
   } catch (err) {
     showToast(err.message || 'Could not send that message.');
   } finally {
+    if(helper)helper.innerHTML=originalHelper;
     sendBtn.disabled = false;
+    sendBtn.removeAttribute('aria-busy');
+    sendBtn.setAttribute('aria-label','Send');
     $('#chatText').focus({ preventScroll:true });
   }
 });
