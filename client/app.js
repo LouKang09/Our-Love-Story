@@ -3161,7 +3161,30 @@ function renderPendingChatAudio() {
     return;
   }
   host.classList.remove('hidden');
-  host.innerHTML=`<div><audio controls src="${escapeHtml(pendingChatAudioUrl)}"></audio><span>Voice message</span><button id="removeChatAudioBtn" type="button" aria-label="Remove voice message">×</button></div>`;
+  host.innerHTML=`<div class="pending-voice-pill">
+    <button id="pendingVoicePlayBtn" type="button" aria-label="Play recorded voice"><span>▶</span></button>
+    <div class="pending-voice-wave">${chatVoiceBars()}</div>
+    <span id="pendingVoiceDuration">0:00</span>
+    <button id="removeChatAudioBtn" type="button" aria-label="Remove voice message">×</button>
+    <audio preload="metadata" src="${escapeHtml(pendingChatAudioUrl)}"></audio>
+  </div>`;
+  const audio=host.querySelector('audio');
+  const play=$('#pendingVoicePlayBtn');
+  const duration=$('#pendingVoiceDuration');
+  const bars=[...host.querySelectorAll('.pending-voice-wave i')];
+  const paint=()=>{
+    const total=Number(audio?.duration)||0;
+    const ratio=total?Math.max(0,Math.min(1,(Number(audio?.currentTime)||0)/total)):0;
+    bars.forEach((bar,index)=>bar.classList.toggle('played',(index+1)/bars.length<=ratio));
+    if(duration)duration.textContent=formatAudioTime(audio?.paused ? total : audio?.currentTime);
+    if(play?.querySelector('span'))play.querySelector('span').textContent=audio?.paused?'▶':'Ⅱ';
+  };
+  audio?.addEventListener('loadedmetadata',paint);
+  audio?.addEventListener('timeupdate',paint);
+  audio?.addEventListener('pause',paint);
+  audio?.addEventListener('play',paint);
+  audio?.addEventListener('ended',()=>{audio.currentTime=0;paint();});
+  play?.addEventListener('click',()=>{if(audio?.paused)audio.play().catch(()=>{});else audio?.pause();});
   $('#removeChatAudioBtn')?.addEventListener('click',clearPendingChatAudio);
 }
 function clearPendingChatAudio() {
@@ -3176,17 +3199,89 @@ function stopChatMediaStream() {
     chatMediaStream=null;
   }
 }
-async function toggleChatAudioRecording() {
-  const button=$('#chatMicBtn');
-  if(!button||!isPhoneUI())return;
-  if(chatMediaRecorder && chatMediaRecorder.state==='recording'){
-    chatMediaRecorder.stop();
-    return;
+function stopChatAudioVisualizer() {
+  if(chatAudioAnimationFrame)cancelAnimationFrame(chatAudioAnimationFrame);
+  chatAudioAnimationFrame=null;
+  clearInterval(chatRecordTicker);
+  chatRecordTicker=null;
+  if(chatAudioContext){
+    try{chatAudioContext.close();}catch{}
   }
+  chatAudioContext=null;
+  chatAudioAnalyser=null;
+  $('#chatRecordingOverlay')?.classList.add('hidden');
+  $('#chatRecordingOverlay')?.classList.remove('cancel-ready');
+}
+function startChatAudioVisualizer(stream,mode='tap') {
+  const host=$('#chatRecordingOverlay');
+  if(!host)return;
+  host.classList.remove('hidden');
+  host.classList.toggle('hold-recording',mode==='hold');
+  host.innerHTML=`<div class="chat-live-recording">
+    <button class="chat-record-trash" type="button" aria-label="Cancel voice recording">⌫</button>
+    <div class="chat-record-live-pill">
+      <span class="chat-record-status-dot"></span>
+      <div class="chat-record-wave">${chatVoiceBars()}</div>
+      <strong id="chatRecordTime">0:00</strong>
+    </div>
+    <small id="chatRecordHint">${mode==='hold'?'Slide left to cancel · release to send':'Tap microphone again to stop'}</small>
+  </div>`;
+  host.querySelector('.chat-record-trash')?.addEventListener('click',()=>stopChatAudioRecording({cancel:true}));
+  const bars=[...host.querySelectorAll('.chat-record-wave i')];
+  const updateTime=()=>{const el=$('#chatRecordTime');if(el)el.textContent=formatAudioTime((Date.now()-chatRecordingStartedAt)/1000);};
+  updateTime();
+  chatRecordTicker=setInterval(updateTime,250);
+  try{
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(AudioCtx){
+      chatAudioContext=new AudioCtx();
+      const source=chatAudioContext.createMediaStreamSource(stream);
+      chatAudioAnalyser=chatAudioContext.createAnalyser();
+      chatAudioAnalyser.fftSize=64;
+      source.connect(chatAudioAnalyser);
+      const data=new Uint8Array(chatAudioAnalyser.frequencyBinCount);
+      const draw=()=>{
+        if(!chatAudioAnalyser)return;
+        chatAudioAnalyser.getByteFrequencyData(data);
+        bars.forEach((bar,index)=>{
+          const value=data[Math.min(data.length-1,Math.floor(index*data.length/bars.length))]||0;
+          bar.style.setProperty('--live',String(Math.max(.18,value/255)));
+        });
+        chatAudioAnimationFrame=requestAnimationFrame(draw);
+      };
+      draw();
+    }
+  }catch{}
+}
+async function sendChatVoiceFile(file) {
+  if(!activeChatId||!file)return;
+  const replyId=pendingChatReply?.id || '';
+  try{
+    const uploaded=await uploadAttachment(file);
+    await api(`/api/chats/${encodeURIComponent(activeChatId)}/messages`,{
+      method:'POST',
+      body:JSON.stringify({text:'',image:'',audio:uploaded.src || '',replyTo:replyId})
+    });
+    clearPendingChatReply();
+    await loadChatMessages(activeChatId);
+    await loadChats();
+  }catch(err){
+    pendingChatAudioFile=file;
+    pendingChatAudioUrl=URL.createObjectURL(file);
+    renderPendingChatAudio();
+    showToast(err.message || 'Could not send that voice message.');
+  }
+}
+async function startChatAudioRecording(mode='tap') {
+  const button=$('#chatMicBtn');
+  if(!button||!isPhoneUI())return false;
+  if(chatMediaRecorder?.state==='recording')return true;
   if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined'){
     showToast('Voice recording is not supported by this browser.');
-    return;
+    return false;
   }
+  chatRecordingMode=mode;
+  chatRecordingDisposition=mode==='hold'?'send':'preview';
   try{
     clearPendingChatAudio();
     chatMediaStream=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -3195,16 +3290,18 @@ async function toggleChatAudioRecording() {
     chatMediaRecorder=new MediaRecorder(chatMediaStream,preferred?{mimeType:preferred}:undefined);
     chatRecordingStartedAt=Date.now();
     chatMediaRecorder.addEventListener('dataavailable',event=>{if(event.data?.size)chatAudioChunks.push(event.data);});
-    chatMediaRecorder.addEventListener('stop',()=>{
+    chatMediaRecorder.addEventListener('stop',async()=>{
+      const recorder=chatMediaRecorder;
+      const disposition=chatRecordingDisposition;
       const duration=Date.now()-chatRecordingStartedAt;
-      const type=chatMediaRecorder?.mimeType || chatAudioChunks[0]?.type || 'audio/webm';
+      const type=recorder?.mimeType || chatAudioChunks[0]?.type || 'audio/webm';
       const blob=new Blob(chatAudioChunks,{type});
-      stopChatMediaStream();
       chatMediaRecorder=null;
       chatAudioChunks=[];
+      stopChatMediaStream();
+      stopChatAudioVisualizer();
       button.classList.remove('recording');
-      button.textContent='🎙';
-      button.setAttribute('aria-label','Record voice message');
+      if(disposition==='cancel')return;
       if(duration<400||!blob.size){
         showToast('Recording was too short.');
         return;
@@ -3214,22 +3311,98 @@ async function toggleChatAudioRecording() {
         return;
       }
       const ext=type.includes('ogg')?'ogg':'webm';
-      pendingChatAudioFile=new File([blob],`voice-${Date.now()}.${ext}`,{type,lastModified:Date.now()});
-      pendingChatAudioUrl=URL.createObjectURL(pendingChatAudioFile);
-      renderPendingChatAudio();
+      const file=new File([blob],`voice-${Date.now()}.${ext}`,{type,lastModified:Date.now()});
+      if(disposition==='send') await sendChatVoiceFile(file);
+      else{
+        pendingChatAudioFile=file;
+        pendingChatAudioUrl=URL.createObjectURL(file);
+        renderPendingChatAudio();
+      }
     });
-    chatMediaRecorder.start(250);
+    chatMediaRecorder.start(180);
     button.classList.add('recording');
-    button.textContent='■';
-    button.setAttribute('aria-label','Stop voice recording');
-    showToast('Recording… tap the microphone again to stop.');
+    startChatAudioVisualizer(chatMediaStream,mode);
+    if(mode==='hold' && !chatMicHoldActive){
+      stopChatAudioRecording({send:chatRecordingDisposition!=='cancel',cancel:chatRecordingDisposition==='cancel'});
+    }
+    return true;
   }catch(err){
     stopChatMediaStream();
+    stopChatAudioVisualizer();
     chatMediaRecorder=null;
     button.classList.remove('recording');
-    button.textContent='🎙';
     showToast(err?.name==='NotAllowedError'?'Microphone permission was not granted.':'Could not start voice recording.');
+    return false;
   }
+}
+function stopChatAudioRecording({send=false,cancel=false}={}) {
+  if(cancel)chatRecordingDisposition='cancel';
+  else if(send)chatRecordingDisposition='send';
+  else chatRecordingDisposition='preview';
+  if(chatMediaRecorder?.state==='recording'){
+    try{chatMediaRecorder.stop();}catch{}
+  }else{
+    stopChatMediaStream();
+    stopChatAudioVisualizer();
+  }
+}
+async function toggleChatAudioRecording() {
+  if(chatMediaRecorder?.state==='recording'){
+    stopChatAudioRecording({send:false});
+    return;
+  }
+  await startChatAudioRecording('tap');
+}
+function wireChatMicHold() {
+  const mic=$('#chatMicBtn');
+  if(!mic)return;
+  mic.addEventListener('pointerdown',e=>{
+    if(!isPhoneUI())return;
+    if(chatMediaRecorder?.state==='recording')return;
+    chatMicPointerId=e.pointerId;
+    chatMicStartX=e.clientX;
+    chatMicCancelled=false;
+    chatMicHoldActive=false;
+    clearTimeout(chatMicHoldTimer);
+    try{mic.setPointerCapture(e.pointerId);}catch{}
+    chatMicHoldTimer=setTimeout(async()=>{
+      chatMicHoldActive=true;
+      chatRecordingDisposition='send';
+      await startChatAudioRecording('hold');
+    },330);
+  });
+  mic.addEventListener('pointermove',e=>{
+    if(e.pointerId!==chatMicPointerId||!chatMicHoldActive)return;
+    const dx=e.clientX-chatMicStartX;
+    chatMicCancelled=dx<-68;
+    const overlay=$('#chatRecordingOverlay');
+    overlay?.classList.toggle('cancel-ready',chatMicCancelled);
+    const hint=$('#chatRecordHint');
+    if(hint)hint.textContent=chatMicCancelled?'Release to cancel':'Slide left to cancel · release to send';
+  });
+  const finish=e=>{
+    if(e.pointerId!==chatMicPointerId)return;
+    clearTimeout(chatMicHoldTimer);
+    const wasHold=chatMicHoldActive;
+    chatMicHoldActive=false;
+    chatMicPointerId=null;
+    if(wasHold){
+      chatRecordingDisposition=chatMicCancelled?'cancel':'send';
+      stopChatAudioRecording({send:!chatMicCancelled,cancel:chatMicCancelled});
+      return;
+    }
+    toggleChatAudioRecording();
+  };
+  mic.addEventListener('pointerup',finish);
+  mic.addEventListener('pointercancel',e=>{
+    if(e.pointerId!==chatMicPointerId)return;
+    clearTimeout(chatMicHoldTimer);
+    const wasHold=chatMicHoldActive;
+    chatMicHoldActive=false;
+    chatMicPointerId=null;
+    if(wasHold)stopChatAudioRecording({cancel:true});
+  });
+  mic.addEventListener('contextmenu',e=>e.preventDefault());
 }
 
 async function loadChats({ preserveActive = true } = {}) {
@@ -4596,7 +4769,8 @@ function setPendingChatPhoto(file,input) {
 }
 $('#chatPhotoInput').addEventListener('change',()=>setPendingChatPhoto($('#chatPhotoInput').files?.[0]||null,$('#chatPhotoInput')));
 $('#chatCameraInput')?.addEventListener('change',()=>setPendingChatPhoto($('#chatCameraInput').files?.[0]||null,$('#chatCameraInput')));
-$('#chatMicBtn')?.addEventListener('click',toggleChatAudioRecording);
+$('#chatGalleryBtn')?.addEventListener('click',()=>$('#chatPhotoInput')?.click());
+wireChatMicHold();
 $('#chatComposer').addEventListener('submit', async e => {
   e.preventDefault();
   if (!activeChatId) return;
