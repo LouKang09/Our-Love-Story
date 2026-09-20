@@ -3371,8 +3371,9 @@ function renderChatMessages({stickBottom=true}={}) {
                ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>`
                : `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(images[0])}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(images[0])}" alt="Chat photo" loading="lazy" /></button>`) : ''}
              ${chatVoiceHtml(message)}
-             ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}`}
-        <time>${escapeHtml(chatWhen(message.createdAt))}</time>
+             ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
+             ${isPhoneUI() && message.pinnedAt ? '<span class="chat-message-pinned">📌 Pinned</span>' : ''}`}
+        <time>${escapeHtml(chatWhen(message.createdAt))}${isPhoneUI() && message.editedAt ? ' · Edited' : ''}</time>
         ${!message.deleted && reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
       </div>
     </article>`;
