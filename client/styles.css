@@ -8250,3 +8250,107 @@ html[data-theme="night"] .profile-image-viewer{
     grid-row:2!important;
   }
 }
+
+
+/* =========================================================
+   PHONE UI V20 — reaction ergonomics, native-menu suppression
+   and Messenger-style deleted-message tombstones
+   ========================================================= */
+@media(max-width:800px){
+  /* Let vertical scrolling stay natural while removing native long-press menus
+     from the gesture surfaces. */
+  .chat-bubble,
+  .comment-main,
+  .chat-reaction-picker,
+  .comment-reaction-picker,
+  .reaction-viewer{
+    -webkit-touch-callout:none;
+    -webkit-user-select:none;
+    user-select:none;
+  }
+  .chat-bubble,
+  .comment-main{
+    touch-action:pan-y;
+    -webkit-tap-highlight-color:transparent;
+  }
+  img,
+  .chat-message-image-button,
+  .chat-message-image{
+    -webkit-touch-callout:none;
+    -webkit-user-drag:none;
+    user-select:none;
+  }
+  input,
+  textarea,
+  [contenteditable="true"]{
+    -webkit-user-select:text;
+    user-select:text;
+  }
+
+  /* Long-press action tray: reactions + safe delete for your own message. */
+  .chat-reaction-picker:has(.chat-delete-message-action){
+    border-radius:18px!important;
+  }
+  .chat-delete-message-action{
+    grid-column:1/-1!important;
+    width:100%!important;
+    min-width:0!important;
+    height:36px!important;
+    margin-top:3px!important;
+    padding:0 12px!important;
+    border-radius:11px!important;
+    border:1px solid rgba(213,83,105,.28)!important;
+    background:rgba(213,83,105,.12)!important;
+    color:#ff9aae!important;
+    font:800 10px/1 ui-sans-serif,system-ui,sans-serif!important;
+    letter-spacing:.01em;
+  }
+  .chat-delete-message-action:active{
+    transform:scale(.985)!important;
+    background:rgba(213,83,105,.22)!important;
+  }
+
+  /* Messenger-like tombstone keeps the conversation flow intact. */
+  .chat-message-deleted{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin:2px 0 0!important;
+    color:var(--muted)!important;
+    font:italic 10px/1.35 ui-sans-serif,system-ui,sans-serif!important;
+    opacity:.9;
+  }
+  .chat-message-deleted span{
+    font-style:normal;
+    opacity:.72;
+  }
+  .chat-message:has(.chat-message-deleted) .chat-bubble{
+    background:rgba(120,100,106,.08)!important;
+    border-style:dashed!important;
+  }
+  html[data-theme="night"] .chat-message:has(.chat-message-deleted) .chat-bubble{
+    background:#251e20!important;
+    border-color:#514047!important;
+  }
+
+  /* Your own row in the reactor sheet behaves as a remove-reaction action. */
+  .reaction-viewer-person.self-reactor{
+    background:rgba(205,127,148,.07);
+  }
+  .reaction-viewer-person.self-reactor small{
+    color:var(--rose)!important;
+    font-weight:700;
+  }
+
+  /* Faster visual acknowledgement for the custom reaction gestures. */
+  .chat-bubble:active,
+  .comment-main:active{
+    transition:transform .07s ease,filter .07s ease;
+  }
+  .chat-bubble:active{
+    filter:brightness(.985);
+  }
+  .comment-main:active{
+    opacity:.94;
+  }
+}
