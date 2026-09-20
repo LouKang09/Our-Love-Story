@@ -84,10 +84,124 @@ let mobilePrivateChatSearchTimer = null;
 let mobilePrivateChatSearchSeq = 0;
 let mobileInviteSearchTimer = null;
 let mobileInviteSearchSeq = 0;
+let phoneHistoryReady = false;
+let restoringPhoneHistory = false;
+let phoneHistoryRestoreToken = 0;
 
 function isPhoneUI() {
   return window.matchMedia(PHONE_UI_QUERY).matches;
 }
+
+function phoneHistorySnapshot(mode = currentMode, overrides = {}) {
+  return {
+    journalPhone:true,
+    mode:String(overrides.mode || mode || 'home'),
+    bookId:overrides.bookId !== undefined ? overrides.bookId : (activeScrapbook?.id || null),
+    chatId:overrides.chatId !== undefined ? overrides.chatId : ((mode === 'messages' && activeChatId) ? activeChatId : null),
+    personTag:overrides.personTag !== undefined ? overrides.personTag : ((mode === 'person' && viewedPersonData?.profile?.tag) ? viewedPersonData.profile.tag : null),
+    contextTag:overrides.contextTag !== undefined ? overrides.contextTag : (mobileBookContextTag || me?.tag || null)
+  };
+}
+function phoneHistoryKey(state) {
+  if (!state || state.journalPhone !== true) return '';
+  return [state.mode||'',state.bookId||'',state.chatId||'',state.personTag||'',state.contextTag||''].join('|');
+}
+function recordPhoneHistory(mode = currentMode, overrides = {}) {
+  if (!isPhoneUI() || !me || !phoneHistoryReady || restoringPhoneHistory) return;
+  const state = phoneHistorySnapshot(mode,overrides);
+  if (phoneHistoryKey(history.state) === phoneHistoryKey(state)) return;
+  history.pushState(state,'',location.href);
+}
+function initializePhoneHistory() {
+  if (!isPhoneUI() || !me) return;
+  const homeState = phoneHistorySnapshot('home',{ chatId:null, personTag:null, contextTag:me.tag });
+  history.replaceState({ journalPhoneRoot:true },'',location.href);
+  history.pushState(homeState,'',location.href);
+  phoneHistoryReady = true;
+}
+function closePhoneTransientLayer() {
+  if (!isPhoneUI()) return false;
+  if (editorDialog?.open) { closeEditor(); return true; }
+  if (scrapbookDialog?.open) { scrapbookDialog.close(); return true; }
+  if (profileDialog?.open) { profileDialog.close(); return true; }
+  const membersDialog = $('#chatMembersDialog');
+  if (membersDialog?.open) { membersDialog.close(); return true; }
+  if (!$('#notificationPanel')?.classList.contains('hidden')) { closeNotificationHub(); return true; }
+  if (!$('#profileImageViewer')?.classList.contains('hidden')) { closeProfileImageViewer(); return true; }
+  if (chatReactionPicker) { closeChatReactionPicker(); return true; }
+  if (guideRunning && !guideMandatory) { finishGuide({ completed:false }); return true; }
+  return false;
+}
+function clearOpenPhoneChatState() {
+  messagesView?.classList.remove('chat-open');
+  messagesView?.style.removeProperty('--mobile-chat-top');
+  activeChatId = null;
+  activeChatMessages = [];
+  clearPendingChatImage();
+  clearPendingChatReply();
+  closeChatReactionPicker();
+  if ($('#chatText')) $('#chatText').value = '';
+  $('#activeChat')?.classList.add('hidden');
+  $('#chatEmptyState')?.classList.remove('hidden');
+}
+async function restorePhoneHistoryState(state) {
+  if (!isPhoneUI() || !me || restoringPhoneHistory) return;
+  const token = ++phoneHistoryRestoreToken;
+  restoringPhoneHistory = true;
+  try {
+    const mode = ['home','cover','book','stream','connections','messages','person'].includes(state?.mode) ? state.mode : 'home';
+    const targetBookId = state?.bookId || null;
+    if (targetBookId && activeScrapbook?.id !== targetBookId) {
+      await loadSession(targetBookId);
+      if (token !== phoneHistoryRestoreToken) return;
+    }
+    mobileBookContextTag = state?.contextTag || me.tag;
+
+    if (mode === 'person' && state?.personTag) {
+      clearOpenPhoneChatState();
+      await openPersonProfile(state.personTag,{ preserveReturn:true });
+      return;
+    }
+
+    if (mode === 'messages') {
+      showView('messages');
+      await loadChats();
+      if (token !== phoneHistoryRestoreToken) return;
+      if (state?.chatId && chats.some(chat => chat.id === state.chatId)) {
+        await openChat(state.chatId);
+      } else {
+        clearOpenPhoneChatState();
+        renderChatList();
+      }
+      return;
+    }
+
+    clearOpenPhoneChatState();
+    if (mode === 'book') setBookCoverOpen(Boolean(activeScrapbook));
+    if (mode === 'cover') setBookCoverOpen(false);
+    renderScrapbookPicker();
+    renderMobileBookShelf();
+    showView(mode);
+  } catch (err) {
+    if (err?.status === 401) {
+      location.reload();
+      return;
+    }
+    clearOpenPhoneChatState();
+    showView('home');
+    showToast(err?.message || 'Could not return to that screen.');
+  } finally {
+    if (token === phoneHistoryRestoreToken) restoringPhoneHistory = false;
+  }
+}
+function phoneBackButton(fallback) {
+  if (isPhoneUI() && me && phoneHistoryReady && history.state?.journalPhone) {
+    history.back();
+    return;
+  }
+  fallback?.();
+}
+
 function compactPhoneCount(value) {
   const count = Math.max(0, Number(value) || 0);
   if (!isPhoneUI()) return String(count);
@@ -2005,6 +2119,10 @@ $('#personFollowingBtn').addEventListener('click', () => { personListMode='follo
 $('#personFollowersTab').addEventListener('click', () => { personListMode='followers'; renderPersonConnections(); });
 $('#personFollowingTab').addEventListener('click', () => { personListMode='following'; renderPersonConnections(); });
 $('#personProfileBackBtn').addEventListener('click', async () => {
+  if (isPhoneUI() && phoneHistoryReady) {
+    phoneBackButton();
+    return;
+  }
   const mode = ['home','cover','book','stream','connections','messages'].includes(personProfileReturnMode) ? personProfileReturnMode : 'connections';
   if (mode === 'home' || mode === 'connections') await refreshAndShow(mode);
   else showView(mode);
@@ -2455,7 +2573,7 @@ function renderChatHeader(chat) {
   const memberCount = Array.isArray(chat.members) ? chat.members.length : 0;
   host.innerHTML = `<button class="chat-mobile-back" type="button" aria-label="Back to conversations"><span aria-hidden="true">←</span></button><div class="chat-header-identity">${chatAvatarHtml(chat)}<div><p class="eyebrow">${chat.type === 'group' ? 'GROUP SCRAPBOOK CHAT' : 'PRIVATE MESSAGE'}</p><h3>${escapeHtml(chat.name || 'Conversation')}</h3>${chat.type === 'group' ? `<button class="chat-member-count" type="button">${memberCount} member${memberCount === 1 ? '' : 's'} · tap to view</button>` : `<button class="chat-profile-link" type="button" data-profile-tag="${escapeHtml(chat.otherProfile?.tag || '')}">@${escapeHtml(chat.otherProfile?.tag || '')}</button>`}</div></div>`;
   wireProfileLinks(host);
-  host.querySelector('.chat-mobile-back')?.addEventListener('click', closeMobileChat);
+  host.querySelector('.chat-mobile-back')?.addEventListener('click', () => phoneBackButton(closeMobileChat));
   host.querySelector('.chat-member-count')?.addEventListener('click', () => openChatMembersDialog(chat));
 }
 function chatReplySnippet(message) {
@@ -2728,7 +2846,10 @@ async function openChat(chatId) {
   if (currentMode !== 'messages') showView('messages');
   messagesView?.classList.add('chat-open');
   syncMobileChatViewport();
-  try { await loadChatMessages(chatId); }
+  try {
+    await loadChatMessages(chatId);
+    recordPhoneHistory('messages',{chatId});
+  }
   catch (err) { showToast(err.message || 'Could not open that conversation.'); }
 }
 async function startPrivateChat(tag) {
@@ -2775,6 +2896,7 @@ function showView(mode) {
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
   $('#connectionsModeBtn').classList.toggle('active', mode === 'connections' || mode === 'person');
   $('#messagesModeBtn').classList.toggle('active', mode === 'messages');
+  recordPhoneHistory(mode);
 
   const noBook = !activeScrapbook;
   const noEntries = activeScrapbook && !entries.length;
@@ -3641,10 +3763,17 @@ signupForm.addEventListener('submit', async e => {
     await enterApp(); showView('home');
   } catch (err) { $('#signupError').textContent = err.message; }
 });
+function finishSessionBootstrap(authenticated) {
+  document.body.classList.remove('auth-pending');
+  $('#sessionSplash')?.classList.add('hidden');
+  lockScreen.classList.toggle('hidden', authenticated === true);
+  journalApp.classList.toggle('hidden', authenticated !== true);
+}
 async function enterApp() {
   await loadSession();
-  lockScreen.classList.add('hidden'); journalApp.classList.remove('hidden');
+  finishSessionBootstrap(true);
   showView('home');
+  initializePhoneHistory();
   connectLiveEvents();
   if (guideState.required) setTimeout(() => startGuide(true), 180);
   else maybeOpenReminderComposer();
@@ -4548,6 +4677,31 @@ $('#deleteEntryBtn').addEventListener('click', async () => {
   } catch (err) { $('#editorError').textContent = err.message; }
 });
 
+window.addEventListener('popstate', async e => {
+  if (!isPhoneUI() || !me || !phoneHistoryReady) return;
+
+  if (closePhoneTransientLayer()) {
+    history.pushState(phoneHistorySnapshot(currentMode),'',location.href);
+    return;
+  }
+
+  const state = e.state;
+  if (!state || state.journalPhoneRoot === true || state.journalPhone !== true) {
+    restoringPhoneHistory = true;
+    try {
+      clearOpenPhoneChatState();
+      mobileBookContextTag = me.tag;
+      showView('home');
+    } finally {
+      restoringPhoneHistory = false;
+    }
+    history.pushState(phoneHistorySnapshot('home',{chatId:null,personTag:null,contextTag:me.tag}),'',location.href);
+    return;
+  }
+
+  await restorePhoneHistoryState(state);
+});
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !journalApp.classList.contains('hidden')) {
     connectLiveEvents();
@@ -4560,8 +4714,17 @@ setInterval(() => refreshNotificationCount(), 60 * 1000);
   try {
     config = await api('/api/config');
     document.title = config.title; $('#lockTitle').textContent = config.title; $('#lockSubtitle').textContent = config.subtitle;
-    try { await enterApp(); } catch (err) { if (err.status !== 401) throw err; }
+    try {
+      await enterApp();
+    } catch (err) {
+      if (err.status === 401) {
+        finishSessionBootstrap(false);
+        return;
+      }
+      throw err;
+    }
   } catch (err) {
+    finishSessionBootstrap(false);
     $('#loginError').textContent = 'The scrapbook could not start. Please try again.';
     console.error(err);
   }
@@ -4570,7 +4733,10 @@ setInterval(() => refreshNotificationCount(), 60 * 1000);
 
 window.addEventListener('resize', () => {
   syncResponsiveChrome();
-  if (isPhoneUI()) renderMobileBookShelf();
+  if (isPhoneUI()) {
+    renderMobileBookShelf();
+    if (me && !phoneHistoryReady) initializePhoneHistory();
+  }
 });
 window.addEventListener('orientationchange', () => setTimeout(syncResponsiveChrome, 120));
 syncResponsiveChrome();
