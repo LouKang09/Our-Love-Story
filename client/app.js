@@ -857,7 +857,12 @@ function commentReactions(comment) {
   const raw = comment?.reactions && typeof comment.reactions === 'object' ? comment.reactions : {};
   return Object.entries(raw).map(([emoji,tags]) => {
     const people = Array.isArray(tags) ? [...new Set(tags.filter(Boolean))] : [];
-    return { emoji, count:people.length, reactedByMe:Boolean(me?.tag && people.includes(me.tag)) };
+    return {
+      emoji,
+      count:people.length,
+      reactedByMe:Boolean(me?.tag && people.includes(me.tag)),
+      people:people.map(tag => authorProfiles[tag] || { tag, displayName:tag, avatar:'' })
+    };
   }).filter(item => item.count > 0);
 }
 function commentReactionHtml(entryId, comment) {
@@ -875,7 +880,6 @@ function commentNodeHtml(entry, comment, childrenMap, depth = 0) {
       <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
       <div class="comment-main" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}"><p>${mentionTextHtml(comment.text || '')}</p></div>
       <div class="comment-actions">
-        <button class="comment-react-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="React to comment">♡ React</button>
         <button class="comment-reply-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">Reply</button>
         ${commentReactionHtml(entry.id,comment)}
       </div>
@@ -1106,12 +1110,11 @@ function wireEntryButtons(root) {
       }
     });
   });
-  root.querySelectorAll('.comment-react-trigger').forEach(button=>button.addEventListener('click',()=>{
-    if(isPhoneUI()) showCommentReactionPicker(button.dataset.entryId,button.dataset.commentId,button);
-    else toggleCommentReaction(button.dataset.entryId,button.dataset.commentId,'👍');
-  }));
-  root.querySelectorAll('.comment-reaction-chip').forEach(button=>button.addEventListener('click',()=>{
-    toggleCommentReaction(button.dataset.entryId,button.dataset.commentId,button.dataset.emoji);
+  root.querySelectorAll('.comment-reaction-chip').forEach(button=>button.addEventListener('click',e=>{
+    e.stopPropagation();
+    const entry=entries.find(item=>item.id===button.dataset.entryId);
+    const comment=(entry?.comments || []).find(item=>item.id===button.dataset.commentId);
+    if(comment) openReactionViewer('Comment reactions',commentReactions(comment));
   }));
   wireCommentGestures(root);
   root.querySelectorAll('.comment-delete').forEach(btn => btn.addEventListener('click', async () => {
