@@ -45,6 +45,18 @@ let chatMediaRecorder = null;
 let chatMediaStream = null;
 let chatAudioChunks = [];
 let chatRecordingStartedAt = 0;
+let chatRecordingMode = '';
+let chatRecordingDisposition = 'preview';
+let chatMicHoldTimer = null;
+let chatMicHoldActive = false;
+let chatMicPointerId = null;
+let chatMicStartX = 0;
+let chatMicCancelled = false;
+let chatRecordTicker = null;
+let chatAudioContext = null;
+let chatAudioAnalyser = null;
+let chatAudioAnimationFrame = null;
+let reactionViewer = null;
 let viewedPersonData = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
@@ -2765,6 +2777,117 @@ function renderChatHeader(chat) {
   host.querySelector('.chat-mobile-back')?.addEventListener('click', () => phoneBackButton(closeMobileChat));
   host.querySelector('.chat-member-count')?.addEventListener('click', () => openChatMembersDialog(chat));
 }
+function closeReactionViewer() {
+  if (reactionViewer) {
+    reactionViewer.remove();
+    reactionViewer = null;
+  }
+}
+function openReactionViewer(title, groups = []) {
+  if (!isPhoneUI()) return;
+  closeReactionViewer();
+  const people = [];
+  groups.forEach(group => {
+    (Array.isArray(group.people) ? group.people : []).forEach(profile => {
+      const tag = profile?.tag || '';
+      const key = `${group.emoji}:${tag}`;
+      if (!tag || people.some(item => item.key === key)) return;
+      people.push({ key, emoji:group.emoji, profile });
+    });
+  });
+  if (!people.length) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'reaction-viewer';
+  overlay.innerHTML = `<section class="reaction-viewer-sheet" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || 'Reactions')}">
+    <header><div><small>REACTIONS</small><strong>${escapeHtml(title || 'People who reacted')}</strong></div><button type="button" class="reaction-viewer-close" aria-label="Close">×</button></header>
+    <div class="reaction-viewer-list">${people.map(item => {
+      const p=item.profile || {};
+      return `<button type="button" class="reaction-viewer-person" data-profile-tag="${escapeHtml(p.tag || '')}">
+        ${avatarHtml(p,'reaction-viewer-avatar')}
+        <span><strong>${escapeHtml(p.displayName || p.tag || 'Someone')}</strong><small>@${escapeHtml(p.tag || '')}</small></span>
+        <em>${escapeHtml(item.emoji)}</em>
+      </button>`;
+    }).join('')}</div>
+  </section>`;
+  document.body.appendChild(overlay);
+  reactionViewer=overlay;
+  overlay.querySelector('.reaction-viewer-close')?.addEventListener('click',closeReactionViewer);
+  overlay.addEventListener('pointerdown',e=>{if(e.target===overlay)closeReactionViewer();});
+  overlay.querySelectorAll('[data-profile-tag]').forEach(button=>button.addEventListener('click',async()=>{
+    const tag=button.dataset.profileTag;
+    closeReactionViewer();
+    if(tag)await openPersonProfile(tag);
+  }));
+}
+function formatAudioTime(seconds) {
+  const value = Number.isFinite(Number(seconds)) ? Math.max(0,Math.floor(Number(seconds))) : 0;
+  return `${Math.floor(value/60)}:${String(value%60).padStart(2,'0')}`;
+}
+function chatVoiceBars() {
+  return Array.from({length:22},(_,i)=>`<i style="--bar:${i}"></i>`).join('');
+}
+function chatVoiceHtml(message) {
+  if (!message?.audio) return '';
+  return `<div class="chat-voice-player" data-message-id="${escapeHtml(message.id || '')}">
+    <button class="chat-voice-play" type="button" aria-label="Play voice message"><span>▶</span></button>
+    <button class="chat-voice-wave" type="button" aria-label="Seek voice message">${chatVoiceBars()}</button>
+    <span class="chat-voice-duration">0:00</span>
+    <audio preload="metadata" src="${escapeHtml(message.audio)}"></audio>
+  </div>`;
+}
+function scrollChatToMessage(messageId) {
+  const host=$('#chatMessages');
+  if(!host||!messageId)return;
+  const target=host.querySelector(`.chat-message[data-message-id="${CSS.escape(messageId)}"]`);
+  if(!target){
+    showToast('That original message is no longer available.');
+    return;
+  }
+  target.scrollIntoView({behavior:'smooth',block:'center'});
+  target.classList.remove('chat-message-jump');
+  void target.offsetWidth;
+  target.classList.add('chat-message-jump');
+  setTimeout(()=>target.classList.remove('chat-message-jump'),1400);
+}
+function wireChatVoicePlayers(host) {
+  host?.querySelectorAll('.chat-voice-player').forEach(player=>{
+    const audio=player.querySelector('audio');
+    const play=player.querySelector('.chat-voice-play');
+    const wave=player.querySelector('.chat-voice-wave');
+    const duration=player.querySelector('.chat-voice-duration');
+    const bars=[...player.querySelectorAll('.chat-voice-wave i')];
+    if(!audio||!play||!wave||!duration)return;
+    const paint=()=>{
+      const total=Number(audio.duration)||0;
+      const ratio=total?Math.max(0,Math.min(1,(Number(audio.currentTime)||0)/total)):0;
+      bars.forEach((bar,index)=>bar.classList.toggle('played',(index+1)/bars.length<=ratio));
+      duration.textContent=formatAudioTime(audio.paused ? total : audio.currentTime);
+      play.querySelector('span').textContent=audio.paused?'▶':'Ⅱ';
+    };
+    audio.addEventListener('loadedmetadata',paint);
+    audio.addEventListener('timeupdate',paint);
+    audio.addEventListener('play',()=>{
+      host.querySelectorAll('.chat-voice-player audio').forEach(other=>{if(other!==audio)other.pause();});
+      paint();
+    });
+    audio.addEventListener('pause',paint);
+    audio.addEventListener('ended',()=>{audio.currentTime=0;paint();});
+    play.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(audio.paused)audio.play().catch(()=>showToast('Could not play that voice message.'));
+      else audio.pause();
+    });
+    wave.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(!Number(audio.duration))return;
+      const rect=wave.getBoundingClientRect();
+      audio.currentTime=Math.max(0,Math.min(audio.duration,((e.clientX-rect.left)/rect.width)*audio.duration));
+      paint();
+    });
+    paint();
+  });
+}
+
 function chatReplySnippet(message) {
   if (!message) return '';
   if (message.text) return String(message.text).replace(/\s+/g,' ').trim().slice(0,110);
