@@ -807,6 +807,9 @@ function decorateChatMessage(social, message, user) {
       audio:replied.deletedAt ? '' : (replied.audio || '')
     } : null,
     reactions,
+    editedAt:message.editedAt || null,
+    pinnedAt:message.pinnedAt || null,
+    pinnedBy:message.pinnedBy || null,
     createdAt:message.createdAt
   };
 }
@@ -1917,6 +1920,65 @@ async function handleApi(req, res, url) {
       message:decorateChatMessage(social,message,user),
       unreadCount:totalChatUnread(social,user)
     });
+  }
+
+  const chatEditMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/messages\/([a-f0-9-]+)$/i);
+  if (chatEditMatch && req.method === 'PATCH') {
+    const chat = social.chats.find(item => item.id === chatEditMatch[1]);
+    if (!chat || !canAccessChat(social,chat,user)) return forbidden(res, 'You do not have access to this chat.');
+    const message = social.chatMessages.find(item => item.id === chatEditMatch[2] && item.chatId === chat.id);
+    if (!message) return notFound(res);
+    if (message.author !== user) return forbidden(res, 'You can only edit messages you sent.');
+    if (message.deletedAt) return json(res, 409, { error:'Deleted messages cannot be edited.' });
+    const body = await readBody(req, 64 * 1024);
+    const nextText = String(body.text || '').trim().slice(0,2000);
+    const hasMedia = Boolean(
+      message.audio ||
+      message.image ||
+      (Array.isArray(message.images) && message.images.length)
+    );
+    if (!nextText && !hasMedia) return json(res, 400, { error:'A message cannot be empty.' });
+    const previousText = String(message.text || '');
+    message.text = nextText;
+    message.editedAt = new Date().toISOString();
+
+    if (chat.type === 'group' && nextText) {
+      const book = social.scrapbooks.find(item => item.id === chat.scrapbookId && item.type === 'group');
+      const allowedTargets = new Set(book?.members || []);
+      await appendMentionNotifications(social, {
+        from:user,
+        text:nextText,
+        previousText,
+        kind:'chat',
+        scrapbookId:book?.id || null,
+        chatId:chat.id,
+        messageId:message.id,
+        allowedTargets
+      });
+    }
+    await writeSocial(social);
+    for (const target of chatMembers(social,chat)) {
+      emitLiveEvent(target, 'chat', { type:'message_edited', chatId:chat.id, from:user, messageId:message.id });
+    }
+    return json(res, 200, { message:decorateChatMessage(social,message,user) });
+  }
+
+  const chatPinMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/messages\/([a-f0-9-]+)\/pin$/i);
+  if (chatPinMatch && req.method === 'POST') {
+    const chat = social.chats.find(item => item.id === chatPinMatch[1]);
+    if (!chat || !canAccessChat(social,chat,user)) return forbidden(res, 'You do not have access to this chat.');
+    const message = social.chatMessages.find(item => item.id === chatPinMatch[2] && item.chatId === chat.id);
+    if (!message) return notFound(res);
+    if (message.deletedAt) return json(res, 409, { error:'Deleted messages cannot be pinned.' });
+    const body = await readBody(req, 32 * 1024);
+    const shouldPin = body.pinned !== false;
+    message.pinnedAt = shouldPin ? new Date().toISOString() : null;
+    message.pinnedBy = shouldPin ? user : null;
+    await writeSocial(social);
+    for (const target of chatMembers(social,chat)) {
+      emitLiveEvent(target, 'chat', { type:shouldPin?'message_pinned':'message_unpinned', chatId:chat.id, from:user, messageId:message.id });
+    }
+    return json(res, 200, { message:decorateChatMessage(social,message,user) });
   }
 
   const chatDeleteMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/messages\/([a-f0-9-]+)$/i);
