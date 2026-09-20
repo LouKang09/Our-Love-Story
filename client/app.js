@@ -1099,6 +1099,14 @@ function renderNotificationHub() {
     </article>`;
   }).join('');
 
+  host.querySelectorAll('.inline-mention[data-profile-tag]').forEach(button=>button.addEventListener('click',async e=>{
+    e.stopPropagation();
+    const tag=button.dataset.profileTag;
+    if(!tag)return;
+    closeNotificationHub();
+    await openPersonProfile(tag);
+  }));
+
   host.querySelectorAll('.notification-profile-link').forEach(btn => btn.addEventListener('click', async e => {
     e.stopPropagation();
     const tag = btn.dataset.tag;
