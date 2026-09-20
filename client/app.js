@@ -2987,9 +2987,14 @@ function wireChatMessageGestures(host) {
     let startX=0,startY=0;
     let swiping=false,longPressed=false,cancelled=false,gestureActive=false;
 
+    const indicator=bubble.closest('.chat-message')?.querySelector('.chat-swipe-reply-indicator');
     const resetTransform=()=>{
       bubble.style.transition='transform .16s ease';
       bubble.style.transform='';
+      if(indicator){
+        indicator.style.opacity='0';
+        indicator.style.transform='scale(.72)';
+      }
       setTimeout(()=>{bubble.style.transition='';},180);
     };
 
@@ -3002,6 +3007,11 @@ function wireChatMessageGestures(host) {
       swiping=false;
       longPressed=false;
       cancelled=false;
+      if(indicator){
+        indicator.style.left=`${Math.max(4,bubble.offsetLeft-39)}px`;
+        indicator.style.opacity='0';
+        indicator.style.transform='scale(.72)';
+      }
       holdTimer=setTimeout(()=>{
         if(cancelled||swiping)return;
         longPressed=true;
@@ -3024,8 +3034,14 @@ function wireChatMessageGestures(host) {
         swiping=true;
         cancelled=true;
         clearTimeout(holdTimer);
+        const shift=Math.min(72,Math.max(0,dx));
         bubble.style.transition='none';
-        bubble.style.transform=`translateX(${Math.min(72,Math.max(0,dx))}px)`;
+        bubble.style.transform=`translateX(${shift}px)`;
+        if(indicator){
+          const progress=Math.max(0,Math.min(1,(shift-10)/46));
+          indicator.style.opacity=String(progress);
+          indicator.style.transform=`scale(${0.72+progress*.28})`;
+        }
       }else if(Math.hypot(dx,dy)>10){
         cancelled=true;
         clearTimeout(holdTimer);
