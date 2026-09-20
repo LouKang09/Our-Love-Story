@@ -1,0 +1,96 @@
+name: Scrapella iOS Simulator App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "capacitor.config.json"
+      - "package.json"
+      - "client/assets/**"
+      - ".github/workflows/ios-simulator.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios-simulator:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install JavaScript dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Generate iOS project
+        run: npx cap add ios
+
+      - name: Create Scrapella native artwork
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          root = Path(".")
+          logo = Image.open(root / "client/assets/scrapella-logo.webp").convert("RGBA")
+          cream = (250, 248, 242, 255)
+          resources = root / "resources"
+          resources.mkdir(exist_ok=True)
+
+          crop = logo.crop((28, 122, 246, 368))
+          icon = Image.new("RGBA", (1024, 1024), cream)
+          scale = min(900 / crop.width, 900 / crop.height)
+          crop = crop.resize((round(crop.width * scale), round(crop.height * scale)), Image.Resampling.LANCZOS)
+          icon.alpha_composite(crop, ((1024 - crop.width) // 2, (1024 - crop.height) // 2))
+          icon = icon.convert("RGB")
+          icon.save(resources / "icon.png")
+
+          splash = Image.new("RGBA", (2732, 2732), cream)
+          full = logo.resize((1700, 1700), Image.Resampling.LANCZOS)
+          splash.alpha_composite(full, ((2732 - full.width)//2, (2732 - full.height)//2))
+          splash.convert("RGB").save(resources / "splash.png")
+          PY
+
+      - name: Generate iOS icons and splash assets
+        run: |
+          npm install --no-save --no-audit --no-fund @capacitor/assets
+          npx capacitor-assets generate --ios
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Build unsigned iOS Simulator app
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Upload iOS Simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrapella-ios-simulator
+          path: ios/build/Build/Products/Debug-iphonesimulator/App.app
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrapella-ios-xcode-project
+          path: ios/
+          if-no-files-found: error
+          retention-days: 30
