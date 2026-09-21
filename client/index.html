@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#6e3d46" />
   <meta name="application-name" content="Scrapella" />
   <meta name="apple-mobile-web-app-title" content="Scrapella" />
-  <link rel="icon" type="image/webp" href="/assets/scrapella-logo.webp" />
-  <link rel="shortcut icon" type="image/webp" href="/assets/scrapella-logo.webp" />
+  <link rel="icon" type="image/svg+xml" href="/assets/scrapella-favicon.svg?v=2" />
+  <link rel="shortcut icon" href="/assets/scrapella-favicon.svg?v=2" />
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260921-desktop06" />
+  <link rel="stylesheet" href="/styles.css?v=20260921-desktop07" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -179,9 +179,8 @@
             <h3>Search the scrapbook community</h3>
             <p>Search by @tag from Home, open a profile, follow them, or view a Personal scrapbook they share with you.</p>
           </div>
-          <form id="homeSearchForm" class="home-search-form">
-            <input id="homeSearchInput" placeholder="Search @tag" autocomplete="off" required />
-            <button class="primary" type="submit">Search</button>
+          <form id="homeSearchForm" class="home-search-form" role="search">
+            <input id="homeSearchInput" placeholder="Type an @tag…" autocomplete="off" aria-label="Find people by @tag" />
           </form>
           <div id="homeSearchResults" class="home-search-results hidden"></div>
         </section>
@@ -638,6 +637,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260921-desktop06" defer></script>
+  <script src="/app.js?v=20260921-desktop07" defer></script>
 </body>
 </html>
