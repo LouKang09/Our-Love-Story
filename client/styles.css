@@ -10254,3 +10254,205 @@ html[data-theme="night"] .owner-override-btn{
     background:#49383e;
   }
 }
+
+
+/* =========================================================
+   DESKTOP SCREENSHOT FIXES V3
+   Desktop-only corrections; phone layout remains unchanged.
+   ========================================================= */
+@media(min-width:801px){
+  /* Official Scrapella wordmark in the desktop header. */
+  .brand-button{
+    min-width:108px!important;
+    padding:0!important;
+    gap:0!important;
+    border-radius:10px;
+  }
+  .brand-button>span{
+    display:none!important;
+  }
+  .brand-header-logo{
+    width:108px;
+    height:48px;
+    display:block;
+    object-fit:cover;
+    object-position:center 49%;
+    border-radius:8px;
+    background:#faf8f2;
+  }
+  .brand-header-label{
+    display:none!important;
+  }
+  html[data-theme="night"] .brand-header-logo{
+    box-shadow:0 0 0 1px rgba(255,255,255,.08);
+  }
+
+  /* Desktop startup: restore the pencil-written Scrapella intro before auth. */
+  body.brand-intro-active{
+    overflow:hidden!important;
+  }
+  .brand-intro{
+    position:fixed;
+    inset:0;
+    z-index:100000;
+    display:grid!important;
+    place-items:center;
+    align-content:center;
+    gap:0;
+    padding:24px;
+    background:#faf8f2!important;
+    color:#594a48!important;
+    opacity:1;
+  }
+  .brand-intro-stage{
+    position:relative;
+    width:min(470px,58vw);
+    aspect-ratio:1/1;
+  }
+  .brand-intro-logo{
+    width:100%;
+    height:100%;
+    display:block;
+    overflow:visible;
+    filter:none!important;
+  }
+  .brand-intro-trace{
+    opacity:1;
+  }
+  .brand-trace-stroke{
+    fill:none;
+    stroke:#403532;
+    stroke-width:11;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+    stroke-dasharray:1;
+    stroke-dashoffset:1;
+  }
+  .brand-trace-stroke.s1{animation:scrapellaStroke .34s linear .05s forwards}
+  .brand-trace-stroke.s2{animation:scrapellaStroke .13s linear .38s forwards}
+  .brand-trace-stroke.s3{animation:scrapellaStroke .13s linear .50s forwards}
+  .brand-trace-stroke.s4{animation:scrapellaStroke .15s linear .62s forwards}
+  .brand-trace-stroke.s5{animation:scrapellaStroke .19s linear .76s forwards}
+  .brand-trace-stroke.s6{animation:scrapellaStroke .13s linear .94s forwards}
+  .brand-trace-stroke.s7{animation:scrapellaStroke .18s linear 1.06s forwards}
+  .brand-trace-stroke.s8{animation:scrapellaStroke .18s linear 1.23s forwards}
+  .brand-trace-stroke.s9{animation:scrapellaStroke .17s linear 1.40s forwards}
+  .brand-intro-final{
+    opacity:0;
+    animation:scrapellaFinalLogo .20s ease 1.56s forwards;
+  }
+  .brand-intro-pencil{
+    display:block;
+    filter:drop-shadow(0 3px 3px rgba(72,52,44,.22));
+  }
+  .brand-intro>p{
+    margin:-62px 0 0;
+    color:#8c7b74;
+    font:700 11px/1.2 ui-sans-serif,system-ui,sans-serif;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    opacity:0;
+    animation:scrapellaTagline .22s ease 1.58s forwards;
+  }
+  .brand-intro.brand-intro-finish{
+    animation:scrapellaIntroOut .25s ease forwards;
+    pointer-events:none;
+  }
+
+  /* Login/auth background: remove the bright upper-left spotlight. */
+  .lock-screen{
+    background:linear-gradient(145deg,#eadfd8,#d8c6bf 58%,#c8b5ae)!important;
+  }
+  .lock-screen::before,
+  .lock-screen::after{
+    display:none!important;
+    content:none!important;
+  }
+  html[data-theme="night"] .lock-screen{
+    background:linear-gradient(145deg,#21191b,#181315 58%,#100d0e)!important;
+  }
+  html[data-theme="night"] .lock-card.paper-card{
+    background:#2d2427!important;
+  }
+
+  /* Find People is type-to-search on desktop; no redundant Search button. */
+  .home-search-form{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  #homeSearchForm>button{
+    display:none!important;
+  }
+  #homeSearchInput{
+    width:100%;
+  }
+
+  /* Followers/Following are individual pills, not a full-width dark strip. */
+  .person-social-stats{
+    width:max-content;
+    max-width:100%;
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+  }
+  html[data-theme="night"] .person-social-stats{
+    background:transparent!important;
+    border-color:transparent!important;
+  }
+
+  /* Desktop message menu: consistent UI font and proper vector icons. */
+  .desktop-chat-message-menu .chat-message-action-sheet>button{
+    font:650 13px/1.2 ui-sans-serif,system-ui,sans-serif!important;
+    letter-spacing:0!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button span{
+    font:inherit!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button svg{
+    width:18px;
+    height:18px;
+    display:block;
+    fill:none!important;
+    stroke:currentColor!important;
+    stroke-width:1.9;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .desktop-chat-message-menu .chat-message-reaction-bar button{
+    font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif!important;
+    line-height:1!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet{
+    font-family:ui-sans-serif,system-ui,sans-serif!important;
+  }
+
+  /* Desktop guide follows dark mode instead of placing pale text on cream. */
+  html[data-theme="night"] .guide-card{
+    color:#f3e9e6!important;
+    border-color:rgba(246,225,222,.16)!important;
+    background:#2d2427!important;
+    box-shadow:0 24px 70px rgba(0,0,0,.46)!important;
+  }
+  html[data-theme="night"] .guide-card h2,
+  html[data-theme="night"] .guide-card .eyebrow,
+  html[data-theme="night"] .guide-progress-row,
+  html[data-theme="night"] .guide-step-label{
+    color:#f3e9e6!important;
+  }
+  html[data-theme="night"] .guide-card>p:not(.eyebrow),
+  html[data-theme="night"] .guide-tip{
+    color:#bea9a6!important;
+  }
+  html[data-theme="night"] .guide-progress-track{
+    background:#49383e!important;
+  }
+  html[data-theme="night"] .guide-progress-track>span,
+  html[data-theme="night"] #guideProgressBar{
+    background:#d8879a!important;
+  }
+  html[data-theme="night"] .guide-close,
+  html[data-theme="night"] .guide-card .ghost{
+    color:#f3e9e6!important;
+    border-color:rgba(246,225,222,.14)!important;
+    background:#382d31!important;
+  }
+}
