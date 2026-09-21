@@ -2565,7 +2565,7 @@ function renderPersonProfile() {
       <h2>${escapeHtml(p.displayName || p.tag)}${p.isPlatformOwner ? '<span class="owner-name-label">(Owner)</span>' : ''}</h2>
       <span>@${escapeHtml(p.tag || '')}</span>
       ${p.bio ? `<p class="profile-about-text">${mentionTextHtml(p.bio)}</p>` : '<p class="muted">No bio yet.</p>'}
-      <div class="person-relation-badges">${data.isPartner ? '<span>Partner</span>' : ''}${data.followsYou ? '<span>Follows you</span>' : ''}${data.isFollowing ? '<span>You follow</span>' : ''}${p.isPlatformOwner ? '<span class="owner-relation-badge">Verified owner</span>' : ''}</div>
+      <div class="person-relation-badges">${data.isPartner ? '<span>Partner</span>' : ''}${data.followsYou ? '<span>Follows you</span>' : ''}${data.isFollowing ? '<span>You follow</span>' : ''}</div>
     </div>`;
   $('#personFollowerCount').textContent = compactPhoneCount(data.followerCount || 0);
   $('#personFollowingCount').textContent = compactPhoneCount(data.followingCount || 0);
