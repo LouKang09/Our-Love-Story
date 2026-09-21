@@ -4731,6 +4731,223 @@ async function refreshChatRealtime(payload = {}) {
   }, 120);
 }
 
+let universeSelectedEntryId = null;
+let universeReplayTimer = null;
+let universeReplayOverlay = null;
+function universeEntryImage(entry) {
+  const canvasPhoto = (entry?.canvasItems || []).find(item => item?.type === 'photo' && item?.src);
+  if (canvasPhoto?.src) return canvasPhoto.src;
+  const photo = (entry?.photos || []).find(item => item?.src);
+  return photo?.src || '';
+}
+function universeAuthor(entry) {
+  return authorProfiles?.[entry?.author] || {
+    tag:entry?.author || '',
+    displayName:entry?.author || 'Someone',
+    avatar:''
+  };
+}
+function universeExcerpt(entry, max = 180) {
+  const plain = String(entry?.text || '').replace(/\s+/g,' ').trim();
+  if (!plain) return 'A visual memory saved in this scrapbook.';
+  return plain.length > max ? plain.slice(0,max).trimEnd() + '…' : plain;
+}
+function universeDateLabel(value, options = {month:'short',day:'numeric',year:'numeric'}) {
+  const d = new Date(String(value || '') + 'T12:00:00');
+  return Number.isNaN(d.getTime()) ? String(value || '') : new Intl.DateTimeFormat(undefined,options).format(d);
+}
+function openUniverseMemory(entryId) {
+  if (!entryId) return;
+  showView('stream');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const target = document.querySelector(`.timeline-item[data-entry-id="${CSS.escape(entryId)}"]`);
+    target?.scrollIntoView({behavior:'smooth',block:'center'});
+    target?.classList.add('universe-memory-focus');
+    setTimeout(()=>target?.classList.remove('universe-memory-focus'),1800);
+  }));
+}
+function renderMemoryUniverseDetail(entry) {
+  const host = $('#memoryUniverseDetail');
+  if (!host) return;
+  if (!entry) {
+    host.innerHTML = '<div class="universe-detail-empty"><span>✦</span><strong>Select a memory</strong><p>Its story, author, date, and relationship to this scrapbook will appear here.</p></div>';
+    return;
+  }
+  universeSelectedEntryId = entry.id;
+  const author = universeAuthor(entry);
+  const image = universeEntryImage(entry);
+  const comments = Array.isArray(entry.comments) ? entry.comments.length : 0;
+  host.innerHTML = `<article class="universe-detail-card">
+    ${image ? `<img class="universe-detail-image" src="${escapeHtml(image)}" alt="" />` : '<div class="universe-detail-image universe-detail-image-empty">✦</div>'}
+    <div class="universe-detail-copy">
+      <p class="eyebrow">${escapeHtml(universeDateLabel(entry.date))}</p>
+      <h3>${escapeHtml(entry.title || 'Untitled memory')}</h3>
+      <div class="universe-detail-author">${avatarHtml(author,'universe-detail-avatar')}<span><strong>${escapeHtml(author.displayName || author.tag || 'Someone')}</strong><small>@${escapeHtml(author.tag || '')}</small></span></div>
+      <p>${escapeHtml(universeExcerpt(entry,240))}</p>
+      <div class="universe-detail-meta"><span>${comments} ${comments === 1 ? 'comment' : 'comments'}</span><span>${image ? 'Visual memory' : 'Written memory'}</span></div>
+      <div class="universe-detail-actions"><button class="primary universe-open-memory" type="button">Open memory</button><button class="ghost universe-replay-here" type="button">▶ Replay from here</button></div>
+    </div>
+  </article>`;
+  host.querySelector('.universe-open-memory')?.addEventListener('click',()=>openUniverseMemory(entry.id));
+  host.querySelector('.universe-replay-here')?.addEventListener('click',()=>startMemoryReplay(entry.id));
+  $('#memoryConstellationNodes')?.querySelectorAll('[data-universe-entry]').forEach(node=>node.classList.toggle('selected',node.dataset.universeEntry===entry.id));
+}
+function renderMemoryConstellation(ordered) {
+  const nodesHost = $('#memoryConstellationNodes');
+  const linesHost = $('#memoryConstellationLines');
+  if (!nodesHost || !linesHost) return;
+  if (!ordered.length) {
+    nodesHost.innerHTML = '<div class="universe-empty constellation-empty"><span>✧</span><strong>No stars yet.</strong><p>Add a memory and it will appear here.</p></div>';
+    linesHost.innerHTML = '';
+    renderMemoryUniverseDetail(null);
+    return;
+  }
+  const sample = ordered.slice(-24);
+  const people = [...new Set(sample.map(entry=>entry.author).filter(Boolean))].slice(0,8).map(tag=>authorProfiles?.[tag] || {tag,displayName:tag,avatar:''});
+  const personPositions = new Map();
+  people.forEach((person,index)=>{
+    const angle=-Math.PI/2+(index/Math.max(1,people.length))*Math.PI*2;
+    personPositions.set(person.tag,{x:50+Math.cos(angle)*22,y:50+Math.sin(angle)*24});
+  });
+  const points=sample.map((entry,index)=>{
+    const angle=-Math.PI/2+(index/Math.max(1,sample.length))*Math.PI*2;
+    const jitter=((String(entry.id||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0)%9)-4)*.5;
+    return {entry,x:Math.max(7,Math.min(93,50+Math.cos(angle)*(41+jitter))),y:Math.max(9,Math.min(91,50+Math.sin(angle)*(38+jitter)))};
+  });
+  const lines=[];
+  points.forEach(point=>{
+    lines.push(`<line class="constellation-line memory-line" x1="500" y1="325" x2="${(point.x*10).toFixed(1)}" y2="${(point.y*6.5).toFixed(1)}" />`);
+    const p=personPositions.get(point.entry.author);
+    if(p)lines.push(`<line class="constellation-line person-line" x1="${(p.x*10).toFixed(1)}" y1="${(p.y*6.5).toFixed(1)}" x2="${(point.x*10).toFixed(1)}" y2="${(point.y*6.5).toFixed(1)}" />`);
+  });
+  linesHost.innerHTML=lines.join('');
+  const center=`<div class="constellation-book-node" style="left:50%;top:50%"><span>♡</span><strong>${escapeHtml(activeScrapbook?.name || 'This scrapbook')}</strong><small>${ordered.length} memories</small></div>`;
+  const personNodes=people.map(person=>{
+    const p=personPositions.get(person.tag);
+    return `<button class="constellation-person-node" type="button" data-universe-person="${escapeHtml(person.tag||'')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(person,'universe-person-avatar')}<small>${escapeHtml(person.displayName||person.tag)}</small></button>`;
+  }).join('');
+  const memoryNodes=points.map(({entry,x,y})=>{
+    const image=universeEntryImage(entry);
+    return `<button class="constellation-memory-node${entry.id===universeSelectedEntryId?' selected':''}" type="button" data-universe-entry="${escapeHtml(entry.id)}" style="left:${x}%;top:${y}%" title="${escapeHtml(entry.title||'Memory')} · ${escapeHtml(universeDateLabel(entry.date))}">
+      <span class="universe-memory-thumb">${image?`<img src="${escapeHtml(image)}" alt="" loading="lazy" />`:'✦'}</span>
+      <small>${escapeHtml(universeDateLabel(entry.date,{month:'short',day:'numeric'}))}</small>
+    </button>`;
+  }).join('');
+  nodesHost.innerHTML=center+personNodes+memoryNodes;
+  nodesHost.querySelectorAll('[data-universe-entry]').forEach(btn=>btn.addEventListener('click',()=>{
+    const entry=entries.find(item=>item.id===btn.dataset.universeEntry);
+    if(entry)renderMemoryUniverseDetail(entry);
+  }));
+  nodesHost.querySelectorAll('[data-universe-person]').forEach(btn=>btn.addEventListener('click',()=>{
+    const list=ordered.filter(entry=>entry.author===btn.dataset.universePerson);
+    if(list.length)renderMemoryUniverseDetail(list[list.length-1]);
+  }));
+  renderMemoryUniverseDetail(entries.find(item=>item.id===universeSelectedEntryId) || sample[sample.length-1]);
+}
+function renderMemoryEchoes(ordered) {
+  const host=$('#memoryEchoesGrid');
+  if(!host)return;
+  const byDay=new Map();
+  ordered.forEach(entry=>{
+    const d=new Date(String(entry.date||'')+'T12:00:00');
+    if(Number.isNaN(d.getTime()))return;
+    const key=`${d.getMonth()+1}-${d.getDate()}`;
+    if(!byDay.has(key))byDay.set(key,[]);
+    byDay.get(key).push(entry);
+  });
+  let pairs=[...byDay.values()].filter(group=>new Set(group.map(e=>String(e.date).slice(0,4))).size>1).map(group=>[group[0],group[group.length-1]]);
+  if(!pairs.length && ordered.length>1)pairs=[[ordered[0],ordered[ordered.length-1]]];
+  pairs=pairs.slice(0,3);
+  if(!pairs.length){
+    host.innerHTML='<div class="universe-empty wide"><span>↔</span><strong>Your echoes will appear over time.</strong><p>As this scrapbook grows, Scrapella will pair then-and-now moments.</p></div>';
+    return;
+  }
+  const card=e=>{
+    const image=universeEntryImage(e),author=universeAuthor(e);
+    return `<button class="universe-mini-memory" type="button" data-universe-entry="${escapeHtml(e.id)}"><div class="universe-mini-visual">${image?`<img src="${escapeHtml(image)}" alt="" loading="lazy" />`:'<span>✦</span>'}</div><div><small>${escapeHtml(universeDateLabel(e.date))}</small><strong>${escapeHtml(e.title||'Untitled memory')}</strong><span>${escapeHtml(author.displayName||author.tag||'Someone')}</span></div></button>`;
+  };
+  host.innerHTML=pairs.map(([a,b])=>`<article class="memory-echo-card"><div class="memory-echo-label"><span>THEN</span><i></i><b>Across time</b><i></i><span>NOW</span></div><div class="memory-echo-pair">${card(a)}${card(b)}</div></article>`).join('');
+  host.querySelectorAll('[data-universe-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.universeEntry)));
+}
+function renderMemoryPerspectives(ordered) {
+  const host=$('#memoryPerspectivesGrid');
+  if(!host)return;
+  const groups=new Map();
+  ordered.forEach(entry=>{
+    if(!groups.has(entry.date))groups.set(entry.date,[]);
+    groups.get(entry.date).push(entry);
+  });
+  const shared=[...groups.entries()].filter(([,group])=>group.length>1 && new Set(group.map(e=>e.author)).size>1).slice(-4).reverse();
+  if(!shared.length){
+    host.innerHTML='<div class="universe-empty wide"><span>◎</span><strong>No shared-date perspectives yet.</strong><p>When different people remember the same day, their viewpoints will meet here automatically.</p></div>';
+    return;
+  }
+  host.innerHTML=shared.map(([date,group])=>`<article class="perspective-card"><header><small>${escapeHtml(universeDateLabel(date))}</small><strong>${group.length} memories · ${new Set(group.map(e=>e.author)).size} perspectives</strong></header><div class="perspective-memory-list">${group.slice(0,4).map(entry=>`<button type="button" data-universe-entry="${escapeHtml(entry.id)}"><strong>${escapeHtml(entry.title||'Untitled memory')}</strong><span>${escapeHtml(universeAuthor(entry).displayName||entry.author||'Someone')}</span><p>${escapeHtml(universeExcerpt(entry,90))}</p></button>`).join('')}</div></article>`).join('');
+  host.querySelectorAll('[data-universe-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.universeEntry)));
+}
+function renderMemoryUniverse() {
+  if(isNativeScrapellaApp()||isPhoneUI())return;
+  const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
+  if(!activeScrapbook){
+    $('#memoryUniverseStats').innerHTML='';
+    $('#memoryConstellationNodes').innerHTML='<div class="universe-empty constellation-empty"><span>♡</span><strong>Choose a scrapbook first.</strong><p>Memory Universe is built from the active scrapbook.</p></div>';
+    $('#memoryConstellationLines').innerHTML='';
+    $('#memoryEchoesGrid').innerHTML='';
+    $('#memoryPerspectivesGrid').innerHTML='';
+    renderMemoryUniverseDetail(null);
+    return;
+  }
+  const people=new Set(ordered.map(e=>e.author).filter(Boolean)).size;
+  const visuals=ordered.filter(e=>universeEntryImage(e)).length;
+  const years=[...new Set(ordered.map(e=>String(e.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))];
+  $('#memoryUniverseStats').innerHTML=`<div><strong>${ordered.length}</strong><span>memories</span></div><div><strong>${people}</strong><span>${people===1?'voice':'voices'}</span></div><div><strong>${visuals}</strong><span>visual moments</span></div><div><strong>${escapeHtml(years.length>1?`${years[0]}–${years[years.length-1]}`:(years[0]||'Now'))}</strong><span>chapter span</span></div>`;
+  renderMemoryConstellation(ordered);
+  renderMemoryEchoes(ordered);
+  renderMemoryPerspectives(ordered);
+}
+function closeMemoryReplay() {
+  clearTimeout(universeReplayTimer);
+  universeReplayTimer=null;
+  universeReplayOverlay?.remove();
+  universeReplayOverlay=null;
+  document.body.classList.remove('memory-replay-open');
+}
+function startMemoryReplay(startEntryId='') {
+  if(isNativeScrapellaApp()||isPhoneUI())return;
+  const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
+  if(!ordered.length){showToast('Add a memory first.');return;}
+  closeMemoryReplay();
+  let index=Math.max(0,ordered.findIndex(e=>e.id===startEntryId));
+  let paused=false;
+  const overlay=document.createElement('div');
+  overlay.className='memory-replay-overlay';
+  overlay.innerHTML=`<section class="memory-replay" role="dialog" aria-modal="true" aria-label="Life Replay"><button class="memory-replay-close" type="button">×</button><div class="memory-replay-backdrop"></div><div class="memory-replay-shade"></div><div class="memory-replay-content"><p class="memory-replay-kicker">LIFE REPLAY · ${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</p><div class="memory-replay-author"></div><time class="memory-replay-date"></time><h2 class="memory-replay-title"></h2><p class="memory-replay-text"></p></div><div class="memory-replay-footer"><div class="memory-replay-progress"><i></i></div><div class="memory-replay-controls"><button class="memory-replay-prev" type="button">←</button><button class="memory-replay-toggle" type="button">Ⅱ</button><button class="memory-replay-next" type="button">→</button><span class="memory-replay-count"></span></div></div></section>`;
+  document.body.appendChild(overlay);
+  document.body.classList.add('memory-replay-open');
+  universeReplayOverlay=overlay;
+  const backdrop=overlay.querySelector('.memory-replay-backdrop');
+  const progress=overlay.querySelector('.memory-replay-progress i');
+  const toggle=overlay.querySelector('.memory-replay-toggle');
+  const render=()=>{
+    const entry=ordered[index],author=universeAuthor(entry),image=universeEntryImage(entry);
+    backdrop.style.backgroundImage=image?`url("${String(image).replace(/"/g,'\\"')}")`:'none';
+    backdrop.classList.toggle('no-image',!image);
+    overlay.querySelector('.memory-replay-date').textContent=universeDateLabel(entry.date);
+    overlay.querySelector('.memory-replay-title').textContent=entry.title||'Untitled memory';
+    overlay.querySelector('.memory-replay-text').textContent=universeExcerpt(entry,280);
+    overlay.querySelector('.memory-replay-author').innerHTML=`${avatarHtml(author,'memory-replay-avatar')}<span>${escapeHtml(author.displayName||author.tag||'Someone')}</span>`;
+    overlay.querySelector('.memory-replay-count').textContent=`${index+1} / ${ordered.length}`;
+    progress.style.width=`${((index+1)/ordered.length)*100}%`;
+    clearTimeout(universeReplayTimer);
+    if(!paused)universeReplayTimer=setTimeout(()=>{if(index<ordered.length-1){index++;render();}else{paused=true;toggle.textContent='▶';}},4800);
+  };
+  const move=delta=>{index=Math.max(0,Math.min(ordered.length-1,index+delta));render();};
+  overlay.querySelector('.memory-replay-close').addEventListener('click',closeMemoryReplay);
+  overlay.querySelector('.memory-replay-prev').addEventListener('click',()=>move(-1));
+  overlay.querySelector('.memory-replay-next').addEventListener('click',()=>move(1));
+  toggle.addEventListener('click',()=>{paused=!paused;toggle.textContent=paused?'▶':'Ⅱ';render();});
+  render();
+}
 function showView(mode) {
   if (mode === 'universe' && (isNativeScrapellaApp() || isPhoneUI())) mode = 'home';
   const previousMode = currentMode;
@@ -5792,6 +6009,8 @@ $('#universeModeBtn')?.addEventListener('click', async () => {
     showToast(err?.message || 'Could not open Memory Universe.');
   }
 });
+$('#memoryReplayBtn')?.addEventListener('click',()=>startMemoryReplay());
+$('#memorySurpriseBtn')?.addEventListener('click',()=>{ if(!entries.length){ showToast('Add a memory first.'); return; } const entry=entries[Math.floor(Math.random()*entries.length)]; renderMemoryUniverseDetail(entry); $('#memoryUniverseDetail')?.scrollIntoView({behavior:'smooth',block:'nearest'}); });
 $('#connectionsModeBtn').addEventListener('click', async () => {
   if (!isPhoneUI()) { await refreshAndShow('connections'); return; }
   const options = mobileBookOptions();
