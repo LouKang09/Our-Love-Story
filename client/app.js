@@ -39,6 +39,7 @@ let pendingChatPreviewUrls = [];
 let chatImageViewerSrc = '';
 let pendingChatReply = null;
 let chatReactionPicker = null;
+let chatThreadActionMenu = null;
 let commentReactionPicker = null;
 let pendingChatAudioFile = null;
 let pendingChatAudioUrl = '';
@@ -339,6 +340,7 @@ function closePhoneTransientLayer() {
   if (!$('#chatImageViewer')?.classList.contains('hidden')) { closeChatImageViewer(); return true; }
   if (!$('#profileImageViewer')?.classList.contains('hidden')) { closeProfileImageViewer(); return true; }
   if (reactionViewer) { closeReactionViewer(); return true; }
+  if (chatThreadActionMenu) { closeChatThreadActionMenu(); return true; }
   if (chatReactionPicker) { closeChatReactionPicker(); return true; }
   if (commentReactionPicker) { closeCommentReactionPicker(); return true; }
   if (guideRunning && !guideMandatory) { finishGuide({ completed:false }); return true; }
@@ -2792,6 +2794,115 @@ function chatAvatarHtml(chat) {
   const members = Array.isArray(chat.members) ? chat.members.slice(0,3) : [];
   return `<span class="chat-group-avatar">${members.map((member,i)=>avatarHtml(member,`chat-stack-avatar chat-stack-${i}`)).join('')}<b>👥</b></span>`;
 }
+function closeChatThreadActionMenu() {
+  if (!chatThreadActionMenu) return;
+  chatThreadActionMenu.remove();
+  chatThreadActionMenu = null;
+}
+async function updateChatThreadPreference(chat, action, value = true) {
+  if (!chat?.id) return;
+  if (action === 'delete' && !confirm('Delete this conversation from your list? It will reappear if a new message arrives.')) return;
+  if (action === 'block' && value === true && !confirm(`Block ${chat.name || 'this person'}? You will not be able to exchange messages until you unblock them.`)) return;
+  try {
+    await api(`/api/chats/${encodeURIComponent(chat.id)}/preferences`, {
+      method:'PATCH',
+      body:JSON.stringify({ action, value })
+    });
+    closeChatThreadActionMenu();
+    if (action === 'delete') {
+      if (activeChatId === chat.id) await closeMobileChat();
+      await loadChats({ preserveActive:false });
+      showToast('Conversation removed from your list.');
+      return;
+    }
+    await loadChats();
+    const messages = {
+      pin:value ? 'Conversation pinned.' : 'Conversation unpinned.',
+      mute:value ? 'Conversation muted.' : 'Conversation unmuted.',
+      restrict:value ? 'Conversation restricted.' : 'Restriction removed.',
+      block:value ? 'Person blocked.' : 'Person unblocked.'
+    };
+    showToast(messages[action] || 'Conversation updated.');
+  } catch (err) {
+    showToast(err.message || 'Could not update that conversation.');
+  }
+}
+function chatThreadActionIcon(kind) {
+  return ({
+    pin:'📌',
+    mute:'🔕',
+    restrict:'◉',
+    block:'⊖',
+    delete:'🗑'
+  })[kind] || '•';
+}
+function showChatThreadActionMenu(chat) {
+  if (!isPhoneUI() || !chat) return;
+  closeChatThreadActionMenu();
+  closeChatReactionPicker();
+
+  const actions = [
+    { id:'pin', label:chat.pinned ? 'Unpin' : 'Pin', value:!chat.pinned },
+    { id:'mute', label:chat.muted ? 'Unmute' : 'Mute', value:!chat.muted },
+    ...(chat.type === 'private' ? [
+      { id:'restrict', label:chat.restricted ? 'Unrestrict' : 'Restrict', value:!chat.restricted },
+      { id:'block', label:chat.blocked ? 'Unblock' : 'Block', value:!chat.blocked }
+    ] : []),
+    { id:'delete', label:'Delete', value:true, danger:true }
+  ];
+
+  const overlay=document.createElement('div');
+  overlay.className='chat-thread-menu-overlay';
+  overlay.innerHTML=`<section class="chat-thread-menu-sheet" role="menu" aria-label="Conversation actions">
+    <div class="chat-thread-menu-handle" aria-hidden="true"></div>
+    <div class="chat-thread-menu-person">
+      ${chatAvatarHtml(chat)}
+      <span><strong>${escapeHtml(chat.name || 'Conversation')}</strong><small>${chat.type === 'private' ? '@'+escapeHtml(chat.otherProfile?.tag || '') : 'Group conversation'}</small></span>
+    </div>
+    <div class="chat-thread-menu-actions">
+      ${actions.map(action=>`<button type="button" data-thread-action="${action.id}" data-thread-value="${action.value?'1':'0'}" class="${action.danger?'danger':''}"><span aria-hidden="true">${chatThreadActionIcon(action.id)}</span><b>${escapeHtml(action.label)}</b></button>`).join('')}
+    </div>
+  </section>`;
+  document.body.appendChild(overlay);
+  chatThreadActionMenu=overlay;
+  overlay.addEventListener('pointerdown',e=>{if(e.target===overlay)closeChatThreadActionMenu();});
+  overlay.querySelectorAll('[data-thread-action]').forEach(button=>button.addEventListener('click',async()=>{
+    const action=button.dataset.threadAction;
+    const value=button.dataset.threadValue==='1';
+    await updateChatThreadPreference(chat,action,value);
+  }));
+}
+function wireChatThreadGestures(host) {
+  if (!host || !isPhoneUI()) return;
+  host.querySelectorAll('.chat-list-item').forEach(button => {
+    let timer=null;
+    let sx=0,sy=0;
+    let longPress=false;
+    button.addEventListener('pointerdown',e=>{
+      if(e.pointerType==='mouse' && e.button!==0)return;
+      sx=e.clientX; sy=e.clientY; longPress=false;
+      clearTimeout(timer);
+      timer=setTimeout(()=>{
+        longPress=true;
+        button._suppressChatClick=true;
+        const chat=chats.find(item=>item.id===button.dataset.chatId);
+        if(chat)showChatThreadActionMenu(chat);
+        if(navigator.vibrate)navigator.vibrate(18);
+      },430);
+    });
+    button.addEventListener('pointermove',e=>{
+      if(Math.hypot(e.clientX-sx,e.clientY-sy)>13)clearTimeout(timer);
+    });
+    const end=()=>{
+      clearTimeout(timer);
+      if(longPress)setTimeout(()=>{button._suppressChatClick=false;},450);
+    };
+    button.addEventListener('pointerup',end);
+    button.addEventListener('pointercancel',end);
+    button.addEventListener('contextmenu',e=>e.preventDefault());
+  });
+}
+
 function renderChatList() {
   const host = $('#chatList');
   if (!host) return;
@@ -2803,13 +2914,18 @@ function renderChatList() {
     const last = chat.lastMessage;
     const lastImages=last ? chatMessageImages(last) : [];
     const preview = last ? (last.deleted ? 'Message deleted' : (last.text || (lastImages.length ? (lastImages.length===1 ? '📷 Photo' : `📷 ${lastImages.length} photos`) : (last.audio ? '🎙 Voice message' : 'New message')))) : (chat.type === 'group' ? 'Group scrapbook chat' : 'Start a conversation');
-    return `<button class="chat-list-item ${chat.id === activeChatId ? 'active' : ''}" type="button" data-chat-id="${escapeHtml(chat.id)}">
+    const stateMarks = [chat.pinned?'📌':'',chat.muted?'🔕':'',chat.restricted?'Restricted':'',chat.blocked?'Blocked':''].filter(Boolean).join(' · ');
+    return `<button class="chat-list-item ${chat.id === activeChatId ? 'active' : ''} ${chat.pinned?'pinned':''}" type="button" data-chat-id="${escapeHtml(chat.id)}">
       ${chatAvatarHtml(chat)}
-      <span class="chat-list-copy"><strong>${escapeHtml(chat.name || 'Conversation')}</strong><small>${escapeHtml(preview)}</small></span>
+      <span class="chat-list-copy"><strong>${escapeHtml(chat.name || 'Conversation')}</strong><small>${escapeHtml(preview)}</small>${stateMarks ? `<em>${escapeHtml(stateMarks)}</em>` : ''}</span>
       <span class="chat-list-meta">${last ? `<time>${escapeHtml(chatWhen(last.createdAt))}</time>` : ''}${chat.unreadCount ? `<b>${chat.unreadCount > 99 ? '99+' : chat.unreadCount}</b>` : ''}</span>
     </button>`;
   }).join('');
-  host.querySelectorAll('.chat-list-item').forEach(btn => btn.addEventListener('click', () => openChat(btn.dataset.chatId)));
+  host.querySelectorAll('.chat-list-item').forEach(btn => btn.addEventListener('click', e => {
+    if (btn._suppressChatClick) { e.preventDefault(); return; }
+    openChat(btn.dataset.chatId);
+  }));
+  wireChatThreadGestures(host);
 }
 async function refreshManagedGroupChat(chatId, { reopenMembers = true } = {}) {
   await loadChats();
