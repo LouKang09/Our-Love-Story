@@ -104,14 +104,16 @@ jobs:
           from pathlib import Path
           manifest_path = Path("android/app/src/main/AndroidManifest.xml")
           manifest = manifest_path.read_text()
-          permissions = """
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.CAMERA" />
-              <uses-permission android:name="android.permission.RECORD_AUDIO" />
-          """
-          if "android.permission.CAMERA" not in manifest:
+          permissions = [
+              '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+              '<uses-permission android:name="android.permission.CAMERA" />',
+              '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+          ]
+          missing = [item for item in permissions if item.split('"')[1] not in manifest]
+          if missing:
               pos = manifest.find(">", manifest.find("<manifest"))
-              manifest = manifest[:pos+1] + permissions + manifest[pos+1:]
+              addition = "\n    " + "\n    ".join(missing)
+              manifest = manifest[:pos+1] + addition + manifest[pos+1:]
           manifest_path.write_text(manifest)
           PY
 
