@@ -3,7 +3,7 @@
   "appName": "Scrapella",
   "webDir": "client",
   "server": {
-    "url": "https://our-love-story-production-47c9.up.railway.app",
+    "url": "https://scrapella.up.railway.app",
     "cleartext": false,
     "androidScheme": "https"
   },
