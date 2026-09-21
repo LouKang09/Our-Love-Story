@@ -2374,7 +2374,7 @@ async function finishGuide({ completed = true } = {}) {
   document.body.classList.remove('guide-active');
   $('#guideSpotlight').style.cssText = '';
   $('#guideCard')?.classList.remove('guide-card-top');
-  showView(isPhoneUI() ? 'home' : (activeScrapbook ? 'book' : 'cover'));
+  showView('home');
   if (wasMandatory) maybeOpenReminderComposer();
 }
 $('#guideNextBtn').addEventListener('click', async () => {
@@ -4225,7 +4225,7 @@ function showView(mode) {
   const noEntries = activeScrapbook && !entries.length;
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
   $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || mode === 'messages' || (Boolean(activeScrapbook) && !canWrite));
-  const desktopWorkspaceVisible = !isPhoneUI() && ['cover','book','stream','connections'].includes(mode);
+  const desktopWorkspaceVisible = !isPhoneUI() && mode === 'book';
   $('#desktopScrapbookBar')?.classList.toggle('hidden', !desktopWorkspaceVisible);
   $('#desktopNewMemoryBtn')?.classList.toggle('hidden', !desktopWorkspaceVisible || !canWrite);
   if (!isPhoneUI()) {
@@ -5166,7 +5166,7 @@ function finishSessionBootstrap(authenticated) {
 async function enterApp() {
   await loadSession();
   finishSessionBootstrap(true);
-  showView(isPhoneUI() ? 'home' : (activeScrapbook ? 'book' : 'cover'));
+  showView('home');
   initializePhoneHistory();
   connectLiveEvents();
   if (guideState.required) setTimeout(() => startGuide(true), 180);
