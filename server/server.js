@@ -853,6 +853,14 @@ function decorateChatMessage(social, message, user) {
     };
   }).filter(item => item.count > 0);
   const replied = message?.replyTo ? social.chatMessages.find(item => item.id === message.replyTo && item.chatId === message.chatId) : null;
+  const createdMs = Date.parse(message?.createdAt || '') || 0;
+  const editDeadlineMs = createdMs ? createdMs + (15 * 60 * 1000) : 0;
+  const chat = social.chats.find(item => item.id === message.chatId) || null;
+  const seenByTags = chat ? chatMembers(social,chat).filter(tag =>
+    tag !== message.author &&
+    (Date.parse(social.chatRead?.[tag]?.[message.chatId] || '') || 0) >= createdMs &&
+    createdMs > 0
+  ) : [];
   return {
     id:message.id,
     author:message.author,
@@ -881,6 +889,15 @@ function decorateChatMessage(social, message, user) {
     } : null,
     reactions,
     editedAt:message.editedAt || null,
+    canEdit:Boolean(
+      message.author === user &&
+      !message.deletedAt &&
+      String(message.text || '').trim() &&
+      editDeadlineMs > Date.now()
+    ),
+    editableUntil:editDeadlineMs ? new Date(editDeadlineMs).toISOString() : null,
+    seenBy:seenByTags.map(tag => publicProfileFor(social,tag)),
+    seenByCount:seenByTags.length,
     pinnedAt:message.pinnedAt || null,
     pinnedBy:message.pinnedBy || null,
     createdAt:message.createdAt
@@ -2024,14 +2041,31 @@ async function handleApi(req, res, url) {
   if (chatMessagesMatch && req.method === 'GET') {
     const chat = social.chats.find(item => item.id === chatMessagesMatch[1]);
     if (!chat || !canAccessChat(social, chat, user)) return forbidden(res, 'You do not have access to this chat.');
-    const messages = social.chatMessages
+    const rawMessages = social.chatMessages
       .filter(message => message.chatId === chat.id)
-      .slice(-500)
-      .map(message => decorateChatMessage(social,message,user));
+      .slice(-500);
+    const previousReadAt = social.chatRead?.[user]?.[chat.id] || null;
+    const latestMessageAt = rawMessages.length ? rawMessages[rawMessages.length - 1].createdAt : null;
+    const previousReadMs = Date.parse(previousReadAt || '') || 0;
+    const latestMessageMs = Date.parse(latestMessageAt || '') || 0;
+
     social.chatRead[user] ||= {};
-    social.chatRead[user][chat.id] = new Date().toISOString();
-    await writeSocial(social);
-    return json(res, 200, { chat:decorateChat(social, chat, user), messages, unreadCount:totalChatUnread(social, user) });
+    if (latestMessageAt && latestMessageMs > previousReadMs) {
+      social.chatRead[user][chat.id] = latestMessageAt;
+      await writeSocial(social);
+      for (const target of chatMembers(social,chat)) {
+        if (target !== user) emitLiveEvent(target, 'chat', { type:'seen', chatId:chat.id, from:user, seenAt:latestMessageAt });
+      }
+    }
+
+    const messages = rawMessages.map(message => decorateChatMessage(social,message,user));
+    return json(res, 200, {
+      chat:decorateChat(social, chat, user),
+      messages,
+      previousReadAt,
+      readThroughAt:latestMessageAt || previousReadAt || null,
+      unreadCount:totalChatUnread(social, user)
+    });
   }
 
   if (chatMessagesMatch && req.method === 'POST') {
@@ -2130,6 +2164,10 @@ async function handleApi(req, res, url) {
     if (!message) return notFound(res);
     if (message.author !== user) return forbidden(res, 'You can only edit messages you sent.');
     if (message.deletedAt) return json(res, 409, { error:'Deleted messages cannot be edited.' });
+    const createdMs = Date.parse(message.createdAt || '') || 0;
+    if (!createdMs || Date.now() > createdMs + (15 * 60 * 1000)) {
+      return json(res, 409, { error:'Messages can only be edited within 15 minutes of sending.' });
+    }
     const body = await readBody(req, 64 * 1024);
     const nextText = String(body.text || '').trim().slice(0,2000);
     const hasMedia = Boolean(
