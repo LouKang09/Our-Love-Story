@@ -5,6 +5,7 @@ const coverStage = $('#coverStage');
 const bookView = $('#bookView');
 const streamView = $('#streamView');
 const homeView = $('#homeView');
+const memoryUniverseView = $('#memoryUniverseView');
 const connectionsView = $('#connectionsView');
 const messagesView = $('#messagesView');
 const personProfileView = $('#personProfileView');
@@ -4731,6 +4732,7 @@ async function refreshChatRealtime(payload = {}) {
 }
 
 function showView(mode) {
+  if (mode === 'universe' && (isNativeScrapellaApp() || isPhoneUI())) mode = 'home';
   const previousMode = currentMode;
   currentMode = mode;
   if (isNativeScrapellaApp() && isPhoneUI() && previousMode !== mode) {
@@ -4749,12 +4751,14 @@ function showView(mode) {
   coverStage.classList.toggle('hidden', mode !== 'cover');
   bookView.classList.toggle('hidden', mode !== 'book');
   streamView.classList.toggle('hidden', mode !== 'stream');
+  memoryUniverseView?.classList.toggle('hidden', mode !== 'universe');
   connectionsView.classList.toggle('hidden', mode !== 'connections');
   messagesView.classList.toggle('hidden', mode !== 'messages');
   personProfileView.classList.toggle('hidden', mode !== 'person');
   $('#homeModeBtn').classList.toggle('active', mode === 'home');
   $('#bookModeBtn').classList.toggle('active', mode === 'book' || (isPhoneUI() && mode === 'stream'));
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
+  $('#universeModeBtn')?.classList.toggle('active', mode === 'universe');
   $('#connectionsModeBtn').classList.toggle('active', mode === 'connections' || mode === 'person');
   $('#messagesModeBtn').classList.toggle('active', mode === 'messages');
   recordPhoneHistory(mode);
@@ -4762,7 +4766,7 @@ function showView(mode) {
   const noBook = !activeScrapbook;
   const noEntries = activeScrapbook && !entries.length;
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
-  $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || mode === 'messages' || (Boolean(activeScrapbook) && !canWrite));
+  $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || mode === 'messages' || mode === 'universe' || (Boolean(activeScrapbook) && !canWrite));
   const desktopWorkspaceVisible = !isPhoneUI() && mode === 'book';
   $('#desktopScrapbookBar')?.classList.toggle('hidden', !desktopWorkspaceVisible);
   $('#desktopNewMemoryBtn')?.classList.toggle('hidden', !desktopWorkspaceVisible || !canWrite);
@@ -4770,7 +4774,7 @@ function showView(mode) {
     if (mode === 'book') renderPersonalPrivacyQuick();
     else parkDesktopNewMemoryButton();
   }
-  emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || mode === 'messages' || (!noBook && !noEntries));
+  emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || mode === 'messages' || mode === 'universe' || (!noBook && !noEntries));
   const canEmptyDelete = Boolean(isPhoneUI() && noEntries && activeScrapbook && (activeScrapbook.isOwner === true || (activeScrapbook.type === 'group' && activeScrapbook.isGroupAdmin === true)));
   $('#emptyDeleteScrapbookBtn')?.classList.toggle('hidden', !canEmptyDelete);
   if ($('#emptyDeleteScrapbookBtn') && canEmptyDelete) $('#emptyDeleteScrapbookBtn').textContent = activeScrapbook.isOwner === true ? 'Delete scrapbook' : 'Request group deletion';
@@ -4790,6 +4794,10 @@ function showView(mode) {
         $('#activeChat')?.classList.add('hidden');
       }
     }).catch(() => {});
+    return;
+  }
+  if (mode === 'universe') {
+    renderMemoryUniverse();
     return;
   }
   if (noBook && mode !== 'cover' && mode !== 'connections' && mode !== 'messages') {
@@ -4821,6 +4829,7 @@ async function refreshEntries() {
   }
   if (currentMode === 'book') renderBook();
   if (currentMode === 'stream') renderTimeline();
+  if (currentMode === 'universe') renderMemoryUniverse();
 }
 async function loadSession(preferredBookId = null) {
   const overrideBookId = isOwnerOverrideBook(preferredBookId) ? preferredBookId : null;
@@ -5774,6 +5783,15 @@ $('#closeBookViewBtn').addEventListener('click', async () => {
   await refreshAndShow('cover');
 });
 $('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
+$('#universeModeBtn')?.addEventListener('click', async () => {
+  if (isNativeScrapellaApp() || isPhoneUI()) return;
+  try {
+    if (activeScrapbook) await refreshEntries();
+    showView('universe');
+  } catch (err) {
+    showToast(err?.message || 'Could not open Memory Universe.');
+  }
+});
 $('#connectionsModeBtn').addEventListener('click', async () => {
   if (!isPhoneUI()) { await refreshAndShow('connections'); return; }
   const options = mobileBookOptions();
@@ -6402,6 +6420,7 @@ function setPhoneMessageButtonVisual(phone) {
 }
 function syncResponsiveChrome() {
   const phone = isPhoneUI();
+  document.documentElement.classList.toggle('web-memory-preview', !isNativeScrapellaApp() && !phone);
   if($('#chatPhotoInput')) $('#chatPhotoInput').multiple = true;
   const toolbar = document.querySelector('.toolbar');
   const modeSwitch = document.querySelector('.mode-switch');
@@ -6586,8 +6605,13 @@ function isTypingFieldFocused() {
   return Boolean(active && active.matches?.('input,textarea,[contenteditable="true"]'));
 }
 window.addEventListener('resize', () => {
+  if (currentMode === 'universe' && (isPhoneUI() || isNativeScrapellaApp())) {
+    showView('home');
+    return;
+  }
   if (currentMode === 'book' && !isTypingFieldFocused()) renderBook();
   if (currentMode === 'connections' && activeScrapbook?.type === 'group' && !isTypingFieldFocused()) renderConnections();
+  if (currentMode === 'universe' && !isTypingFieldFocused()) renderMemoryUniverse();
 });
 
 $('#canvasPageSize').addEventListener('change', e => {
