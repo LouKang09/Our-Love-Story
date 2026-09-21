@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260921-polish11" />
+  <link rel="stylesheet" href="/styles.css?v=20260921-polish12" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -57,10 +57,11 @@
         <img src="/assets/scrapella-logo.webp" alt="Scrapella" />
         <p class="eyebrow">ONE-TIME SETUP</p>
         <h2>Let Scrapella work like an app.</h2>
-        <p class="native-permission-copy">Allow notifications for scrapbook updates, the camera for taking photos, and photo access when you want to add memories from your gallery.</p>
+        <p class="native-permission-copy">Allow notifications, camera and photo access, plus microphone access for voice messages.</p>
         <div class="native-permission-list">
           <div data-native-permission="notifications"><span>🔔</span><div><strong>Notifications</strong><small>Messages, reactions and scrapbook reminders.</small></div><b>Ready</b></div>
           <div data-native-permission="camera"><span>📷</span><div><strong>Camera</strong><small>Take a photo without leaving Scrapella.</small></div><b>Ready</b></div>
+          <div data-native-permission="microphone"><span>🎙️</span><div><strong>Microphone</strong><small>Record and send voice messages in chats.</small></div><b>Ready</b></div>
           <div data-native-permission="photos"><span>🖼️</span><div><strong>Photos</strong><small>Choose memories from your photo library or gallery.</small></div><b>Ready</b></div>
         </div>
         <button id="nativePermissionsContinue" class="primary wide" type="button">Continue</button>
@@ -317,7 +318,7 @@
                   <label class="ghost chat-camera-button phone-only-chat-tool" title="Take photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 7 9 4.8h6L16.5 7H19a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2.5Z"/><circle cx="12" cy="13" r="4"/></svg><input id="chatCameraInput" type="file" accept="image/*" capture="environment" hidden /></label>
                   <button id="chatGalleryBtn" class="ghost chat-gallery-button phone-only-chat-tool" type="button" aria-label="Choose photo from gallery" title="Gallery"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9" r="1.6"/><path d="m5.5 17 4.3-4.3 3.2 3.1 2.3-2.3 3.2 3.5"/></svg></button>
                   <button id="chatMicBtn" class="ghost chat-mic-button phone-only-chat-tool" type="button" aria-label="Record voice message" title="Record voice message"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6"/></svg></button>
-                  <button id="chatSendBtn" class="primary" type="submit" aria-label="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Z"/><path d="M7 12h14"/></svg><span class="desktop-chat-send-label">Send</span></button>
+                  <button id="chatSendBtn" class="primary" type="submit" aria-label="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Z"/><path d="M7 12h14"/></svg></button>
                 </div>
                 <p class="helper chat-media-helper"><span class="desktop-chat-media-helper">Select up to 10 photos. Right-click messages for reactions and actions.</span><span class="phone-chat-media-helper">Select up to 10 photos, take one now, or record a voice message.</span></p>
               </form>
@@ -636,6 +637,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260921-polish11" defer></script>
+  <script src="/app.js?v=20260921-polish12" defer></script>
 </body>
 </html>
