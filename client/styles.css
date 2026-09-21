@@ -11238,3 +11238,137 @@ html[data-theme="night"] .chat-presence-badge{
     background:rgba(224,194,201,.62)!important;
   }
 }
+
+
+/* ===== 2026-09-21 CROSS-PLATFORM CHAT + APP SHARING ===== */
+
+/* App group messages: a tiny presence light sits on each other member's avatar. */
+.chat-message-avatar-wrap{
+  position:relative;
+  display:inline-grid;
+  place-items:center;
+  width:max-content;
+  height:max-content;
+  line-height:0;
+  overflow:visible;
+}
+.chat-mini-presence-badge{
+  display:none;
+}
+html.native-app .chat-mini-presence-badge{
+  position:absolute;
+  z-index:6;
+  right:-1px;
+  bottom:-1px;
+  width:9px;
+  height:9px;
+  display:block;
+  border:1.5px solid #fff;
+  border-radius:50%;
+  box-sizing:border-box;
+  box-shadow:0 1px 4px rgba(20,15,16,.22);
+  pointer-events:none;
+}
+html.native-app .chat-mini-presence-badge.active{background:#39b66a}
+html.native-app .chat-mini-presence-badge.away{background:#d8933e}
+html.native-app .chat-mini-presence-badge.offline{background:#81777a}
+html.native-app[data-theme="night"] .chat-mini-presence-badge{
+  border-color:#2b2225;
+}
+
+/* App memory sharing stays compact beside Edit. */
+html.native-app .share-entry{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+}
+html.native-app .share-entry>span{
+  font:800 15px/1 ui-sans-serif,system-ui,sans-serif;
+}
+
+/* Desktop Messages now inherits the app composer: +, camera, gallery, mic, paper plane. */
+@media(min-width:801px){
+  .chat-compose-actions{
+    display:grid!important;
+    grid-template-columns:repeat(5,40px)!important;
+    align-items:center!important;
+    gap:6px!important;
+  }
+  .chat-camera-button.phone-only-chat-tool,
+  .chat-gallery-button.phone-only-chat-tool,
+  .chat-mic-button.phone-only-chat-tool{
+    display:grid!important;
+  }
+  .desktop-chat-photo-label{
+    display:none!important;
+  }
+  .phone-chat-photo-label{
+    display:inline!important;
+  }
+  .chat-photo-button,
+  .chat-camera-button,
+  .chat-gallery-button,
+  .chat-mic-button,
+  #chatSendBtn{
+    width:40px!important;
+    min-width:40px!important;
+    height:40px!important;
+    min-height:40px!important;
+    display:grid!important;
+    place-items:center!important;
+    padding:0!important;
+    border:1px solid var(--line)!important;
+    border-radius:50%!important;
+    background:transparent!important;
+    color:var(--rose-dark)!important;
+    box-shadow:none!important;
+    line-height:1!important;
+    font-size:0!important;
+  }
+  .chat-photo-button svg,
+  .chat-camera-button svg,
+  .chat-gallery-button svg,
+  .chat-mic-button svg,
+  #chatSendBtn>svg{
+    width:22px!important;
+    height:22px!important;
+    display:block!important;
+    fill:none!important;
+    stroke:currentColor!important;
+    stroke-width:2.1!important;
+    stroke-linecap:round!important;
+    stroke-linejoin:round!important;
+  }
+  .chat-photo-button svg{
+    width:25px!important;
+    height:25px!important;
+  }
+  #chatSendBtn{
+    border-color:var(--rose)!important;
+    background:var(--rose)!important;
+    color:#fff!important;
+  }
+  #chatSendBtn>svg{
+    width:21px!important;
+    height:21px!important;
+  }
+  .chat-mic-button.recording{
+    border-color:var(--rose)!important;
+    background:var(--rose)!important;
+    color:#fff!important;
+    animation:chat-record-pulse .75s ease-in-out infinite alternate;
+  }
+  html[data-theme="night"] .chat-photo-button,
+  html[data-theme="night"] .chat-camera-button,
+  html[data-theme="night"] .chat-gallery-button,
+  html[data-theme="night"] .chat-mic-button{
+    border-color:#58464c!important;
+    color:#df8da1!important;
+    background:#2b2225!important;
+  }
+  html[data-theme="night"] #chatSendBtn{
+    border-color:var(--rose)!important;
+    background:var(--rose)!important;
+    color:#fff!important;
+  }
+}
