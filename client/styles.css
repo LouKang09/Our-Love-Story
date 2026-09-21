@@ -9283,3 +9283,9 @@ html[data-theme="night"] .brand-intro{
     stroke-dashoffset:0!important;
   }
 }
+
+
+/* Native auth visibility hotfix: .hidden must win after successful login. */
+html.native-app .lock-screen.hidden{
+  display:none!important;
+}
