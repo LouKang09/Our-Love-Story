@@ -4,6 +4,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const webpush = require('web-push');
+const QRCode = require('qrcode');
 
 const ROOT = path.resolve(__dirname, '..');
 const PUBLIC = path.join(ROOT, 'client');
@@ -1583,6 +1584,17 @@ async function handleApi(req, res, url) {
         .map(tag => [tag, publicProfileFor(social, tag)])
     );
     return json(res, 200, { posts, profiles });
+  }
+
+  if (pathname === '/api/preview/qr' && req.method === 'GET') {
+    const value = String(url.searchParams.get('value') || '').slice(0, 1200);
+    if (!value) return json(res,400,{ error:'Missing QR value.' });
+    try {
+      const dataUrl = await QRCode.toDataURL(value, { width:420, margin:2, errorCorrectionLevel:'M' });
+      return json(res,200,{ dataUrl });
+    } catch {
+      return json(res,500,{ error:'Could not generate QR code.' });
+    }
   }
 
   if (pathname === '/api/preview/freedom-wall' && req.method === 'POST') {
