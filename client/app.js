@@ -4892,6 +4892,13 @@ let universeVoiceChunks = [];
 let universeVoiceTimer = null;
 let universeVoiceStartedAt = 0;
 const universeVoiceClips = [];
+let universeMemoryVoiceRecorder = null;
+let universeMemoryVoiceStream = null;
+let universeMemoryVoiceChunks = [];
+let universeMemoryVoiceStartedAt = 0;
+const universeMemoryVoiceClips = [];
+const universeBoxSessionItems = [];
+let universeFreedomWallCache = { posts:[], profiles:{} };
 const UNIVERSE_INTERVIEW_PROMPTS = ["What happened right before this moment?","What happened immediately after it?","Who was there that the photo does not show?","What sound do you remember from this day?","What detail would future you probably forget?","What were you worried about at the time?","What made you laugh that day?","What did this place feel like in person?","If you could return to this moment for five minutes, what would you notice first?","What would you tell the version of yourself in this memory?","Why did this ordinary moment become important?","Was there something you wanted to say but did not?","Who took the photo, and what were they doing?","What song, smell, food, or weather belongs to this memory?","How do you feel about this memory now compared with then?","What do you hope someone else remembers about this day?"];
 
 function universePreviewStorageKey(type) {
@@ -4922,7 +4929,7 @@ function universeMemorySelectOptions(selectedId = '') {
 }
 
 function universeLabSetMode(mode) {
-  const allowed = ['layers','interview','capsules','heirlooms','voice','museum','archive'];
+  const allowed = ['layers','trails','interview','voice','voiceMemory','letters','collaborative','prompts','anniversaries','rituals','box','themes','peopleMemory','versions','vault','family','inherited','qr','secret','unfinished','faith','wall','capsules','heirlooms','museum','archive'];
   universeLabMode = allowed.includes(mode) ? mode : 'layers';
   document.querySelectorAll('[data-universe-lab]').forEach(btn => btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode));
   renderUniverseLabStage();
@@ -4941,19 +4948,42 @@ function renderUniverseLabs() {
 function renderUniverseLabStage() {
   const stage = $('#universeLabStage');
   if (!stage) return;
+  if (universeLabMode === 'wall') {
+    renderUniverseFreedomWallLab();
+    return;
+  }
   if (!activeScrapbook) {
     stage.innerHTML = '<div class="universe-empty wide"><span>♡</span><strong>Choose a scrapbook first.</strong><p>The preview tools use the active scrapbook and never change its original memories.</p></div>';
     return;
   }
-  if (!entries.length && universeLabMode !== 'archive') {
+  const entryOptionalModes = new Set(['archive','rituals','box','themes','family','faith']);
+  if (!entries.length && !entryOptionalModes.has(universeLabMode)) {
     stage.innerHTML = '<div class="universe-empty wide"><span>✧</span><strong>Add a memory to try this preview.</strong><p>Once this scrapbook has a page, Scrapella Labs can begin experimenting with it.</p></div>';
     return;
   }
   if (universeLabMode === 'layers') renderUniverseLayersLab();
+  else if (universeLabMode === 'trails') renderUniverseTrailsLab();
   else if (universeLabMode === 'interview') renderUniverseInterviewLab();
+  else if (universeLabMode === 'voice') renderUniverseVoiceLab();
+  else if (universeLabMode === 'voiceMemory') renderUniverseVoiceMemoryLab();
+  else if (universeLabMode === 'letters') renderUniverseLettersLab();
+  else if (universeLabMode === 'collaborative') renderUniverseCollaborativeLab();
+  else if (universeLabMode === 'prompts') renderUniversePromptsLab();
+  else if (universeLabMode === 'anniversaries') renderUniverseAnniversaryLab();
+  else if (universeLabMode === 'rituals') renderUniverseRitualsLab();
+  else if (universeLabMode === 'box') renderUniverseMemoryBoxLab();
+  else if (universeLabMode === 'themes') renderUniverseThemesLab();
+  else if (universeLabMode === 'peopleMemory') renderUniversePeopleMemoryLab();
+  else if (universeLabMode === 'versions') renderUniverseVersionsLab();
+  else if (universeLabMode === 'vault') renderUniverseVaultLab();
+  else if (universeLabMode === 'family') renderUniverseFamilyLab();
+  else if (universeLabMode === 'inherited') renderUniverseInheritedLab();
+  else if (universeLabMode === 'qr') renderUniverseQrLab();
+  else if (universeLabMode === 'secret') renderUniverseSecretLab();
+  else if (universeLabMode === 'unfinished') renderUniverseUnfinishedLab();
+  else if (universeLabMode === 'faith') renderUniverseFaithLab();
   else if (universeLabMode === 'capsules') renderUniverseCapsulesLab();
   else if (universeLabMode === 'heirlooms') renderUniverseHeirloomsLab();
-  else if (universeLabMode === 'voice') renderUniverseVoiceLab();
   else if (universeLabMode === 'museum') renderUniverseMuseumLab();
   else renderUniverseArchiveLab();
 }
