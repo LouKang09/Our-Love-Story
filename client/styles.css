@@ -9289,3 +9289,55 @@ html[data-theme="night"] .brand-intro{
 html.native-app .lock-screen.hidden{
   display:none!important;
 }
+
+
+/* Native scrolling hotfix — keep Home and Book vertically scrollable. */
+@media(max-width:800px){
+  html.native-app body:not(.brand-intro-active):not(.native-permission-open):not(.guide-active){
+    overflow-x:hidden!important;
+    overflow-y:auto!important;
+    height:auto!important;
+    min-height:100dvh!important;
+    touch-action:pan-y!important;
+    -webkit-overflow-scrolling:touch;
+  }
+  html.native-app #journalApp:not(.hidden){
+    display:block;
+    min-height:100dvh;
+    overflow:visible!important;
+  }
+  html.native-app .home-view,
+  html.native-app .book-view{
+    width:min(100% - 18px,1180px);
+    max-height:none!important;
+    overflow:visible!important;
+    touch-action:pan-y!important;
+  }
+  html.native-app .home-view{
+    padding-bottom:calc(84px + env(safe-area-inset-bottom));
+  }
+  html.native-app .book-view{
+    min-height:100dvh;
+    padding-bottom:calc(84px + env(safe-area-inset-bottom));
+  }
+  html.native-app .book-shell{
+    height:auto!important;
+    min-height:0!important;
+    max-height:none!important;
+    overflow:visible!important;
+  }
+  html.native-app .right-page{
+    height:auto!important;
+    min-height:calc(100dvh - 230px);
+    max-height:none!important;
+    overflow:visible!important;
+  }
+  html.native-app .right-page .entry-page{
+    min-height:calc(100dvh - 310px);
+  }
+  html.native-app .right-page .entry-body,
+  html.native-app .right-page .journal-flow{
+    overflow:visible!important;
+    max-height:none!important;
+  }
+}
