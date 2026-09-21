@@ -122,7 +122,7 @@ function isPhoneUI() {
   return window.matchMedia(PHONE_UI_QUERY).matches;
 }
 
-const NATIVE_PERMISSION_KEY = 'scrapella-native-permissions-v4';
+const NATIVE_PERMISSION_KEY = 'scrapella-native-permissions-v5';
 const NATIVE_THEME_KEY = 'scrapella-native-theme-v1';
 const nativePluginCache = {};
 
@@ -163,6 +163,57 @@ function permissionTimeout(promise, ms = 9000) {
     Promise.resolve(promise),
     new Promise((_,reject)=>window.setTimeout(()=>reject(new Error('Permission request timed out.')),ms))
   ]);
+}
+async function checkMicrophonePermission({ request = false, verifyMedia = false } = {}) {
+  const nativeMic = nativePlugin('MicrophonePermission');
+  if (nativePlatform() === 'android' && nativeMic) {
+    try {
+      const result = request && nativeMic.request
+        ? await permissionTimeout(nativeMic.request(),9000)
+        : nativeMic.check
+          ? await permissionTimeout(nativeMic.check(),4500)
+          : null;
+      const state = String(result?.microphone || '').toLowerCase();
+      if (state === 'granted') {
+        if (!verifyMedia) return 'granted';
+      } else if (state === 'denied') {
+        return 'denied';
+      } else if (state === 'prompt' || state === 'prompt-with-rationale') {
+        if (!request) return 'prompt';
+      }
+    } catch {}
+  }
+
+  try {
+    const devices = await navigator.mediaDevices?.enumerateDevices?.();
+    if (Array.isArray(devices) && devices.some(device => device.kind === 'audioinput' && device.label)) {
+      if (!verifyMedia) return 'granted';
+    }
+  } catch {}
+
+  if (request || verifyMedia) {
+    if (!navigator.mediaDevices?.getUserMedia) return 'unavailable';
+    try {
+      const stream = await permissionTimeout(navigator.mediaDevices.getUserMedia({ audio:true }),12000);
+      stream?.getTracks?.().forEach(track => track.stop());
+      return 'granted';
+    } catch (err) {
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') return 'denied';
+      return 'error';
+    }
+  }
+
+  try {
+    if (navigator.permissions?.query) {
+      const status = await permissionTimeout(navigator.permissions.query({ name:'microphone' }),3000);
+      if (status?.state === 'granted') return 'granted';
+      if (status?.state === 'prompt') return 'prompt';
+      // Some Android WebViews report "denied" here even while the native
+      // RECORD_AUDIO permission is already allowed, so do not treat it as
+      // authoritative unless the native permission plugin also says denied.
+    }
+  } catch {}
+  return 'unknown';
 }
 function setNativePermissionState(kind, state, label) {
   const row = document.querySelector(`[data-native-permission="${kind}"]`);
@@ -225,11 +276,10 @@ async function maybeShowNativePermissionGate() {
     }
   } catch {}
   try {
-    if (navigator.permissions?.query) {
-      const mic = await permissionTimeout(navigator.permissions.query({ name:'microphone' }),3500);
-      if (mic?.state === 'granted') setNativePermissionState('microphone','granted','Allowed');
-      else if (mic?.state === 'denied') setNativePermissionState('microphone','denied','Not allowed');
-    }
+    const mic = await checkMicrophonePermission({ request:false });
+    if (mic === 'granted') setNativePermissionState('microphone','granted','Allowed');
+    else if (mic === 'denied') setNativePermissionState('microphone','denied','Not allowed');
+    else setNativePermissionState('microphone','','Tap Continue to check');
   } catch {}
 }
 async function requestScrapellaNativePermissions() {
@@ -267,16 +317,13 @@ async function requestScrapellaNativePermissions() {
   }
 
   try {
-    setNativePermissionState('microphone','working','Waiting…');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setNativePermissionState('microphone','denied','Unavailable');
-    } else {
-      const stream = await permissionTimeout(navigator.mediaDevices.getUserMedia({ audio:true }),12000);
-      stream?.getTracks?.().forEach(track => track.stop());
-      setNativePermissionState('microphone','granted','Allowed');
-    }
+    setNativePermissionState('microphone','working','Checking…');
+    const mic = await checkMicrophonePermission({ request:true, verifyMedia:true });
+    if (mic === 'granted') setNativePermissionState('microphone','granted','Allowed');
+    else if (mic === 'unavailable') setNativePermissionState('microphone','denied','Unavailable');
+    else setNativePermissionState('microphone','denied','Not allowed');
   } catch {
-    setNativePermissionState('microphone','denied','Not allowed');
+    setNativePermissionState('microphone','denied','Could not verify');
   }
 
   if (platform === 'android') {
