@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260921-polish13" />
+  <link rel="stylesheet" href="/styles.css?v=20260921-universe14" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -125,6 +125,7 @@
             <button id="homeModeBtn">Home</button>
             <button id="bookModeBtn">Book</button>
             <button id="streamModeBtn">Memory Stream</button>
+            <button id="universeModeBtn" class="web-memory-universe-only" type="button">Memory Universe <span class="universe-beta">Preview</span></button>
             <button id="connectionsModeBtn">People</button>
             <button id="messagesModeBtn" class="messages-mode-btn">Messages <span id="messagesBadge" class="messages-badge hidden">0</span></button>
           </div>
@@ -263,6 +264,56 @@
           <p>Scroll through this scrapbook continuously. Newer memories appear first.</p>
         </div>
         <div id="timeline" class="timeline"></div>
+      </section>
+
+      <section id="memoryUniverseView" class="memory-universe-view web-memory-universe-only hidden" aria-label="Memory Universe">
+        <div class="universe-hero">
+          <div>
+            <p class="eyebrow">SCRAPELLA LABS · WEB PREVIEW</p>
+            <h2>Your memories are more than a feed.</h2>
+            <p>Explore how moments, people, and years connect inside this scrapbook. Nothing here changes your original pages.</p>
+          </div>
+          <div class="universe-hero-actions">
+            <button id="memoryReplayBtn" class="primary" type="button">▶ Life Replay</button>
+            <button id="memorySurpriseBtn" class="ghost" type="button">✦ Surprise me</button>
+          </div>
+        </div>
+
+        <div id="memoryUniverseStats" class="memory-universe-stats"></div>
+
+        <section class="universe-panel constellation-panel">
+          <div class="universe-panel-head">
+            <div><p class="eyebrow">MEMORY CONSTELLATION</p><h3>See the shape of this chapter.</h3><p>Memories orbit the scrapbook and connect to the people who created them. Select a memory to explore it.</p></div>
+            <span class="universe-hint">Drag your eyes, not a feed.</span>
+          </div>
+          <div class="constellation-layout">
+            <div id="memoryConstellation" class="memory-constellation" aria-label="Interactive memory constellation">
+              <svg id="memoryConstellationLines" class="memory-constellation-lines" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <div id="memoryConstellationNodes" class="memory-constellation-nodes"></div>
+            </div>
+            <aside id="memoryUniverseDetail" class="memory-universe-detail">
+              <div class="universe-detail-empty">
+                <span>✦</span>
+                <strong>Select a memory</strong>
+                <p>Its story, author, date, and relationship to this scrapbook will appear here.</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="universe-panel">
+          <div class="universe-panel-head">
+            <div><p class="eyebrow">MEMORY ECHOES</p><h3>Then &amp; now.</h3><p>Scrapella looks for moments that echo across different years so your past can sit beside your present.</p></div>
+          </div>
+          <div id="memoryEchoesGrid" class="memory-echoes-grid"></div>
+        </section>
+
+        <section class="universe-panel">
+          <div class="universe-panel-head">
+            <div><p class="eyebrow">SAME MOMENT, DIFFERENT MEMORY</p><h3>One date can hold more than one point of view.</h3><p>When several people remember the same day, Scrapella places their perspectives together instead of turning them into separate posts.</p></div>
+          </div>
+          <div id="memoryPerspectivesGrid" class="memory-perspectives-grid"></div>
+        </section>
       </section>
 
       <section id="connectionsView" class="connections-view hidden">
@@ -660,6 +711,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260921-polish13" defer></script>
+  <script src="/app.js?v=20260921-universe14" defer></script>
 </body>
 </html>
