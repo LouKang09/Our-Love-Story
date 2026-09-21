@@ -1,4 +1,4 @@
-name: Scrapella Android Debug APK
+name: Scrapella Android Release APK
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  build-android-debug:
+  build-android-release:
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -32,6 +32,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Restore Scrapella CI signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/scrapella-ci-release.keystore
+          key: scrapella-ci-release-signing-v1
+
+      - name: Create CI release signing key when missing
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/scrapella-ci-release.keystore" ]; then
+            keytool -genkeypair -v               -keystore "$HOME/.android/scrapella-ci-release.keystore"               -storepass scrapella-ci               -alias scrapella               -keypass scrapella-ci               -keyalg RSA               -keysize 2048               -validity 10000               -dname "CN=Scrapella CI,O=Scrapella,C=PH"
+          fi
 
       - name: Install JavaScript dependencies
         run: npm install --no-audit --no-fund
@@ -94,13 +107,46 @@ jobs:
           permissions = """
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.CAMERA" />
-              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
           """
           if "android.permission.CAMERA" not in manifest:
               pos = manifest.find(">", manifest.find("<manifest"))
               manifest = manifest[:pos+1] + permissions + manifest[pos+1:]
           manifest_path.write_text(manifest)
+          PY
+
+      - name: Configure release signing and app version
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          gradle_path = Path("android/app/build.gradle")
+          gradle = gradle_path.read_text()
+
+          gradle = re.sub(r'versionCode\s+\d+', 'versionCode 223', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.2.3"', gradle, count=1)
+
+          if 'scrapella-ci-release.keystore' not in gradle:
+              gradle = gradle.replace(
+                  'android {',
+                  '''android {
+              signingConfigs {
+                  scrapellaRelease {
+                      storeFile file(System.getProperty("user.home") + "/.android/scrapella-ci-release.keystore")
+                      storePassword "scrapella-ci"
+                      keyAlias "scrapella"
+                      keyPassword "scrapella-ci"
+                  }
+              }''',
+                  1
+              )
+              gradle = gradle.replace(
+                  'buildTypes {\n        release {',
+                  'buildTypes {\n        release {\n            signingConfig signingConfigs.scrapellaRelease',
+                  1
+              )
+
+          gradle_path.write_text(gradle)
           PY
 
       - name: Create Scrapella native artwork
@@ -141,16 +187,16 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Build debug APK
+      - name: Build signed release APK
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload Scrapella Android APK
+      - name: Upload Scrapella Android release APK
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: scrapella-android-release-v2.2.3
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
