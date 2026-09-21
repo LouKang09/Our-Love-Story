@@ -3241,7 +3241,8 @@ function chatPresenceBadgeHtml(profile) {
 }
 function chatMiniPresenceBadgeHtml(profile) {
   const status = chatPresenceDisplay(profile);
-  return `<span class="chat-mini-presence-badge ${status.state}" title="${escapeHtml(status.title)}" aria-label="${escapeHtml(status.title)}"></span>`;
+  const mark = status.state === 'offline' ? '×' : '';
+  return `<span class="chat-mini-presence-badge ${status.state}" title="${escapeHtml(status.title)}" aria-label="${escapeHtml(status.title)}">${mark}</span>`;
 }
 function chatAvatarHtml(chat) {
   if (chat.type === 'private') {
