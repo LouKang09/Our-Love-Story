@@ -4901,7 +4901,7 @@ function universePreviewStorageKey(type) {
 function loadUniversePreview(type, fallback) {
   try {
     const raw = localStorage.getItem(universePreviewStorageKey(type));
-    if (!raw) return structuredClone ? structuredClone(fallback) : JSON.parse(JSON.stringify(fallback));
+    if (!raw) return typeof structuredClone === 'function' ? structuredClone(fallback) : JSON.parse(JSON.stringify(fallback));
     return JSON.parse(raw);
   } catch {
     return Array.isArray(fallback) ? [] : {};
