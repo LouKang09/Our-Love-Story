@@ -2601,16 +2601,17 @@ function renderPersonProfile() {
   $('#personOverrideBtn')?.addEventListener('click', async e => {
     if (!data.overrideAvailable) return;
     e.currentTarget.disabled = true;
+    const previousTarget = ownerOverrideTargetTag;
     ownerOverrideTargetTag = data.overrideActive ? null : p.tag;
-    try {
-      await openPersonProfile(p.tag, { preserveReturn:true, list:personListMode });
-      showToast(ownerOverrideTargetTag === p.tag
-        ? `Owner Override enabled for @${p.tag}. Private Personal scrapbooks are visible read-only.`
-        : 'Owner Override closed.');
-    } catch (err) {
-      showToast(err.message || 'Could not change Override access.');
+    const opened = await openPersonProfile(p.tag, { preserveReturn:true, list:personListMode });
+    if (!opened) {
+      ownerOverrideTargetTag = previousTarget;
       e.currentTarget.disabled = false;
+      return;
     }
+    showToast(ownerOverrideTargetTag === p.tag
+      ? `Owner Override enabled for @${p.tag}. Private Personal scrapbooks are visible read-only.`
+      : 'Owner Override closed.');
   });
   $('#personProfileActions .person-follow-toggle')?.addEventListener('click', async e => {
     const wasFollowing = data.isFollowing === true;
@@ -2632,7 +2633,7 @@ function renderPersonProfile() {
 }
 async function openPersonProfile(tag, options = {}) {
   const cleanTag = String(tag || '').replace(/^@/,'').toLowerCase();
-  if (!cleanTag) return;
+  if (!cleanTag) return false;
   if (currentMode !== 'person' && !options.preserveReturn) personProfileReturnMode = currentMode;
   if (options.list === 'following' || options.list === 'followers') personListMode = options.list;
   try {
@@ -2641,9 +2642,11 @@ async function openPersonProfile(tag, options = {}) {
     if (isPhoneUI()) mobileBookContextTag = cleanTag;
     renderPersonProfile();
     showView('person');
+    return true;
   } catch (err) {
     if (err.status === 401) location.reload();
     else showToast(err.message || 'Could not open that profile.');
+    return false;
   }
 }
 
