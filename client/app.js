@@ -1848,7 +1848,10 @@ function refreshPresenceUi() {
   if (currentMode !== 'messages') return;
   renderChatList();
   const chat = activeChat();
-  if (chat) renderChatHeader(chat);
+  if (chat) {
+    renderChatHeader(chat);
+    renderChatMessages({stickBottom:false});
+  }
 }
 function startPresenceHeartbeat() {
   clearInterval(presencePingTimer);
@@ -1885,7 +1888,10 @@ function connectLiveEvents() {
   source.addEventListener('presence', () => {
     loadChats().then(() => {
       const chat = activeChat();
-      if (chat) renderChatHeader(chat);
+      if (chat) {
+        renderChatHeader(chat);
+        renderChatMessages({stickBottom:false});
+      }
     }).catch(() => {});
   });
   source.onerror = () => {
@@ -3029,6 +3035,10 @@ function chatPresenceBadgeHtml(profile) {
   const status = chatPresenceDisplay(profile);
   return `<span class="chat-presence-badge ${status.state}" title="${escapeHtml(status.title)}" aria-label="${escapeHtml(status.title)}">${escapeHtml(status.label)}</span>`;
 }
+function chatMiniPresenceBadgeHtml(profile) {
+  const status = chatPresenceDisplay(profile);
+  return `<span class="chat-mini-presence-badge ${status.state}" title="${escapeHtml(status.title)}" aria-label="${escapeHtml(status.title)}"></span>`;
+}
 function chatAvatarHtml(chat) {
   if (chat.type === 'private') {
     const profile = chat.otherProfile || {};
@@ -3959,6 +3969,10 @@ function renderChatMessages({stickBottom=true}={}) {
   host.innerHTML = activeChatMessages.map(message => {
     const mine = message.author === me?.tag;
     const profile = message.profile || {};
+    const chat = activeChat();
+    const liveProfile = chat?.type === 'group'
+      ? (chat.members || []).find(member => member?.tag === message.author) || profile
+      : profile;
     const reply=message.replyTo;
     const images=chatMessageImages(message);
     const reactions=Array.isArray(message.reactions)?message.reactions:[];
@@ -3972,7 +3986,7 @@ function renderChatMessages({stickBottom=true}={}) {
       seenLabel
     ].filter(Boolean);
     return `${showLastSeen ? '<div class="chat-last-seen-divider" role="separator"><span>Last seen</span></div>' : ''}<article class="chat-message ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
-      ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}">${avatarHtml(profile,'chat-message-avatar')}</button>`}
+      ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}"><span class="chat-message-avatar-wrap">${avatarHtml(liveProfile,'chat-message-avatar')}${chat?.type === 'group' ? chatMiniPresenceBadgeHtml(liveProfile) : ''}</span></button>`}
       <span class="chat-swipe-reply-indicator" aria-hidden="true">↪</span>
       <div class="chat-bubble" data-message-id="${escapeHtml(message.id || '')}">
         ${!mine ? `<strong>${escapeHtml(profile.displayName || message.author || '')}</strong>` : ''}
