@@ -273,7 +273,10 @@ async function requestScrapellaNativePermissions() {
 $('#nativePermissionsContinue')?.addEventListener('click', requestScrapellaNativePermissions);
 $('#nativePermissionsSkip')?.addEventListener('click', () => closeNativePermissionGate('skipped'));
 
-if (isNativeScrapellaApp()) applyAppearanceMode(storedNativeAppearanceMode());
+if (isNativeScrapellaApp()) {
+  document.documentElement.classList.add('native-app');
+  applyAppearanceMode(storedNativeAppearanceMode());
+}
 
 function runScrapellaBrandIntro() {
   const intro = $('#brandIntro');
