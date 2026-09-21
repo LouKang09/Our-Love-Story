@@ -443,18 +443,26 @@ function mobileBookOptions() {
       (book.type !== 'personal' && Array.isArray(book.members) && book.members.includes(me.tag))
     ));
   }
-  const profileBooks = viewedPersonData?.profile?.tag === contextTag
+
+  // Merge profile data with the current session's accessible books.
+  // Previously the profile response replaced the session list, so a stale
+  // profile payload could make some accessible scrapbooks vanish from the
+  // Book dropdown even though the user could still open them elsewhere.
+  const fromProfile = viewedPersonData?.profile?.tag === contextTag
     ? (Array.isArray(viewedPersonData.personalScrapbooks)
         ? viewedPersonData.personalScrapbooks
         : (viewedPersonData.personalScrapbook?.accessible ? [viewedPersonData.personalScrapbook] : []))
-    : scrapbooks.filter(book => book.type === 'personal' && book.owner === contextTag);
+    : [];
+  const fromSession = scrapbooks.filter(book =>
+    book.type === 'personal' && book.owner === contextTag
+  );
   const sharedGroups = scrapbooks.filter(book =>
     book.type !== 'personal' &&
     Array.isArray(book.members) &&
     book.members.includes(me.tag) &&
     book.members.includes(contextTag)
   );
-  return uniqueBooks([...profileBooks, ...sharedGroups]);
+  return uniqueBooks([...fromProfile, ...fromSession, ...sharedGroups]);
 }
 function mobileContextProfile() {
   const tag = mobileBookContextTag || me?.tag;
@@ -1210,6 +1218,22 @@ function chronologicalEntries() {
 function isMobileBook() { return window.matchMedia('(max-width: 800px)').matches; }
 function activeBookLabel() { return activeScrapbook?.name || 'My Scrapbooks'; }
 
+function positionMobilePageArrows() {
+  if (!isPhoneUI() || currentMode !== 'book') return;
+  const shell = bookShell;
+  const target =
+    rightPage.querySelector('.saved-canvas') ||
+    rightPage.querySelector('.journal-flow') ||
+    rightPage.querySelector('.entry-body');
+  if (!shell || !target) {
+    shell?.style.removeProperty('--mobile-page-arrow-top');
+    return;
+  }
+  const shellRect = shell.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const top = Math.max(24, targetRect.top - shellRect.top + (targetRect.height / 2));
+  shell.style.setProperty('--mobile-page-arrow-top', `${top}px`);
+}
 function renderBook() {
   const ordered = chronologicalEntries();
   const mobile = isMobileBook();
@@ -1230,6 +1254,7 @@ function renderBook() {
   if ($('#mobilePrevBtn')) $('#mobilePrevBtn').disabled = spreadIndex <= 0;
   if ($('#mobileNextBtn')) $('#mobileNextBtn').disabled = spreadIndex + step >= ordered.length;
   wireEntryButtons(bookShell);
+  if (mobile) requestAnimationFrame(() => requestAnimationFrame(positionMobilePageArrows));
 }
 function renderTimeline() {
   const ordered = chronologicalEntries().reverse();
@@ -5747,6 +5772,8 @@ $('#profileBtn').addEventListener('click', () => {
   pendingProfileAvatar = me.avatar || '';
   $('#profileName').value = me.displayName || '';
   $('#profileTag').value = `@${me.tag}`;
+  $('#profileTagStatus').textContent = 'You can change your @tag as long as nobody else is using it.';
+  $('#profileTagStatus').classList.remove('tag-ok','tag-bad');
   $('#profileBio').value = me.bio || '';
   $('#dailyReminderEnabled').checked = me.notifications?.enabled === true;
   $('#dailyReminderTime').value = me.notifications?.reminderTime || '20:00';
@@ -5768,12 +5795,67 @@ $('#profilePhotoInput').addEventListener('change', async e => {
   e.target.value = '';
 });
 wireMentionAutocomplete($('#profileBio'));
+let profileTagAvailabilityTimer = null;
+let profileTagAvailabilitySeq = 0;
+$('#profileTag')?.addEventListener('input', e => {
+  const input = e.currentTarget;
+  const status = $('#profileTagStatus');
+  const raw = String(input.value || '').trim();
+  const clean = raw.replace(/^@/,'').toLowerCase();
+  if (raw && !raw.startsWith('@')) input.value = '@' + raw.replace(/^@+/,'');
+  clearTimeout(profileTagAvailabilityTimer);
+
+  if (!clean || clean === me?.tag) {
+    status.textContent = clean === me?.tag
+      ? 'This is your current @tag.'
+      : 'Tag must be 3–24 characters using letters, numbers, dot, dash or underscore.';
+    status.classList.remove('tag-ok','tag-bad');
+    return;
+  }
+  if (!/^[a-z0-9][a-z0-9_.-]{2,23}$/.test(clean)) {
+    status.textContent = 'Tag must be 3–24 characters using letters, numbers, dot, dash or underscore.';
+    status.classList.remove('tag-ok');
+    status.classList.add('tag-bad');
+    return;
+  }
+  const seq = ++profileTagAvailabilitySeq;
+  status.textContent = 'Checking availability…';
+  status.classList.remove('tag-ok','tag-bad');
+  profileTagAvailabilityTimer = setTimeout(async () => {
+    try {
+      const result = await api(`/api/tag-availability?tag=${encodeURIComponent(clean)}`);
+      if (seq !== profileTagAvailabilitySeq) return;
+      status.textContent = result.available ? `@${clean} is available.` : `@${clean} is already taken.`;
+      status.classList.toggle('tag-ok', result.available === true);
+      status.classList.toggle('tag-bad', result.available !== true);
+    } catch {
+      if (seq === profileTagAvailabilitySeq) {
+        status.textContent = 'Availability will be checked when you save.';
+        status.classList.remove('tag-ok','tag-bad');
+      }
+    }
+  }, 280);
+});
 $('#profileForm').addEventListener('submit', async e => {
   e.preventDefault(); $('#profileError').textContent = '';
   try {
     const enabled = $('#dailyReminderEnabled').checked;
     const reminderTime = $('#dailyReminderTime').value || '20:00';
-    await api('/api/profile', { method:'PUT', body:JSON.stringify({ displayName:$('#profileName').value.trim(), bio:$('#profileBio').value.trim(), avatar:pendingProfileAvatar }) });
+    const requestedTag = $('#profileTag').value.trim();
+    const profileResult = await api('/api/profile', {
+      method:'PUT',
+      body:JSON.stringify({
+        displayName:$('#profileName').value.trim(),
+        tag:requestedTag,
+        bio:$('#profileBio').value.trim(),
+        avatar:pendingProfileAvatar
+      })
+    });
+    if (profileResult?.profile?.tag) {
+      const oldTag = me?.tag;
+      me = { ...me, ...profileResult.profile };
+      mobileBookContextTag = mobileBookContextTag === oldTag ? me.tag : mobileBookContextTag;
+    }
     await saveReminderSettings(enabled, reminderTime);
     await loadSession(activeScrapbook?.id);
     profileDialog.close();
@@ -6176,6 +6258,7 @@ window.addEventListener('resize', () => {
   if (!scrapbookPickerInteracting) syncResponsiveChrome();
   if (isPhoneUI()) {
     if (!scrapbookPickerInteracting) renderMobileBookShelf();
+    if (currentMode === 'book') requestAnimationFrame(positionMobilePageArrows);
     if (me && !phoneHistoryReady) initializePhoneHistory();
   }
 });
