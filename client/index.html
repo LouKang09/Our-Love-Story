@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260921-universe15" />
+  <link rel="stylesheet" href="/styles.css?v=20260921-universe16" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -314,6 +314,29 @@
             <div><p class="eyebrow">SAME MOMENT, DIFFERENT MEMORY</p><h3>One date can hold more than one point of view.</h3><p>When several people remember the same day, Scrapella places their perspectives together instead of turning them into separate posts.</p></div>
           </div>
           <div id="memoryPerspectivesGrid" class="memory-perspectives-grid"></div>
+        </section>
+
+        <section class="universe-panel universe-labs-panel">
+          <div class="universe-panel-head">
+            <div>
+              <p class="eyebrow">SCRAPELLA LABS · MORE PREVIEWS</p>
+              <h3>What if your scrapbook could grow with your life?</h3>
+              <p>These are working web previews of the next ideas. They do not alter your original scrapbook pages. Experimental notes, capsules, heirlooms, and interviews stay in this browser for now.</p>
+            </div>
+            <span class="universe-hint">Try them before we make them permanent.</span>
+          </div>
+
+          <div class="universe-lab-tabs" role="tablist" aria-label="Scrapella Labs previews">
+            <button class="active" type="button" data-universe-lab="layers">Memory Layers</button>
+            <button type="button" data-universe-lab="interview">Memory Interview</button>
+            <button type="button" data-universe-lab="capsules">Future Capsules</button>
+            <button type="button" data-universe-lab="heirlooms">Digital Heirlooms</button>
+            <button type="button" data-universe-lab="voice">Voice Portraits</button>
+            <button type="button" data-universe-lab="museum">Life Museum</button>
+            <button type="button" data-universe-lab="archive">Archive</button>
+          </div>
+
+          <div id="universeLabStage" class="universe-lab-stage" aria-live="polite"></div>
         </section>
       </section>
 
@@ -712,6 +735,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260921-universe15" defer></script>
+  <script src="/app.js?v=20260921-universe16" defer></script>
 </body>
 </html>
