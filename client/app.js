@@ -3283,7 +3283,6 @@ function closeReactionViewer() {
   }
 }
 function openReactionViewer(title, groups = [], { onSelfReaction = null } = {}) {
-  if (!isPhoneUI()) return;
   closeReactionViewer();
   const people = [];
   groups.forEach(group => {
