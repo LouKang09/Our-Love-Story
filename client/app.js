@@ -1457,6 +1457,7 @@ function updateCover() {
   syncBookCoverControls();
   renderPersonalPrivacyQuick();
   $('#brandTitle').textContent = activeBookLabel();
+  if ($('#desktopBookTitle')) $('#desktopBookTitle').textContent = activeBookLabel();
   if (activeScrapbook?.type === 'couple') {
     const archived = activeScrapbook.bindingStatus === 'unbound';
     $('#coverKind').textContent = archived ? 'LOVERS ARCHIVE' : 'LOVERS SCRAPBOOK';
@@ -1914,9 +1915,24 @@ async function savePersonalPrivacy(privacy) {
   }
 }
 
+function parkDesktopNewMemoryButton() {
+  if (isPhoneUI()) return;
+  const button = $('#desktopNewMemoryBtn');
+  const slot = $('#desktopBookActionSlot');
+  if (button && slot && button.parentNode !== slot) slot.appendChild(button);
+}
+function placeDesktopNewMemoryUnderPrivacy() {
+  if (isPhoneUI()) return;
+  const button = $('#desktopNewMemoryBtn');
+  const slot = $('#personalPrivacyQuick .desktop-privacy-new-memory');
+  if (button && slot && button.parentNode !== slot) slot.appendChild(button);
+}
+
 function renderPersonalPrivacyQuick() {
   const panel = $('#personalPrivacyQuick');
-  if (!panel || (isPhoneUI() && currentMode !== 'book') || !activeScrapbook || activeScrapbook.type !== 'personal' || activeScrapbook.owner !== me?.tag) {
+  if (!isPhoneUI()) parkDesktopNewMemoryButton();
+  const wrongDesktopView = !isPhoneUI() && currentMode !== 'book';
+  if (!panel || (isPhoneUI() && currentMode !== 'book') || wrongDesktopView || !activeScrapbook || activeScrapbook.type !== 'personal' || activeScrapbook.owner !== me?.tag) {
     panel?.classList.add('hidden');
     if (panel) panel.innerHTML = '';
     return;
@@ -1925,16 +1941,21 @@ function renderPersonalPrivacyQuick() {
   const privacy = activeScrapbook.privacy || 'private';
   panel.classList.remove('hidden');
   panel.innerHTML = `<div class="privacy-quick-inner">
-    <div class="privacy-quick-copy">
-      <strong>Who can read this scrapbook?</strong>
-      <span>${escapeHtml(privacyLabel(privacy))}</span>
+    <div class="privacy-quick-main">
+      <div class="privacy-quick-copy">
+        <strong>Who can read this scrapbook?</strong>
+        <span>${escapeHtml(privacyLabel(privacy))}</span>
+      </div>
+      <div class="privacy-quick-buttons" role="group" aria-label="Personal scrapbook privacy">
+        <button type="button" data-privacy="private" class="${privacy === 'private' ? 'active' : ''}">You Only</button>
+        <button type="button" data-privacy="followers" class="${privacy === 'followers' ? 'active' : ''}">Followers</button>
+        <button type="button" data-privacy="partner" class="${privacy === 'partner' ? 'active' : ''}">Partner</button>
+      </div>
     </div>
-    <div class="privacy-quick-buttons" role="group" aria-label="Personal scrapbook privacy">
-      <button type="button" data-privacy="private" class="${privacy === 'private' ? 'active' : ''}">You Only</button>
-      <button type="button" data-privacy="followers" class="${privacy === 'followers' ? 'active' : ''}">Followers</button>
-      <button type="button" data-privacy="partner" class="${privacy === 'partner' ? 'active' : ''}">Partner</button>
-    </div>
+    ${isPhoneUI() ? '' : '<div class="desktop-privacy-new-memory"></div>'}
   </div>`;
+
+  if (!isPhoneUI()) placeDesktopNewMemoryUnderPrivacy();
 
   panel.querySelectorAll('[data-privacy]').forEach(button => {
     button.addEventListener('click', async () => {
@@ -2353,7 +2374,7 @@ async function finishGuide({ completed = true } = {}) {
   document.body.classList.remove('guide-active');
   $('#guideSpotlight').style.cssText = '';
   $('#guideCard')?.classList.remove('guide-card-top');
-  showView('home');
+  showView(isPhoneUI() ? 'home' : (activeScrapbook ? 'book' : 'cover'));
   if (wasMandatory) maybeOpenReminderComposer();
 }
 $('#guideNextBtn').addEventListener('click', async () => {
@@ -4204,6 +4225,13 @@ function showView(mode) {
   const noEntries = activeScrapbook && !entries.length;
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
   $('#newEntryBtn').classList.toggle('hidden', mode === 'home' || mode === 'person' || mode === 'messages' || (Boolean(activeScrapbook) && !canWrite));
+  const desktopWorkspaceVisible = !isPhoneUI() && ['cover','book','stream','connections'].includes(mode);
+  $('#desktopScrapbookBar')?.classList.toggle('hidden', !desktopWorkspaceVisible);
+  $('#desktopNewMemoryBtn')?.classList.toggle('hidden', !desktopWorkspaceVisible || !canWrite);
+  if (!isPhoneUI()) {
+    if (mode === 'book') renderPersonalPrivacyQuick();
+    else parkDesktopNewMemoryButton();
+  }
   emptyState.classList.toggle('hidden', mode === 'home' || mode === 'cover' || mode === 'connections' || mode === 'person' || mode === 'messages' || (!noBook && !noEntries));
   const canEmptyDelete = Boolean(isPhoneUI() && noEntries && activeScrapbook && (activeScrapbook.isOwner === true || (activeScrapbook.type === 'group' && activeScrapbook.isGroupAdmin === true)));
   $('#emptyDeleteScrapbookBtn')?.classList.toggle('hidden', !canEmptyDelete);
@@ -5122,7 +5150,7 @@ signupForm.addEventListener('submit', async e => {
   }
   try {
     await api('/api/signup', { method:'POST', body:JSON.stringify({ displayName:$('#signupName').value.trim(), tag:$('#signupTag').value.trim(), password }) });
-    await enterApp(); showView('home');
+    await enterApp();
   } catch (err) { $('#signupError').textContent = err.message; }
 });
 function finishSessionBootstrap(authenticated) {
@@ -5138,7 +5166,7 @@ function finishSessionBootstrap(authenticated) {
 async function enterApp() {
   await loadSession();
   finishSessionBootstrap(true);
-  showView('home');
+  showView(isPhoneUI() ? 'home' : (activeScrapbook ? 'book' : 'cover'));
   initializePhoneHistory();
   connectLiveEvents();
   if (guideState.required) setTimeout(() => startGuide(true), 180);
@@ -5182,6 +5210,15 @@ $('#connectionsModeBtn').addEventListener('click', async () => {
 });
 $('#messagesModeBtn').addEventListener('click', () => { closeMobileChat(); showView('messages'); });
 $('#newEntryBtn').addEventListener('click', () => openEditor());
+$('#desktopNewMemoryBtn')?.addEventListener('click', () => {
+  if (isPhoneUI() || !activeScrapbook || activeScrapbook.canWrite === false) return;
+  openEditor();
+});
+$('#desktopBookTitleBtn')?.addEventListener('click', async () => {
+  if (isPhoneUI()) return;
+  setBookCoverOpen(false);
+  await refreshAndShow('cover');
+});
 $('#mobileNewMemoryBtn')?.addEventListener('click', () => {
   if (!isPhoneUI() || !activeScrapbook || activeScrapbook.canWrite === false) return;
   openEditor();
@@ -5208,8 +5245,8 @@ $('#scrapbookPicker').addEventListener('change', async e => {
       renderMobileBookShelf();
       showView('book');
     } else {
-      setBookCoverOpen(false);
-      showView('cover');
+      setBookCoverOpen(true);
+      showView(activeScrapbook ? 'book' : 'cover');
     }
   } catch (err) {
     if (err.status === 401) location.reload();
@@ -5791,13 +5828,14 @@ function syncResponsiveChrome() {
     setPhoneMessageButtonVisual(true);
     if ($('#privateChatTag')) $('#privateChatTag').placeholder = 'Search';
   } else {
-    if (privacyQuick && $('#inviteBanner') && privacyQuick.previousElementSibling !== $('#inviteBanner')) {
-      $('#inviteBanner').insertAdjacentElement('afterend', privacyQuick);
-    }
+    const desktopPickerSlot = $('#desktopBookPickerSlot');
     if ($('#scrapbookPicker') && pickerWrap && $('#scrapbookPicker').parentNode !== pickerWrap) {
       pickerWrap.insertBefore($('#scrapbookPicker'), $('#createScrapbookBtn') || null);
     }
     if ($('#createScrapbookBtn') && pickerWrap) pickerWrap.appendChild($('#createScrapbookBtn'));
+    if (pickerWrap && desktopPickerSlot && pickerWrap.parentNode !== desktopPickerSlot) {
+      desktopPickerSlot.appendChild(pickerWrap);
+    }
     if ($('#messagesModeBtn') && modeSwitch) modeSwitch.appendChild($('#messagesModeBtn'));
     if ($('#notificationWrap') && toolbar) toolbar.appendChild($('#notificationWrap'));
     if ($('#guideBtn') && toolbar) toolbar.appendChild($('#guideBtn'));
@@ -5805,6 +5843,7 @@ function syncResponsiveChrome() {
     if ($('#profileBtn') && toolbar) toolbar.appendChild($('#profileBtn'));
     if ($('#logoutBtn') && toolbar) toolbar.appendChild($('#logoutBtn'));
     if (suggestions && home && suggestions.parentNode !== home) home.appendChild(suggestions);
+    parkDesktopNewMemoryButton();
     setPhoneMessageButtonVisual(false);
     if ($('#privateChatTag')) $('#privateChatTag').placeholder = 'Message @tag';
     hideMobilePrivateChatSuggestions();
