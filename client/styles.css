@@ -9427,3 +9427,93 @@ html.native-app .lock-screen.hidden{
     font-weight:700;
   }
 }
+
+
+/* =========================================================
+   OWNER PROFILE + SCRAPBOOK PHOTO VIEWER
+   ========================================================= */
+.person-avatar-owner-wrap{
+  position:relative;
+  display:inline-flex;
+  flex:0 0 auto;
+}
+.owner-verified-badge{
+  position:absolute;
+  right:-3px;
+  bottom:-3px;
+  z-index:3;
+  width:25px;
+  height:25px;
+  display:grid;
+  place-items:center;
+  border:3px solid var(--paper);
+  border-radius:50%;
+  background:#e98fa6;
+  color:#fff;
+  box-shadow:0 4px 12px rgba(136,61,80,.3);
+  font:900 13px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.owner-name-label{
+  display:inline!important;
+  margin-left:8px;
+  color:#d76f8c!important;
+  font:800 .36em/1 ui-sans-serif,system-ui,sans-serif!important;
+  letter-spacing:.02em;
+  white-space:nowrap;
+  vertical-align:middle;
+}
+.person-relation-badges .owner-relation-badge{
+  background:#e98fa6;
+  color:#fff;
+}
+.owner-override-btn{
+  background:#e98fa6!important;
+  border-color:#e98fa6!important;
+  color:#fff!important;
+}
+.owner-override-btn.active{
+  box-shadow:0 0 0 3px rgba(233,143,166,.2);
+}
+.owner-override-note{
+  display:inline-block;
+  padding:3px 7px;
+  border-radius:999px;
+  background:#e98fa6;
+  color:#fff;
+  font:800 9px ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.saved-photo-frame img,
+.memory-photo img{
+  cursor:zoom-in;
+}
+.chat-image-viewer img{
+  cursor:zoom-out;
+}
+
+html[data-theme="night"] .owner-verified-badge{
+  border-color:#2d2427;
+}
+html[data-theme="night"] .owner-name-label{
+  color:#f0a2b6!important;
+}
+html[data-theme="night"] .owner-override-note,
+html[data-theme="night"] .person-relation-badges .owner-relation-badge,
+html[data-theme="night"] .owner-override-btn{
+  background:#d97f98!important;
+  border-color:#d97f98!important;
+  color:#fff!important;
+}
+
+@media(max-width:480px){
+  .owner-verified-badge{
+    width:22px;
+    height:22px;
+    font-size:11px;
+  }
+  .owner-name-label{
+    margin-left:5px;
+    font-size:.4em!important;
+  }
+}
