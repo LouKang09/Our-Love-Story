@@ -90,7 +90,7 @@ The repository includes a Capacitor 8 Android trial wrapper for **Our Love Story
 
 For this first internal build, the native shell loads the existing production app at:
 
-`https://our-love-story-production-47c9.up.railway.app`
+`https://scrapella.up.railway.app`
 
 This keeps the current login cookies, Railway backend, uploads, chats, scrapbook data, and live updates working exactly like the web version while the Android shell is evaluated.
 
