@@ -9531,7 +9531,6 @@ html[data-theme="night"] .owner-override-btn{
   /* Keep the desktop app bar clean: account/system actions only. */
   .topbar>.brand-button,
   .topbar>.scrapbook-picker-wrap,
-  .topbar .mode-switch,
   .topbar>#newEntryBtn,
   .topbar .toolbar>#newEntryBtn{
     display:none!important;
@@ -9544,9 +9543,13 @@ html[data-theme="night"] .owner-override-btn{
     padding-bottom:8px;
   }
   .topbar .toolbar{
-    width:auto;
-    margin-left:auto;
+    width:100%;
+    margin-left:0;
     justify-content:flex-end;
+  }
+  .topbar .mode-switch{
+    display:flex!important;
+    margin-right:auto;
   }
 
   /* Active scrapbook identity and picker now live with the book itself. */
