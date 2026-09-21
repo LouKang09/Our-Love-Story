@@ -1,6 +1,6 @@
 {
   "name": "scrapella",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "private": true,
   "description": "Scrapella — a private social scrapbook for personal stories, couples, friends and groups.",
   "scripts": {
@@ -21,7 +21,8 @@
     "web-push": "^3.6.7",
     "@capacitor/camera": "8.2.4",
     "@capacitor/push-notifications": "8.1.2",
-    "@capacitor/app": "^8.0.0"
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/share": "^8.0.0"
   },
   "devDependencies": {
     "@capacitor/android": "8.5.2",
