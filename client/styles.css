@@ -11079,3 +11079,162 @@ html[data-theme="night"] .chat-last-seen-divider::after{
   stroke-linecap:round;
   stroke-linejoin:round;
 }
+
+
+/* ===== 2026-09-21 MESSAGES PRESENCE + DARK BOOK POLISH ===== */
+
+/* Private-message search is selection-driven on both desktop and app. */
+.private-chat-form{
+  position:relative;
+  grid-template-columns:1fr!important;
+}
+.private-chat-start{
+  display:none!important;
+}
+.private-chat-suggestions{
+  position:absolute;
+  z-index:120;
+  left:0;
+  right:0;
+  top:calc(100% + 6px);
+  max-height:280px;
+  overflow:auto;
+  padding:6px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:rgba(255,250,241,.98);
+  box-shadow:0 16px 36px rgba(60,39,36,.16);
+}
+.private-chat-suggestion:hover,
+.private-chat-suggestion:focus-visible{
+  background:var(--rose-soft);
+}
+html[data-theme="night"] .private-chat-suggestions{
+  color:var(--ink);
+  border-color:var(--line);
+  background:#2d2527;
+}
+
+/* Presence badge sits on the lower-right edge of a private-chat avatar. */
+.chat-presence-avatar-wrap{
+  position:relative;
+  display:inline-grid;
+  place-items:center;
+  flex:0 0 auto;
+  width:max-content;
+  height:max-content;
+  line-height:0;
+  overflow:visible;
+}
+.chat-presence-badge{
+  position:absolute;
+  z-index:5;
+  right:-3px;
+  bottom:-3px;
+  min-width:15px;
+  height:15px;
+  display:grid;
+  place-items:center;
+  padding:0 3px;
+  border:2px solid var(--paper);
+  border-radius:999px;
+  box-sizing:border-box;
+  font:800 7px/1 ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:-.02em;
+  box-shadow:0 2px 6px rgba(25,18,20,.18);
+  pointer-events:none;
+}
+.chat-presence-badge.active{
+  width:15px;
+  min-width:15px;
+  padding:0;
+  background:#39b66a;
+  color:transparent;
+}
+.chat-presence-badge.away{
+  min-width:21px;
+  background:#d8933e;
+  color:#fff;
+}
+.chat-presence-badge.offline{
+  width:15px;
+  min-width:15px;
+  padding:0;
+  background:#81777a;
+  color:#fff;
+  font-size:9px;
+}
+html[data-theme="night"] .chat-presence-badge{
+  border-color:#2c2326;
+}
+.chat-header .chat-presence-badge{
+  right:-2px;
+  bottom:-2px;
+}
+@media(max-width:800px){
+  .chat-presence-badge{
+    right:-2px;
+    bottom:-2px;
+  }
+}
+
+/* Desktop night mode: book chrome is dark, while the designed scrapbook paper stays warm. */
+@media(min-width:801px){
+  html[data-theme="night"]:not(.native-app) .entry-time{
+    color:#d9c9c5!important;
+    border-color:#5d484e!important;
+    background:#46363b!important;
+  }
+
+  html[data-theme="night"]:not(.native-app) .canvas-size-step{
+    color:#f4eae7!important;
+    border-color:#5b484e!important;
+    background:#211a1c!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-size-step:hover,
+  html[data-theme="night"]:not(.native-app) .canvas-size-step:active{
+    color:#fff!important;
+    background:#4b363d!important;
+  }
+
+  html[data-theme="night"]:not(.native-app) .scrap-canvas,
+  html[data-theme="night"]:not(.native-app) .saved-canvas{
+    color:#352729!important;
+    border-color:rgba(83,54,49,.18)!important;
+    background:
+      linear-gradient(rgba(255,255,255,.42),rgba(255,255,255,.42)),
+      radial-gradient(circle at 16% 10%,rgba(255,255,255,.72),transparent 28%),
+      #f3eadc!important;
+    box-shadow:0 18px 45px rgba(0,0,0,.18);
+  }
+  html[data-theme="night"]:not(.native-app) .scrap-canvas.canvas-lined,
+  html[data-theme="night"]:not(.native-app) .saved-canvas.canvas-lined{
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 5.3cqw,
+        rgba(111,82,78,.17) 5.3cqw,
+        rgba(111,82,78,.17) calc(5.3cqw + 1px)
+      ),
+      linear-gradient(rgba(255,255,255,.35),rgba(255,255,255,.35)),
+      #f3eadc!important;
+  }
+
+  /* Text boxes blend into paper rather than looking like separate dark cards. */
+  html[data-theme="night"]:not(.native-app) .canvas-text-item{
+    color:#352729!important;
+    background:rgba(255,250,241,.22)!important;
+  }
+  html[data-theme="night"]:not(.native-app) .saved-text-item{
+    color:#352729!important;
+    background:rgba(255,250,241,.10)!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-text-content:empty::before{
+    color:#887672!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-drag-handle{
+    color:#6e3d46!important;
+    background:rgba(224,194,201,.62)!important;
+  }
+}
