@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260921-owner02" />
+  <link rel="stylesheet" href="/styles.css?v=20260921-desktop01" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -143,6 +143,18 @@
       </header>
 
       <section id="inviteBanner" class="invite-banner hidden"></section>
+
+      <section id="desktopScrapbookBar" class="desktop-scrapbook-bar hidden" aria-label="Current scrapbook">
+        <button id="desktopBookTitleBtn" class="desktop-book-title" type="button" aria-label="Open scrapbook cover">
+          <span aria-hidden="true">♡</span>
+          <strong id="desktopBookTitle">Your scrapbook</strong>
+        </button>
+        <div id="desktopBookPickerSlot" class="desktop-book-picker-slot"></div>
+        <div id="desktopBookActionSlot" class="desktop-book-action-slot">
+          <button id="desktopNewMemoryBtn" class="primary desktop-new-memory-btn" type="button">＋ New memory</button>
+        </div>
+      </section>
+
       <section id="personalPrivacyQuick" class="personal-privacy-quick hidden" aria-label="Personal scrapbook privacy"></section>
 
       <section id="homeView" class="home-view hidden">
@@ -620,6 +632,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260921-owner02" defer></script>
+  <script src="/app.js?v=20260921-desktop01" defer></script>
 </body>
 </html>
