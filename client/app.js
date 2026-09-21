@@ -102,6 +102,8 @@ const PHONE_UI_QUERY = '(max-width: 800px)';
 let mobileBookContextTag = null;
 let mobileHomeSearchTimer = null;
 let mobileHomeSearchSeq = 0;
+let desktopHomeSearchTimer = null;
+let desktopHomeSearchSeq = 0;
 let mobilePrivateChatSearchTimer = null;
 let mobilePrivateChatSearchSeq = 0;
 let mobileInviteSearchTimer = null;
@@ -289,13 +291,8 @@ function runScrapellaBrandIntro() {
     finish();
     return;
   }
-  if (!isPhoneUI()) {
-    intro.remove();
-    finish();
-    return;
-  }
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const hold = reduced ? 550 : 1740;
+  const hold = reduced ? 550 : (isPhoneUI() ? 1740 : 2000);
   window.setTimeout(() => {
     intro.classList.add('brand-intro-finish');
     window.setTimeout(() => {
@@ -2855,16 +2852,43 @@ async function runMobileHomeSearch(rawQuery = $('#homeSearchInput')?.value || ''
     if (seq === mobileHomeSearchSeq) showToast(err.message || 'Could not search profiles.');
   }
 }
+async function runDesktopHomeSearch(rawQuery = $('#homeSearchInput')?.value || '') {
+  if (isPhoneUI()) return;
+  const query = String(rawQuery || '').trim();
+  const host = $('#homeSearchResults');
+  if (!query) {
+    host?.classList.add('hidden');
+    if (host) host.innerHTML = '';
+    return;
+  }
+  const seq = ++desktopHomeSearchSeq;
+  try {
+    const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
+    if (seq !== desktopHomeSearchSeq || isPhoneUI()) return;
+    renderHomeSearchResults(data.people || []);
+  } catch (err) {
+    if (seq === desktopHomeSearchSeq) showToast(err.message || 'Could not search profiles.');
+  }
+}
 $('#homeSearchInput').addEventListener('input', e => {
-  if (!isPhoneUI()) return;
-  clearTimeout(mobileHomeSearchTimer);
   const query = e.currentTarget.value.trim();
+  if (isPhoneUI()) {
+    clearTimeout(mobileHomeSearchTimer);
+    if (!query) {
+      $('#homeSearchResults')?.classList.add('hidden');
+      if ($('#homeSearchResults')) $('#homeSearchResults').innerHTML = '';
+      return;
+    }
+    mobileHomeSearchTimer = setTimeout(() => runMobileHomeSearch(query), 110);
+    return;
+  }
+  clearTimeout(desktopHomeSearchTimer);
   if (!query) {
     $('#homeSearchResults')?.classList.add('hidden');
     if ($('#homeSearchResults')) $('#homeSearchResults').innerHTML = '';
     return;
   }
-  mobileHomeSearchTimer = setTimeout(() => runMobileHomeSearch(query), 110);
+  desktopHomeSearchTimer = setTimeout(() => runDesktopHomeSearch(query), 120);
 });
 
 async function openHomeScrapbook(id, mode = 'book') {
