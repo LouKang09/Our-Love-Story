@@ -8908,3 +8908,378 @@ html[data-theme="night"] .profile-image-viewer{
   .brand-intro>p{animation:none;opacity:1}
 }
 
+
+
+/* =========================================================
+   Scrapella native polish — 2026-09-21
+   ========================================================= */
+html,body,#app{
+  width:100%;
+  max-width:100%;
+}
+html,body{
+  overflow-x:hidden;
+}
+html.native-app,
+html.native-app body{
+  overscroll-behavior:none;
+}
+.password-field{
+  position:relative;
+  display:block;
+  min-width:0;
+}
+.password-field input{
+  width:100%;
+  min-width:0;
+  padding-right:70px;
+}
+.password-visibility{
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  min-width:52px;
+  height:36px;
+  padding:0 9px;
+  border:0;
+  border-radius:999px;
+  background:rgba(146,86,97,.10);
+  color:var(--rose-dark);
+  font:800 10px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.password-visibility:active{
+  background:rgba(146,86,97,.19);
+}
+
+/* Correct auth colors when a native app is already in dark mode. */
+html[data-theme="night"] .lock-screen{
+  background:
+    radial-gradient(circle at 12% 8%,rgba(105,77,84,.15),transparent 28%),
+    linear-gradient(145deg,#21191b,#181315 58%,#100d0e);
+}
+html[data-theme="night"] .lock-card.paper-card{
+  border-color:rgba(255,255,255,.11);
+  background:
+    linear-gradient(135deg,rgba(255,255,255,.025),transparent 28%),
+    #2a2224;
+  box-shadow:0 24px 64px rgba(0,0,0,.36);
+}
+html[data-theme="night"] .lock-card label{
+  color:#e1d5d2;
+}
+html[data-theme="night"] .auth-tabs{
+  background:#382e31;
+  border-color:rgba(255,255,255,.07);
+}
+html[data-theme="night"] .auth-tabs button{
+  color:#bca9a6;
+}
+html[data-theme="night"] .auth-tabs button.active{
+  color:#fff5f2;
+  background:#59454a;
+  box-shadow:0 3px 12px rgba(0,0,0,.24);
+}
+html[data-theme="night"] .password-visibility{
+  color:#f0c6cf;
+  background:#45353a;
+}
+
+/* The source logo is square; crop only its empty upper/lower canvas while
+   keeping the complete horizontal Scrapella artwork visible. */
+.lock-brand-logo{
+  display:block!important;
+  width:min(300px,82%)!important;
+  height:118px!important;
+  max-height:118px!important;
+  margin:0 auto 4px!important;
+  object-fit:cover!important;
+  object-position:center 51%!important;
+  border:0!important;
+  background:transparent!important;
+}
+.native-permission-card>img{
+  display:block!important;
+  width:min(260px,76%)!important;
+  height:102px!important;
+  margin:0 auto 4px!important;
+  object-fit:cover!important;
+  object-position:center 51%!important;
+  border:0!important;
+  background:transparent!important;
+}
+
+/* Native auth should fit the phone viewport instead of behaving like the
+   long browser document. The signup card may scroll internally only when
+   a small screen genuinely needs it. */
+@media(max-width:540px){
+  html.native-app body{
+    min-height:100dvh;
+  }
+  html.native-app .lock-screen{
+    width:100%;
+    max-width:100vw;
+    height:100dvh;
+    min-height:100dvh;
+    display:grid!important;
+    place-items:center;
+    padding:max(10px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom));
+    overflow:hidden!important;
+    touch-action:pan-y;
+  }
+  html.native-app .paper-card{
+    width:min(100%,460px);
+    max-width:100%;
+    min-width:0;
+    min-height:0!important;
+    max-height:calc(100dvh - max(20px,env(safe-area-inset-top)) - max(20px,env(safe-area-inset-bottom)));
+    margin:0 auto;
+    padding:20px 20px 22px;
+    overflow-y:auto;
+    overflow-x:hidden;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+  html.native-app .lock-card>.muted{
+    font-size:16px;
+    line-height:1.35;
+  }
+  html.native-app .auth-tabs{
+    margin:18px 0 17px;
+  }
+  html.native-app .lock-card form{
+    gap:12px;
+    min-width:0;
+  }
+  html.native-app .lock-card label,
+  html.native-app .lock-card input,
+  html.native-app .password-field{
+    min-width:0;
+    max-width:100%;
+  }
+  html.native-app .lock-card input{
+    min-height:52px;
+  }
+  html.native-app #loginForm .form-error,
+  html.native-app #signupForm .form-error{
+    min-height:14px;
+  }
+  html.native-app .lock-brand-logo{
+    width:min(270px,82%)!important;
+    height:96px!important;
+    max-height:96px!important;
+    margin:-4px auto 1px!important;
+  }
+}
+
+/* Native permission sheet — no logo/eyebrow collision and no indefinite
+   "Waiting…" layout. */
+@media(max-width:800px){
+  html.native-app .native-permission-gate{
+    overflow:hidden;
+    padding:max(10px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom));
+  }
+  html.native-app .native-permission-card{
+    width:min(430px,100%);
+    max-width:100%;
+    max-height:calc(100dvh - 20px);
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding:16px 18px 16px;
+  }
+  html.native-app .native-permission-card>img{
+    width:min(230px,70%)!important;
+    height:84px!important;
+    max-height:84px!important;
+    margin:-2px auto 2px!important;
+  }
+  html.native-app .native-permission-card>.eyebrow{
+    margin:0 0 7px;
+  }
+  html.native-app .native-permission-card h2{
+    margin:0 0 7px;
+    font-size:27px;
+  }
+  html.native-app .native-permission-copy{
+    margin-bottom:13px;
+    font-size:13px;
+  }
+  html.native-app .native-permission-list{
+    gap:7px;
+    margin-bottom:13px;
+  }
+  html.native-app .native-permission-list>div{
+    min-width:0;
+    grid-template-columns:38px minmax(0,1fr) auto;
+    padding:9px;
+  }
+  html.native-app .native-permission-list>div.working{
+    opacity:.88;
+  }
+}
+html[data-theme="night"] .native-permission-gate{
+  background:rgba(24,19,21,.98);
+}
+html[data-theme="night"] .native-permission-card{
+  color:var(--ink);
+  border-color:var(--line);
+  background:#2a2224;
+}
+html[data-theme="night"] .native-permission-list>div{
+  background:#211b1d;
+  border-color:var(--line);
+}
+
+/* Startup trace: strong, clean ink only. No translucent background logo. */
+@media(max-width:800px){
+  .brand-intro{
+    background:#faf8f2!important;
+  }
+  .brand-intro-stage{
+    width:min(96vw,520px);
+  }
+  .brand-intro-logo{
+    filter:none!important;
+  }
+  .brand-intro-trace{
+    opacity:1;
+  }
+  .brand-trace-stroke{
+    fill:none;
+    stroke:#403532;
+    stroke-width:11;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+    stroke-dasharray:1;
+    stroke-dashoffset:1;
+  }
+  .brand-trace-stroke.s1{animation:scrapellaStroke .34s linear .05s forwards}
+  .brand-trace-stroke.s2{animation:scrapellaStroke .13s linear .38s forwards}
+  .brand-trace-stroke.s3{animation:scrapellaStroke .13s linear .50s forwards}
+  .brand-trace-stroke.s4{animation:scrapellaStroke .15s linear .62s forwards}
+  .brand-trace-stroke.s5{animation:scrapellaStroke .19s linear .76s forwards}
+  .brand-trace-stroke.s6{animation:scrapellaStroke .13s linear .94s forwards}
+  .brand-trace-stroke.s7{animation:scrapellaStroke .18s linear 1.06s forwards}
+  .brand-trace-stroke.s8{animation:scrapellaStroke .18s linear 1.23s forwards}
+  .brand-trace-stroke.s9{animation:scrapellaStroke .17s linear 1.40s forwards}
+  .brand-intro-final{
+    opacity:0;
+    animation:scrapellaFinalLogo .18s ease 1.56s forwards;
+  }
+  .brand-intro>p{
+    margin:-8vw 0 0;
+  }
+}
+html[data-theme="night"] .brand-intro{
+  /* Branding remains deliberately warm and readable even if the account uses night mode. */
+  background:#faf8f2!important;
+  color:#594a48!important;
+}
+
+/* Conversation-list long press menu — intentionally only the requested
+   Pin / Mute / Restrict / Block / Delete actions. */
+.chat-thread-menu-overlay{
+  position:fixed;
+  inset:0;
+  z-index:2147483400;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  background:rgba(0,0,0,.58);
+  backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);
+}
+.chat-thread-menu-sheet{
+  width:min(520px,100%);
+  padding:8px 14px calc(16px + env(safe-area-inset-bottom));
+  border-radius:24px 24px 0 0;
+  background:#262526;
+  color:#f7f7f7;
+  box-shadow:0 -18px 45px rgba(0,0,0,.30);
+}
+.chat-thread-menu-handle{
+  width:48px;
+  height:5px;
+  margin:2px auto 12px;
+  border-radius:999px;
+  background:#939393;
+}
+.chat-thread-menu-person{
+  display:grid;
+  grid-template-columns:46px minmax(0,1fr);
+  gap:11px;
+  align-items:center;
+  padding:5px 9px 12px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.chat-thread-menu-person .chat-list-avatar,
+.chat-thread-menu-person .chat-group-avatar{
+  width:44px!important;
+  height:44px!important;
+}
+.chat-thread-menu-person strong,
+.chat-thread-menu-person small{
+  display:block;
+}
+.chat-thread-menu-person strong{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font:800 13px ui-sans-serif,system-ui,sans-serif;
+}
+.chat-thread-menu-person small{
+  margin-top:2px;
+  color:#bdbdbd;
+  font:10px ui-sans-serif,system-ui,sans-serif;
+}
+.chat-thread-menu-actions{
+  display:grid;
+  padding:7px 0 0;
+}
+.chat-thread-menu-actions button{
+  width:100%;
+  min-height:56px;
+  display:grid;
+  grid-template-columns:46px minmax(0,1fr);
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  border:0;
+  border-radius:12px;
+  background:transparent;
+  color:#f5f5f5;
+  text-align:left;
+}
+.chat-thread-menu-actions button:active{
+  background:rgba(255,255,255,.08);
+}
+.chat-thread-menu-actions button>span{
+  font-size:22px;
+  text-align:center;
+}
+.chat-thread-menu-actions button>b{
+  font:500 17px/1.2 ui-sans-serif,system-ui,sans-serif;
+}
+.chat-thread-menu-actions button.danger{
+  color:#ff4855;
+}
+.chat-list-copy em{
+  display:block;
+  margin-top:3px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--rose-dark);
+  font:800 8px/1.2 ui-sans-serif,system-ui,sans-serif;
+  font-style:normal;
+}
+.chat-list-item.pinned{
+  background:rgba(146,86,97,.055);
+}
+
+@media(prefers-reduced-motion:reduce){
+  .brand-trace-stroke{
+    animation:none!important;
+    stroke-dashoffset:0!important;
+  }
+}
