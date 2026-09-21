@@ -5858,6 +5858,11 @@ $('#profileForm').addEventListener('submit', async e => {
     }
     await saveReminderSettings(enabled, reminderTime);
     await loadSession(activeScrapbook?.id);
+    if (profileResult?.tagChanged) {
+      disconnectLiveEvents();
+      connectLiveEvents();
+      showToast(`Your @tag is now @${me.tag}.`);
+    }
     profileDialog.close();
     showToast(enabled ? 'Profile saved. Daily reminder is on.' : 'Profile updated.');
     if (currentMode === 'connections') renderConnections();
