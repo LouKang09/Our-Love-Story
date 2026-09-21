@@ -156,6 +156,8 @@ async function readSocial() {
   data.chats = Array.isArray(data.chats) ? data.chats : [];
   data.chatMessages = Array.isArray(data.chatMessages) ? data.chatMessages : [];
   data.chatRead = data.chatRead && typeof data.chatRead === 'object' ? data.chatRead : {};
+  data.chatPreferences = data.chatPreferences && typeof data.chatPreferences === 'object' ? data.chatPreferences : {};
+  data.blockedUsers = data.blockedUsers && typeof data.blockedUsers === 'object' ? data.blockedUsers : {};
   for (const book of data.scrapbooks) {
     if (book?.type !== 'group') continue;
     const members = Array.isArray(book.members) ? book.members.filter(Boolean) : [];
@@ -774,8 +776,35 @@ function chatMembers(social, chat) {
 function canAccessChat(social, chat, user) {
   return Boolean(user && chatMembers(social, chat).includes(user));
 }
+function chatPreferenceFor(social, user, chatId) {
+  const prefs = social.chatPreferences?.[user]?.[chatId];
+  return prefs && typeof prefs === 'object' ? prefs : {};
+}
+function ensureChatPreference(social, user, chatId) {
+  social.chatPreferences ||= {};
+  social.chatPreferences[user] ||= {};
+  social.chatPreferences[user][chatId] ||= {};
+  return social.chatPreferences[user][chatId];
+}
+function blockedTagsFor(social, user) {
+  const items = social.blockedUsers?.[user];
+  return Array.isArray(items) ? items : [];
+}
+function isBlockedBetween(social, a, b) {
+  if (!a || !b) return false;
+  return blockedTagsFor(social,a).includes(b) || blockedTagsFor(social,b).includes(a);
+}
+function chatHiddenForUser(social, chat, user) {
+  const deletedAt = Date.parse(chatPreferenceFor(social,user,chat.id).deletedAt || '') || 0;
+  if (!deletedAt) return false;
+  const lastMessage = [...social.chatMessages].reverse().find(message => message.chatId === chat.id);
+  const lastActivity = Date.parse(lastMessage?.createdAt || chat.createdAt || '') || 0;
+  return lastActivity <= deletedAt;
+}
 function chatUnreadCount(social, chat, user) {
-  if (!canAccessChat(social, chat, user)) return 0;
+  if (!canAccessChat(social, chat, user) || chatHiddenForUser(social,chat,user)) return 0;
+  const pref = chatPreferenceFor(social,user,chat.id);
+  if (pref.restricted === true) return 0;
   const seenMs = Date.parse(social.chatRead?.[user]?.[chat.id] || '') || 0;
   return social.chatMessages.filter(message =>
     message.chatId === chat.id &&
@@ -830,6 +859,7 @@ function decorateChatMessage(social, message, user) {
 }
 function decorateChat(social, chat, user) {
   const members = chatMembers(social, chat);
+  const prefs = chatPreferenceFor(social,user,chat.id);
   const lastMessage = [...social.chatMessages].reverse().find(message => message.chatId === chat.id) || null;
   if (chat.type === 'group') {
     const book = social.scrapbooks.find(item => item.id === chat.scrapbookId);
@@ -848,6 +878,10 @@ function decorateChat(social, chat, user) {
         createdAt:book.deleteRequest.createdAt
       } : null,
       members:members.map(tag => publicProfileFor(social, tag)),
+      pinned:prefs.pinned === true,
+      muted:prefs.muted === true,
+      restricted:prefs.restricted === true,
+      blocked:false,
       unreadCount:chatUnreadCount(social, chat, user),
       lastMessage:lastMessage ? {
         id:lastMessage.id,
@@ -872,6 +906,10 @@ function decorateChat(social, chat, user) {
     name:profile.displayName || displayTag(other),
     otherProfile:profile,
     members:members.map(tag => publicProfileFor(social, tag)),
+    pinned:prefs.pinned === true,
+    muted:prefs.muted === true,
+    restricted:prefs.restricted === true,
+    blocked:blockedTagsFor(social,user).includes(other),
     unreadCount:chatUnreadCount(social, chat, user),
     lastMessage:lastMessage ? {
       id:lastMessage.id,
@@ -1793,9 +1831,9 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/chats' && req.method === 'GET') {
     const chats = social.chats
-      .filter(chat => canAccessChat(social, chat, user))
+      .filter(chat => canAccessChat(social, chat, user) && !chatHiddenForUser(social,chat,user))
       .map(chat => decorateChat(social, chat, user))
-      .sort((a,b) => String(b.lastMessage?.createdAt || '').localeCompare(String(a.lastMessage?.createdAt || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+      .sort((a,b) => Number(b.pinned) - Number(a.pinned) || String(b.lastMessage?.createdAt || '').localeCompare(String(a.lastMessage?.createdAt || '')) || String(a.name || '').localeCompare(String(b.name || '')));
     return json(res, 200, { chats, unreadCount:totalChatUnread(social, user) });
   }
 
@@ -1842,6 +1880,37 @@ async function handleApi(req, res, url) {
     return json(res, 200, { discarded:true });
   }
 
+  const chatPreferenceMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/preferences$/i);
+  if (chatPreferenceMatch && req.method === 'PATCH') {
+    const chat = social.chats.find(item => item.id === chatPreferenceMatch[1]);
+    if (!chat || !canAccessChat(social,chat,user)) return forbidden(res, 'You do not have access to this chat.');
+    const body = await readBody(req, 32 * 1024);
+    const action = String(body.action || '').toLowerCase();
+    const pref = ensureChatPreference(social,user,chat.id);
+
+    if (action === 'pin') pref.pinned = body.value !== false;
+    else if (action === 'mute') pref.muted = body.value !== false;
+    else if (action === 'restrict') pref.restricted = body.value !== false;
+    else if (action === 'delete') {
+      pref.deletedAt = new Date().toISOString();
+      social.chatRead[user] ||= {};
+      social.chatRead[user][chat.id] = pref.deletedAt;
+    } else if (action === 'block') {
+      if (chat.type !== 'private') return json(res, 409, { error:'Only private conversations can be blocked.' });
+      const other = chatMembers(social,chat).find(tag => tag !== user);
+      if (!other) return json(res, 409, { error:'This conversation cannot be blocked.' });
+      social.blockedUsers ||= {};
+      const current = new Set(blockedTagsFor(social,user));
+      if (body.value === false) current.delete(other); else current.add(other);
+      social.blockedUsers[user] = [...current];
+    } else {
+      return json(res, 400, { error:'Unsupported conversation action.' });
+    }
+
+    await writeSocial(social);
+    return json(res, 200, { chat:decorateChat(social,chat,user) });
+  }
+
   const chatMessagesMatch = pathname.match(/^\/api\/chats\/([a-f0-9-]+)\/messages$/i);
   if (chatMessagesMatch && req.method === 'GET') {
     const chat = social.chats.find(item => item.id === chatMessagesMatch[1]);
@@ -1859,6 +1928,10 @@ async function handleApi(req, res, url) {
   if (chatMessagesMatch && req.method === 'POST') {
     const chat = social.chats.find(item => item.id === chatMessagesMatch[1]);
     if (!chat || !canAccessChat(social, chat, user)) return forbidden(res, 'You do not have access to this chat.');
+    if (chat.type === 'private') {
+      const other = chatMembers(social,chat).find(tag => tag !== user);
+      if (other && isBlockedBetween(social,user,other)) return forbidden(res, 'Messaging is unavailable for this conversation.');
+    }
     const body = await readBody(req, 128 * 1024);
     const text = String(body.text || '').trim().slice(0, 2000);
     const requestedImages = [
@@ -1917,7 +1990,9 @@ async function handleApi(req, res, url) {
     }
     const actor = publicProfileFor(social, user);
     for (const target of recipients) {
-      if (!mentionedTargets.has(target)) {
+      const targetPref = chatPreferenceFor(social,target,chat.id);
+      const suppressPush = targetPref.muted === true || targetPref.restricted === true || (chat.type === 'private' && isBlockedBetween(social,user,target));
+      if (!mentionedTargets.has(target) && !suppressPush) {
         await sendUserPush(social, {
           to:target,
           title:chat.type === 'group'
@@ -2384,6 +2459,11 @@ const server = http.createServer(async (req, res) => {
       return serveFile(res, path.join(UPLOADS, path.basename(pathname)));
     }
     if (pathname === '/' || pathname === '/index.html') return serveFile(res, path.join(PUBLIC, 'index.html'));
+    if (pathname.startsWith('/assets/')) {
+      const assetName = path.basename(pathname);
+      if (!assetName || assetName !== pathname.slice('/assets/'.length)) return notFound(res);
+      return serveFile(res, path.join(PUBLIC, 'assets', assetName));
+    }
     const safeName = path.basename(pathname);
     if (['styles.css','app.js','sw.js'].includes(safeName)) return serveFile(res, path.join(PUBLIC, safeName));
     return notFound(res);
