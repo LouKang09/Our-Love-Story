@@ -350,6 +350,121 @@ async function requestScrapellaNativePermissions() {
 $('#nativePermissionsContinue')?.addEventListener('click', requestScrapellaNativePermissions);
 $('#nativePermissionsSkip')?.addEventListener('click', () => closeNativePermissionGate('skipped'));
 
+function setProfilePermissionState(kind, state, label = '') {
+  const ids = {
+    notifications:'profilePermissionNotificationsStatus',
+    camera:'profilePermissionCameraStatus',
+    microphone:'profilePermissionMicrophoneStatus'
+  };
+  const el = document.getElementById(ids[kind] || '');
+  const row = document.querySelector(`[data-profile-permission="${kind}"]`);
+  if (row) {
+    row.classList.remove('granted','denied','prompt','working');
+    if (state) row.classList.add(state);
+  }
+  if (el) el.textContent = label || (
+    state === 'granted' ? 'Allowed' :
+    state === 'denied' ? 'Not allowed' :
+    state === 'working' ? 'Checking…' :
+    'Ready to check'
+  );
+}
+async function checkProfilePermission(kind, { request = false } = {}) {
+  setProfilePermissionState(kind,'working','Checking…');
+  if (kind === 'notifications') {
+    try {
+      const push = nativePlugin('PushNotifications');
+      if (push) {
+        let result = push.checkPermissions ? await permissionTimeout(push.checkPermissions(),4500) : null;
+        if (request && push.requestPermissions && result?.receive !== 'granted') {
+          result = await permissionTimeout(push.requestPermissions(),9000);
+        }
+        const state = result?.receive === 'granted' ? 'granted'
+          : result?.receive === 'denied' ? 'denied'
+          : 'prompt';
+        setProfilePermissionState(kind,state,state === 'granted' ? 'Allowed' : state === 'denied' ? 'Not allowed' : 'Tap to allow');
+        return state;
+      }
+      if ('Notification' in window) {
+        let value = Notification.permission;
+        if (request && value === 'default') value = await Notification.requestPermission();
+        const state = value === 'granted' ? 'granted' : value === 'denied' ? 'denied' : 'prompt';
+        setProfilePermissionState(kind,state,state === 'granted' ? 'Allowed' : state === 'denied' ? 'Not allowed' : 'Tap to allow');
+        return state;
+      }
+    } catch {}
+    setProfilePermissionState(kind,'prompt','Unavailable here');
+    return 'unknown';
+  }
+
+  if (kind === 'camera') {
+    try {
+      const camera = nativePlugin('Camera');
+      if (camera) {
+        let result = camera.checkPermissions ? await permissionTimeout(camera.checkPermissions(),4500) : null;
+        if (request && camera.requestPermissions && result?.camera !== 'granted') {
+          result = await permissionTimeout(camera.requestPermissions({ permissions:['camera'] }),9000);
+        }
+        const state = result?.camera === 'granted' ? 'granted'
+          : result?.camera === 'denied' ? 'denied'
+          : 'prompt';
+        setProfilePermissionState(kind,state,state === 'granted' ? 'Allowed' : state === 'denied' ? 'Not allowed' : 'Tap to allow');
+        return state;
+      }
+      if (request && navigator.mediaDevices?.getUserMedia) {
+        const stream = await permissionTimeout(navigator.mediaDevices.getUserMedia({ video:true }),12000);
+        stream?.getTracks?.().forEach(track => track.stop());
+        setProfilePermissionState(kind,'granted','Allowed');
+        return 'granted';
+      }
+      if (navigator.permissions?.query) {
+        const status = await permissionTimeout(navigator.permissions.query({ name:'camera' }),3000);
+        const state = status?.state === 'granted' ? 'granted' : status?.state === 'denied' ? 'denied' : 'prompt';
+        setProfilePermissionState(kind,state,state === 'granted' ? 'Allowed' : state === 'denied' ? 'Not allowed' : 'Tap to allow');
+        return state;
+      }
+    } catch (err) {
+      setProfilePermissionState(kind,'denied',err?.name === 'NotAllowedError' ? 'Not allowed' : 'Could not check');
+      return 'denied';
+    }
+    setProfilePermissionState(kind,'prompt','Tap to check');
+    return 'unknown';
+  }
+
+  if (kind === 'microphone') {
+    const state = await checkMicrophonePermission({ request, verifyMedia:request });
+    if (state === 'granted') setProfilePermissionState(kind,'granted','Allowed');
+    else if (state === 'denied') setProfilePermissionState(kind,'denied','Not allowed');
+    else if (state === 'unavailable') setProfilePermissionState(kind,'denied','Unavailable');
+    else setProfilePermissionState(kind,'prompt',request ? 'Could not verify' : 'Tap to check');
+    return state;
+  }
+}
+async function refreshProfilePermissionSettings() {
+  await Promise.allSettled([
+    checkProfilePermission('notifications'),
+    checkProfilePermission('camera'),
+    checkProfilePermission('microphone')
+  ]);
+}
+for (const [kind,id] of [
+  ['notifications','profilePermissionNotificationsBtn'],
+  ['camera','profilePermissionCameraBtn'],
+  ['microphone','profilePermissionMicrophoneBtn']
+]) {
+  document.getElementById(id)?.addEventListener('click', async () => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = true;
+    try {
+      const state = await checkProfilePermission(kind,{ request:true });
+      if (state === 'granted') showToast(`${kind[0].toUpperCase()+kind.slice(1)} permission is allowed.`);
+      else if (state === 'denied') showToast(`${kind[0].toUpperCase()+kind.slice(1)} permission is blocked. Enable it in phone App settings if needed.`);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+}
+
 if (isNativeScrapellaApp()) {
   document.documentElement.classList.add('native-app');
   applyAppearanceMode(storedNativeAppearanceMode());
@@ -4273,8 +4388,17 @@ async function startChatAudioRecording(mode='tap') {
   chatRecordingMode=mode;
   chatRecordingDisposition=mode==='hold'?'send':'preview';
   try{
+    if (isNativeScrapellaApp()) {
+      const permission = await checkMicrophonePermission({ request:true });
+      if (permission === 'denied') {
+        setProfilePermissionState('microphone','denied','Not allowed');
+        showToast('Microphone access is blocked. Open Profile → App permissions and allow Microphone.');
+        return false;
+      }
+    }
     clearPendingChatAudio();
     chatMediaStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    setProfilePermissionState('microphone','granted','Allowed');
     const preferred=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'].find(type=>MediaRecorder.isTypeSupported?.(type));
     chatAudioChunks=[];
     chatMediaRecorder=new MediaRecorder(chatMediaStream,preferred?{mimeType:preferred}:undefined);
@@ -6221,6 +6345,7 @@ $('#profileBtn').addEventListener('click', () => {
   $('#profileAvatarLarge').outerHTML = avatarHtml(me, 'large-avatar').replace('class="avatar large-avatar"', 'id="profileAvatarLarge" class="avatar large-avatar"');
   $('#profileError').textContent = '';
   updateNotificationStatus();
+  refreshProfilePermissionSettings().catch(()=>{});
   profileDialog.showModal();
 });
 $('#closeProfileDialog').addEventListener('click', () => profileDialog.close());
