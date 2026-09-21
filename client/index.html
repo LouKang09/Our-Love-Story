@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#6e3d46" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260921-mobile06" />
+  <link rel="stylesheet" href="/styles.css?v=20260921-mobile07" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -569,7 +569,10 @@
           <label class="upload-btn">Change photo<input id="profilePhotoInput" type="file" accept="image/png,image/jpeg,image/webp" hidden /></label>
         </div>
         <label>Display name<input id="profileName" maxlength="60" required /></label>
-        <label>@tag<input id="profileTag" disabled /></label>
+        <label>@tag
+          <input id="profileTag" maxlength="24" autocomplete="username" spellcheck="false" placeholder="@yourtag" required />
+          <small id="profileTagStatus" class="helper">You can change your @tag as long as nobody else is using it.</small>
+        </label>
         <label>About you<textarea id="profileBio" rows="4" maxlength="220" placeholder="A tiny note about you... Tag someone with @theirtag"></textarea></label>
         <p class="helper profile-bio-helper">Tip: use <strong>@tag</strong> in your About text to mention someone. They will receive a notification when the tag is newly added.</p>
 
@@ -617,6 +620,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260921-mobile06" defer></script>
+  <script src="/app.js?v=20260921-mobile07" defer></script>
 </body>
 </html>
