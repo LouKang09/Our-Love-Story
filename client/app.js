@@ -1478,42 +1478,165 @@ function memoryShareUrl(entryId) {
   if (entryId) url.searchParams.set('entry', entryId);
   return url.toString();
 }
-async function shareMemory(entryId) {
+let html2CanvasLoader = null;
+async function ensureMemoryCaptureLibrary() {
+  if (typeof window.html2canvas === 'function') return window.html2canvas;
+  if (!html2CanvasLoader) {
+    html2CanvasLoader = new Promise((resolve,reject) => {
+      const script = document.createElement('script');
+      script.src = '/vendor/html2canvas.min.js?v=1.4.1';
+      script.async = true;
+      script.onload = () => typeof window.html2canvas === 'function'
+        ? resolve(window.html2canvas)
+        : reject(new Error('Memory capture library did not load.'));
+      script.onerror = () => reject(new Error('Could not load memory capture library.'));
+      document.head.appendChild(script);
+    }).catch(err => {
+      html2CanvasLoader = null;
+      throw err;
+    });
+  }
+  return html2CanvasLoader;
+}
+async function waitForShareImages(root) {
+  const images = [...(root?.querySelectorAll?.('img') || [])];
+  await Promise.all(images.map(img => {
+    if (img.complete && img.naturalWidth) return Promise.resolve();
+    return new Promise(resolve => {
+      const done = () => resolve();
+      img.addEventListener('load',done,{once:true});
+      img.addEventListener('error',done,{once:true});
+      setTimeout(done,3500);
+    });
+  }));
+}
+async function captureMemoryShareImage(entryId, sourceNode = null) {
+  const html2canvas = await ensureMemoryCaptureLibrary();
+  const source = sourceNode
+    || document.querySelector(`.entry-page[data-entry-id="${CSS.escape(entryId)}"]`)
+    || document.querySelector(`.timeline-item[data-entry-id="${CSS.escape(entryId)}"] .stream-card`);
+  if (!source) throw new Error('Could not find this memory on screen.');
+
+  const host = document.createElement('div');
+  host.className = 'memory-share-render-host';
+  const card = source.cloneNode(true);
+  card.classList.add('memory-share-capture-card');
+  card.querySelectorAll('.memory-comments,.page-actions,.comment-form,.comment-actions,.comment-reply-form').forEach(node => node.remove());
+  card.querySelectorAll('button').forEach(button => {
+    if (button.closest('.entry-meta')) button.setAttribute('tabindex','-1');
+  });
+  host.appendChild(card);
+  document.body.appendChild(host);
+  try {
+    await waitForShareImages(card);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const canvas = await html2canvas(card,{
+      backgroundColor:'#f7f0e5',
+      scale:Math.min(2,Math.max(1,window.devicePixelRatio || 1)),
+      useCORS:true,
+      allowTaint:false,
+      logging:false,
+      imageTimeout:8000,
+      removeContainer:true
+    });
+    const blob = await new Promise((resolve,reject) => {
+      canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the scrapbook image.')),'image/png',0.95);
+    });
+    return blob;
+  } finally {
+    host.remove();
+  }
+}
+function blobToBase64(blob) {
+  return new Promise((resolve,reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(reader.error || new Error('Could not prepare the image.'));
+    reader.readAsDataURL(blob);
+  });
+}
+async function shareMemory(entryId, sourceNode = null, button = null) {
   const entry = entries.find(item => item.id === entryId);
   if (!entry) return;
   const bookName = activeScrapbook?.name || 'Scrapella';
   const title = entry.title || 'A Scrapella memory';
-  const text = `${title} · ${bookName}`;
   const url = memoryShareUrl(entry.id);
+  const text = `${title} · ${bookName}\n${url}`;
+  const originalLabel = button?.innerHTML || '';
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<span aria-hidden="true">◌</span> Preparing…';
+  }
   try {
-    const sharePlugin = nativePlugin('Share');
-    if (isNativeScrapellaApp() && sharePlugin?.share) {
-      await sharePlugin.share({ title, text, url, dialogTitle:'Share this memory' });
+    const blob = await captureMemoryShareImage(entry.id,sourceNode);
+    const fileName = `scrapella-memory-${String(entry.id || Date.now()).replace(/[^a-z0-9_-]/gi,'-')}.png`;
+
+    if (isNativeScrapellaApp()) {
+      const sharePlugin = nativePlugin('Share');
+      const filesystem = nativePlugin('Filesystem');
+      if (sharePlugin?.share && filesystem?.writeFile) {
+        const data = await blobToBase64(blob);
+        const saved = await filesystem.writeFile({
+          path:fileName,
+          data,
+          directory:'CACHE',
+          recursive:true
+        });
+        let uri = saved?.uri || '';
+        if (!uri && filesystem.getUri) {
+          const located = await filesystem.getUri({ path:fileName, directory:'CACHE' });
+          uri = located?.uri || '';
+        }
+        if (uri) {
+          await sharePlugin.share({
+            title,
+            text,
+            files:[uri],
+            dialogTitle:'Share this scrapbook memory'
+          });
+          return;
+        }
+      }
+    }
+
+    const file = new File([blob],fileName,{ type:'image/png', lastModified:Date.now() });
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))) {
+      await navigator.share({ title, text, files:[file] });
       return;
     }
     if (navigator.share) {
       await navigator.share({ title, text, url });
       return;
     }
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(url);
-      showToast('Memory link copied.');
-      return;
-    }
-    showToast('Sharing is not supported on this device.');
+
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl),1500);
+    showToast('Scrapbook image saved. Share it to your Story from your photos.');
   } catch (err) {
     if (err?.name === 'AbortError' || String(err?.message || '').toLowerCase().includes('cancel')) return;
     try {
       await navigator.clipboard?.writeText?.(url);
-      showToast('Memory link copied.');
+      showToast('Could not share the image, so the memory link was copied instead.');
     } catch {
-      showToast('Could not open sharing on this device.');
+      showToast(err?.message || 'Could not share this scrapbook memory.');
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalLabel;
     }
   }
 }
 function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
-  root.querySelectorAll('.share-entry').forEach(btn => btn.addEventListener('click', () => shareMemory(btn.dataset.id)));
+  root.querySelectorAll('.share-entry').forEach(btn => btn.addEventListener('click', () => {
+    const source = btn.closest('.entry-page,.stream-card');
+    shareMemory(btn.dataset.id,source,btn);
+  }));
   root.querySelectorAll('.saved-photo-frame img,.memory-photo img').forEach(img => {
     if (img.dataset.scrapbookZoomWired === '1') return;
     img.dataset.scrapbookZoomWired = '1';
