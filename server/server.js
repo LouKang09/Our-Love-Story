@@ -23,6 +23,7 @@ const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://our-love-story-produ
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 const GUIDE_VERSION = 8;
+const PLATFORM_OWNER_SEED_TAG = slugTag(process.env.PLATFORM_OWNER_TAG || 'loukang09');
 
 if (PUSH_READY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -195,6 +196,12 @@ async function ensureStorage() {
       social.profiles[tag] = { tag, displayName: tag === 'girlfriend' ? 'Girlfriend' : tag === 'you' ? 'You' : tag, avatar: '', bio: '', createdAt: new Date().toISOString() };
       changed = true;
     }
+  }
+
+  const existingPlatformOwner = Object.values(social.profiles).find(profile => profile?.platformOwner === true);
+  if (!existingPlatformOwner && social.profiles[PLATFORM_OWNER_SEED_TAG]) {
+    social.profiles[PLATFORM_OWNER_SEED_TAG].platformOwner = true;
+    changed = true;
   }
 
   let defaultBook = social.scrapbooks.find(book => book.isLegacyDefault);
@@ -530,6 +537,9 @@ function cleanEntry(input, author, existing = {}) {
     updatedAt: new Date().toISOString()
   };
 }
+function isPlatformOwner(social, tag) {
+  return Boolean(tag && social?.profiles?.[tag]?.platformOwner === true);
+}
 function profileFor(social, tag) {
   const p = social.profiles[tag] || { tag, displayName: tag, avatar: '', bio: '' };
   const notify = social.notificationSettings?.[tag] || {};
@@ -539,6 +549,7 @@ function profileFor(social, tag) {
     displayName: p.displayName || tag,
     avatar: p.avatar || '',
     bio: p.bio || '',
+    isPlatformOwner: isPlatformOwner(social, tag),
     appearanceMode: ['light','night'].includes(p.appearanceMode) ? p.appearanceMode : 'light',
     notifications: {
       enabled: notify.enabled === true,
@@ -554,7 +565,8 @@ function publicProfileFor(social, tag) {
     tagLabel: displayTag(tag),
     displayName: p.displayName || tag,
     avatar: p.avatar || '',
-    bio: p.bio || ''
+    bio: p.bio || '',
+    isPlatformOwner: isPlatformOwner(social, tag)
   };
 }
 function isFollowing(social, follower, following) {
@@ -953,9 +965,13 @@ function groupAdminTags(book) {
 function isGroupAdmin(book, tag) {
   return Boolean(book?.type === 'group' && tag && groupAdminTags(book).includes(tag));
 }
-function decorateBook(social, book, viewer) {
+function decorateBook(social, book, viewer, options = {}) {
   const viewingAsFollower = book.type === 'personal' && book.owner !== viewer && isFollowing(social, viewer, book.owner);
   const viewingAsPartner = book.type === 'personal' && book.owner !== viewer && isActivePartner(social, viewer, book.owner);
+  const overrideAccess = options.overrideAccess === true &&
+    book.type === 'personal' &&
+    book.owner !== viewer &&
+    isPlatformOwner(social, viewer);
   return {
     id: book.id,
     type: book.type,
@@ -974,7 +990,8 @@ function decorateBook(social, book, viewer) {
       createdAt:book.deleteRequest.createdAt
     } : null,
     canWrite: canWriteBook(book, viewer),
-    accessReason: book.owner === viewer ? 'owner' : (viewingAsPartner ? 'partner' : (viewingAsFollower ? 'follower' : 'member')),
+    overrideAccess,
+    accessReason: overrideAccess ? 'override' : (book.owner === viewer ? 'owner' : (viewingAsPartner ? 'partner' : (viewingAsFollower ? 'follower' : 'member'))),
     bindingStatus: book.bindingStatus || 'bound',
     boundAt: book.boundAt || (book.type === 'couple' && (book.members || []).length >= 2 ? book.createdAt : null),
     unboundAt: book.unboundAt || null,
@@ -1153,14 +1170,24 @@ async function handleApi(req, res, url) {
       await writeSocial(social);
     }
 
+    const overrideBookId = isPlatformOwner(social, user)
+      ? String(url.searchParams.get('overrideBookId') || '')
+      : '';
     const books = social.scrapbooks
-      .filter(b => canViewBook(social, b, user))
+      .filter(b => canViewBook(social, b, user) || (
+        overrideBookId &&
+        b.id === overrideBookId &&
+        b.type === 'personal' &&
+        b.owner !== user
+      ))
       .sort((a,b) => {
         const ao = a.owner === user ? 0 : 1;
         const bo = b.owner === user ? 0 : 1;
         return ao - bo || String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
       })
-      .map(b => decorateBook(social, b, user));
+      .map(b => decorateBook(social, b, user, {
+        overrideAccess:Boolean(overrideBookId && b.id === overrideBookId && !canViewBook(social, b, user))
+      }));
     const invites = social.invites.filter(i => i.to === user && i.status === 'pending').map(i => ({
       ...i,
       fromProfile: publicProfileFor(social, i.from),
@@ -1440,6 +1467,8 @@ async function handleApi(req, res, url) {
   if (personProfileMatch && req.method === 'GET') {
     const target = slugTag(personProfileMatch[1]);
     if (!target || !(await accountExists(target))) return json(res, 404, { error: 'That profile no longer exists.' });
+    const viewerIsOwner = isPlatformOwner(social, user);
+    const overrideActive = viewerIsOwner && target !== user && url.searchParams.get('override') === '1';
 
     const followingTags = [...new Set(social.follows.filter(f => f.follower === target).map(f => f.following))];
     const followerTags = [...new Set(social.follows.filter(f => f.following === target).map(f => f.follower))];
@@ -1455,15 +1484,19 @@ async function handleApi(req, res, url) {
       .sort((a,b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
 
     const personalScrapbooks = personalBooks
-      .filter(book => canViewBook(social, book, user))
+      .filter(book => overrideActive || canViewBook(social, book, user))
       .map(book => ({
-        ...decorateBook(social, book, user),
+        ...decorateBook(social, book, user, {
+          overrideAccess:overrideActive && !canViewBook(social, book, user)
+        }),
         profiles:[publicProfileFor(social, target)],
         accessible:true,
         locked:false
       }));
 
-    const hasLockedPersonalScrapbooks = personalBooks.some(book => !canViewBook(social, book, user));
+    const hasLockedPersonalScrapbooks = overrideActive
+      ? false
+      : personalBooks.some(book => !canViewBook(social, book, user));
     const personalScrapbook = personalScrapbooks[0] || (hasLockedPersonalScrapbooks
       ? { type:'personal', owner:target, accessible:false, locked:true }
       : null);
@@ -1471,6 +1504,9 @@ async function handleApi(req, res, url) {
     return json(res, 200, {
       profile: publicProfileFor(social, target),
       isSelf: target === user,
+      viewerIsOwner,
+      overrideAvailable: viewerIsOwner && target !== user,
+      overrideActive,
       isFollowing: target !== user && isFollowing(social, user, target),
       followsYou: target !== user && isFollowing(social, target, user),
       isPartner: target !== user && isActivePartner(social, user, target),
@@ -2235,7 +2271,13 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/entries' && req.method === 'GET') {
     const scrapbookId = String(url.searchParams.get('scrapbookId') || '');
-    const book = bookForViewer(social, scrapbookId, user);
+    const rawBook = social.scrapbooks.find(book => book.id === scrapbookId);
+    const overrideAccess = url.searchParams.get('override') === '1' &&
+      isPlatformOwner(social, user) &&
+      rawBook?.type === 'personal' &&
+      rawBook.owner !== user &&
+      !canViewBook(social, rawBook, user);
+    const book = bookForViewer(social, scrapbookId, user) || (overrideAccess ? rawBook : null);
     if (!book) return forbidden(res);
     const entries = (await readEntries()).filter(e => e.scrapbookId === scrapbookId);
     entries.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt).localeCompare(String(b.createdAt)));
@@ -2250,7 +2292,10 @@ async function handleApi(req, res, url) {
     return json(res, 200, {
       entries,
       profiles,
-      scrapbook: { ...decorateBook(social, book, user), canComment:canCommentBook(social, book, user) }
+      scrapbook: {
+        ...decorateBook(social, book, user, { overrideAccess }),
+        canComment:canCommentBook(social, book, user)
+      }
     });
   }
 
