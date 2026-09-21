@@ -12,6 +12,7 @@ const UPLOADS = path.join(STORAGE, 'uploads');
 const DATA_FILE = path.join(STORAGE, 'journal.json');
 const SOCIAL_FILE = path.join(STORAGE, 'social.json');
 const ACCOUNTS_FILE = path.join(STORAGE, 'accounts.json');
+const PRESENCE_FILE = path.join(STORAGE, 'presence.json');
 const PORT = Number(process.env.PORT || 3000);
 const PROD = process.env.NODE_ENV === 'production';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-only-change-this-before-deploying';
@@ -72,6 +73,73 @@ function parseBootstrapUsers() {
 const BOOTSTRAP_USERS = parseBootstrapUsers();
 const PENDING_SIGNUP_TAGS = new Set();
 const LIVE_CLIENTS = new Map();
+const PRESENCE_MEMORY = new Map();
+const PRESENCE_ACTIVE_WINDOW_MS = 90 * 1000;
+const PRESENCE_AWAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+let presenceWriteQueue = Promise.resolve();
+
+function markPresence(tag, state = 'active', at = new Date().toISOString()) {
+  if (!tag) return null;
+  const previous = PRESENCE_MEMORY.get(tag) || {};
+  const record = {
+    ...previous,
+    state: state === 'offline' ? 'offline' : 'active',
+    lastActiveAt: at
+  };
+  PRESENCE_MEMORY.set(tag, record);
+  return record;
+}
+function presenceSnapshot(tag) {
+  const record = PRESENCE_MEMORY.get(tag) || {};
+  const lastMs = Date.parse(record.lastActiveAt || '') || 0;
+  const age = lastMs ? Math.max(0, Date.now() - lastMs) : Infinity;
+  const explicitOffline = record.state === 'offline';
+  let status = 'offline';
+  if (!explicitOffline && lastMs && age <= PRESENCE_ACTIVE_WINDOW_MS) status = 'active';
+  else if (!explicitOffline && lastMs && age <= PRESENCE_AWAY_WINDOW_MS) status = 'away';
+  return {
+    status,
+    lastActiveAt: lastMs ? new Date(lastMs).toISOString() : null,
+    explicitOffline
+  };
+}
+async function loadPresenceStore() {
+  const stored = await readJson(PRESENCE_FILE, {});
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return;
+  for (const [tag,value] of Object.entries(stored)) {
+    if (!value || typeof value !== 'object') continue;
+    const lastActiveAt = value.lastActiveAt || null;
+    if (!lastActiveAt) continue;
+    PRESENCE_MEMORY.set(tag, {
+      state:value.state === 'offline' ? 'offline' : 'active',
+      lastActiveAt,
+      persistedAt:lastActiveAt
+    });
+  }
+}
+async function persistPresence(tag, state = 'active', at = new Date().toISOString(), { force = false } = {}) {
+  const memory = markPresence(tag,state,at);
+  const persistedMs = Date.parse(memory?.persistedAt || '') || 0;
+  const atMs = Date.parse(at) || Date.now();
+  if (!force && persistedMs && atMs - persistedMs < 120000) return;
+  if (memory) memory.persistedAt = at;
+  const write = presenceWriteQueue.then(async () => {
+    const stored = await readJson(PRESENCE_FILE, {});
+    const safe = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    safe[tag] = { state:state === 'offline' ? 'offline' : 'active', lastActiveAt:at };
+    await writeJson(PRESENCE_FILE, safe);
+  });
+  presenceWriteQueue = write.catch(() => {});
+  return write;
+}
+function presenceChatPeers(social, tag) {
+  const peers = new Set();
+  for (const chat of social?.chats || []) {
+    if (chat?.type !== 'private' || !Array.isArray(chat.members) || !chat.members.includes(tag)) continue;
+    chat.members.forEach(member => { if (member && member !== tag) peers.add(member); });
+  }
+  return [...peers];
+}
 
 function emitLiveEvent(tag, event, data = {}) {
   const clients = LIVE_CLIENTS.get(tag);
@@ -89,6 +157,7 @@ function emitLiveMany(tags, event, data = {}) {
   for (const tag of new Set((tags || []).filter(Boolean))) emitLiveEvent(tag, event, data);
 }
 function registerLiveClient(req, res, tag) {
+  markPresence(tag, 'active');
   res.writeHead(200, {
     'Content-Type':'text/event-stream; charset=utf-8',
     'Cache-Control':'no-cache, no-transform',
@@ -187,6 +256,8 @@ async function ensureStorage() {
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
   await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {} });
+  await ensureFile(PRESENCE_FILE, {});
+  await loadPresenceStore();
 
   const social = await readSocial();
   const bootstrapTags = [...BOOTSTRAP_USERS.keys()];
@@ -566,7 +637,8 @@ function publicProfileFor(social, tag) {
     displayName: p.displayName || tag,
     avatar: p.avatar || '',
     bio: p.bio || '',
-    isPlatformOwner: isPlatformOwner(social, tag)
+    isPlatformOwner: isPlatformOwner(social, tag),
+    presence: presenceSnapshot(tag)
   };
 }
 function isFollowing(social, follower, following) {
@@ -1126,6 +1198,10 @@ async function handleApi(req, res, url) {
     const tag = slugTag(body.username || body.tag);
     const credential = await getCredential(tag);
     if (!credential || !(await verifyCredential(credential, String(body.password || '')))) return json(res, 401, { error: 'That tag or password does not match.' });
+    const now = new Date().toISOString();
+    await persistPresence(tag, 'active', now, { force:true });
+    const social = await readSocial();
+    emitLiveMany(presenceChatPeers(social,tag), 'presence', { tag, status:'active', lastActiveAt:now });
     return json(res, 200, { tag }, { 'Set-Cookie': sessionCookie(makeSession(tag)) });
   }
 
@@ -1153,13 +1229,23 @@ async function handleApi(req, res, url) {
       social.notificationHub ||= {};
       social.notificationHub[tag] = { lastSeenAt: createdAt };
       await writeSocial(social);
+      await persistPresence(tag, 'active', createdAt, { force:true });
       return json(res, 201, { tag }, { 'Set-Cookie': sessionCookie(makeSession(tag)) });
     } finally {
       PENDING_SIGNUP_TAGS.delete(tag);
     }
   }
 
-  if (pathname === '/api/logout' && req.method === 'POST') return json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie() });
+  if (pathname === '/api/logout' && req.method === 'POST') {
+    const tag = await getUser(req);
+    if (tag) {
+      const now = new Date().toISOString();
+      await persistPresence(tag, 'offline', now, { force:true });
+      const social = await readSocial();
+      emitLiveMany(presenceChatPeers(social,tag), 'presence', { tag, status:'offline', lastActiveAt:now });
+    }
+    return json(res, 200, { ok: true }, { 'Set-Cookie': clearCookie() });
+  }
 
   const user = await requireAuth(req, res);
   if (!user) return;
@@ -1168,6 +1254,13 @@ async function handleApi(req, res, url) {
     return;
   }
   const social = await readSocial();
+
+  if (pathname === '/api/presence' && req.method === 'POST') {
+    const now = new Date().toISOString();
+    await persistPresence(user, 'active', now);
+    emitLiveMany(presenceChatPeers(social,user), 'presence', { tag:user, status:'active', lastActiveAt:now });
+    return json(res, 200, { presence:presenceSnapshot(user) });
+  }
 
   if (pathname === '/api/me' && req.method === 'GET') {
     social.notificationHub ||= {};
