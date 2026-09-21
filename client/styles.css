@@ -9675,3 +9675,404 @@ html[data-theme="night"] .owner-override-btn{
     display:contents;
   }
 }
+
+
+/* =========================================================
+   DESKTOP PARITY V2 — mobile-era features adapted for desktop
+   Phone rules remain untouched at <=800px.
+   ========================================================= */
+@media(min-width:801px){
+  /* Official app identity stays in the desktop header while the active
+     scrapbook identity/dropdown lives inside Book. */
+  .topbar>.brand-button{
+    display:flex!important;
+    flex:0 0 auto;
+    min-width:150px;
+  }
+  .topbar>.brand-button>span{
+    background:#e98fa6;
+    box-shadow:0 5px 14px rgba(146,86,97,.22);
+  }
+  .topbar .toolbar{
+    width:auto!important;
+    flex:1 1 auto;
+    margin-left:auto!important;
+    overflow:visible;
+  }
+  .topbar .mode-switch{
+    display:flex!important;
+    margin-left:auto;
+    margin-right:auto;
+  }
+
+  /* Desktop auth gets the same corrected contrast as the native auth. */
+  .lock-card{
+    max-height:min(820px,calc(100vh - 44px));
+    overflow:auto;
+  }
+  .password-field input{
+    padding-right:72px;
+  }
+  .password-visibility:hover{
+    background:rgba(146,86,97,.18);
+  }
+
+  /* Threaded comments/reactions/replies are no longer phone-only. */
+  .comment-actions{
+    display:flex!important;
+    align-items:center;
+    gap:7px;
+    min-height:28px;
+    margin:7px 0 0 46px;
+  }
+  .comment-reply-trigger,
+  .comment-react-trigger{
+    min-height:27px;
+    padding:4px 8px;
+    border:0;
+    border-radius:8px;
+    background:transparent;
+    color:var(--muted);
+    font:700 10px ui-sans-serif,system-ui,sans-serif;
+  }
+  .comment-reply-trigger:hover,
+  .comment-react-trigger:hover{
+    color:var(--rose-dark);
+    background:rgba(146,86,97,.09);
+  }
+  .comment-reaction-summary{
+    display:inline-flex;
+    align-items:center;
+    gap:2px;
+    margin-left:auto;
+    padding:3px 7px;
+    border:1px solid rgba(146,86,97,.14);
+    border-radius:999px;
+    background:rgba(255,255,255,.64);
+  }
+  .comment-reaction-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:3px;
+    min-height:22px;
+    padding:1px 3px;
+    border:0;
+    background:transparent;
+    color:var(--muted);
+    font-size:12px;
+  }
+  .comment-reaction-chip b{
+    font:800 9px ui-sans-serif,system-ui,sans-serif;
+  }
+  .comment-reply-form{
+    margin:9px 0 0 46px;
+  }
+  .comment-reply-form:not(.hidden){
+    display:grid!important;
+    gap:7px;
+  }
+  .comment-reply-form textarea{
+    min-height:64px;
+    resize:vertical;
+  }
+  .comment-reply-form>div{
+    display:flex;
+    justify-content:flex-end;
+    gap:7px;
+  }
+  .comment-replies{
+    display:grid!important;
+    gap:8px;
+    margin:8px 0 0 38px;
+    padding-left:12px;
+    border-left:2px solid rgba(146,86,97,.13);
+  }
+  .comment-replies .memory-comment{
+    padding:10px 34px 10px 10px;
+  }
+  .comment-main{
+    cursor:context-menu;
+  }
+
+  /* Desktop conversation thread menu: right-click a conversation. */
+  .chat-thread-menu-overlay.desktop-thread-context{
+    display:block;
+    background:transparent;
+    backdrop-filter:none;
+    -webkit-backdrop-filter:none;
+  }
+  .desktop-thread-context .chat-thread-menu-sheet{
+    position:fixed;
+    width:286px;
+    max-height:min(560px,calc(100vh - 20px));
+    overflow:auto;
+    padding:8px;
+    border:1px solid var(--line);
+    border-radius:15px;
+    background:#fffaf1;
+    color:#352729;
+    box-shadow:0 18px 48px rgba(34,20,21,.28);
+  }
+  .desktop-thread-context .chat-thread-menu-handle{
+    display:none;
+  }
+  .desktop-thread-context .chat-thread-menu-person{
+    grid-template-columns:38px minmax(0,1fr);
+    padding:7px 7px 10px;
+    border-bottom:1px solid rgba(69,45,43,.12);
+  }
+  .desktop-thread-context .chat-thread-menu-person .chat-list-avatar,
+  .desktop-thread-context .chat-thread-menu-person .chat-group-avatar{
+    width:38px!important;
+    height:38px!important;
+  }
+  .desktop-thread-context .chat-thread-menu-person small{
+    color:#7d6d6a;
+  }
+  .desktop-thread-context .chat-thread-menu-actions{
+    padding-top:5px;
+  }
+  .desktop-thread-context .chat-thread-menu-actions button{
+    min-height:42px;
+    grid-template-columns:34px minmax(0,1fr);
+    padding:5px 7px;
+    color:#352729;
+  }
+  .desktop-thread-context .chat-thread-menu-actions button:hover{
+    background:#f1e5df;
+  }
+  .desktop-thread-context .chat-thread-menu-actions button>span{
+    font-size:17px;
+  }
+  .desktop-thread-context .chat-thread-menu-actions button>b{
+    font-size:13px;
+  }
+  .desktop-thread-context .chat-thread-menu-actions button.danger{
+    color:#c3414d;
+  }
+
+  /* Desktop message menu: right-click any message; double-click = heart. */
+  .desktop-chat-message-menu{
+    position:fixed!important;
+    inset:0!important;
+    z-index:2147483640!important;
+    display:block!important;
+    width:auto!important;
+    height:auto!important;
+    padding:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:rgba(23,16,18,.18)!important;
+    box-shadow:none!important;
+    backdrop-filter:blur(1px);
+    -webkit-backdrop-filter:blur(1px);
+  }
+  .desktop-chat-message-menu .chat-message-menu-anchor{
+    position:absolute;
+  }
+  .desktop-chat-message-menu .chat-message-reaction-bar{
+    width:100%;
+    padding:7px 9px;
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:999px;
+    background:#2c282a;
+    box-shadow:0 12px 28px rgba(0,0,0,.28);
+  }
+  .desktop-chat-message-menu .chat-message-reaction-bar>small{
+    display:none;
+  }
+  .desktop-chat-message-menu .chat-message-reaction-bar>div{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    gap:3px;
+  }
+  .desktop-chat-message-menu .chat-message-reaction-bar button{
+    height:38px;
+    border:0;
+    background:transparent;
+    font-size:21px;
+  }
+  .desktop-chat-message-menu .chat-message-reaction-bar button:hover{
+    background:rgba(255,255,255,.09);
+    transform:scale(1.06);
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet{
+    width:240px;
+    margin:7px 0 0 auto;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:14px;
+    background:#2c282a;
+    box-shadow:0 16px 34px rgba(0,0,0,.32);
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>time{
+    display:block;
+    padding:9px 13px 6px;
+    color:#bdaeb0;
+    font:500 10px ui-sans-serif,system-ui,sans-serif;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button{
+    width:100%;
+    min-height:39px;
+    display:grid;
+    grid-template-columns:28px minmax(0,1fr);
+    align-items:center;
+    gap:8px;
+    padding:6px 12px;
+    border:0;
+    border-top:1px solid rgba(255,255,255,.05);
+    background:transparent;
+    color:#f4eeee;
+    text-align:left;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button:hover{
+    background:rgba(255,255,255,.08);
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button.danger{
+    color:#ff6b76;
+  }
+  .chat-bubble[data-message-id]{
+    cursor:context-menu;
+  }
+
+  /* Desktop photo viewer gets a larger, polished lightbox. */
+  .chat-image-viewer{
+    padding:66px 34px 34px;
+  }
+  .chat-image-viewer img{
+    max-width:min(1500px,94vw);
+    max-height:calc(100vh - 104px);
+    border-radius:12px;
+    box-shadow:0 24px 80px rgba(0,0,0,.42);
+  }
+
+  /* Desktop messages use the same multi-photo workflow (up to 10). */
+  .chat-pending-image-grid{
+    max-width:620px;
+  }
+
+  /* Desktop dark-mode parity: every app/chrome surface follows the night
+     palette, while actual scrapbook paper intentionally stays warm. */
+  html[data-theme="night"] .lock-screen{
+    background:
+      radial-gradient(circle at 12% 8%,rgba(105,77,84,.15),transparent 28%),
+      linear-gradient(145deg,#21191b,#181315 58%,#100d0e);
+  }
+  html[data-theme="night"] .lock-card,
+  html[data-theme="night"] .auth-tabs,
+  html[data-theme="night"] .desktop-scrapbook-bar,
+  html[data-theme="night"] .privacy-quick-inner,
+  html[data-theme="night"] .home-hero,
+  html[data-theme="night"] .home-profile-card,
+  html[data-theme="night"] .home-shelf-card,
+  html[data-theme="night"] .home-search-section,
+  html[data-theme="night"] .home-search-person,
+  html[data-theme="night"] .home-suggestion-card,
+  html[data-theme="night"] .follow-panel,
+  html[data-theme="night"] .discover-person,
+  html[data-theme="night"] .people-map,
+  html[data-theme="night"] .person-profile-hero,
+  html[data-theme="night"] .person-book-layout,
+  html[data-theme="night"] .person-social-stats,
+  html[data-theme="night"] .person-connections-panel,
+  html[data-theme="night"] .person-list-row,
+  html[data-theme="night"] .notification-settings,
+  html[data-theme="night"] .notification-panel,
+  html[data-theme="night"] .messages-shell,
+  html[data-theme="night"] .chat-sidebar,
+  html[data-theme="night"] .chat-header,
+  html[data-theme="night"] .chat-composer,
+  html[data-theme="night"] .editor-card,
+  html[data-theme="night"] .small-card,
+  html[data-theme="night"] .canvas-builder,
+  html[data-theme="night"] .canvas-page-options,
+  html[data-theme="night"] .canvas-entry-actions,
+  html[data-theme="night"] .photo-editor,
+  html[data-theme="night"] .rich-toolbar,
+  html[data-theme="night"] .live-preview{
+    color:var(--ink)!important;
+    border-color:var(--line)!important;
+    background:#2d2427!important;
+    box-shadow:none;
+  }
+  html[data-theme="night"] .home-hero,
+  html[data-theme="night"] .person-profile-hero{
+    background:linear-gradient(135deg,#302629,#261f21)!important;
+  }
+  html[data-theme="night"] .home-count,
+  html[data-theme="night"] .follow-stats span,
+  html[data-theme="night"] .person-social-stats button,
+  html[data-theme="night"] .person-list-tabs,
+  html[data-theme="night"] .privacy-quick-buttons,
+  html[data-theme="night"] .canvas-zoom-controls,
+  html[data-theme="night"] .password-visibility{
+    color:var(--ink)!important;
+    border-color:var(--line)!important;
+    background:#382d31!important;
+  }
+  html[data-theme="night"] .auth-tabs button.active,
+  html[data-theme="night"] .mode-switch button.active{
+    color:#fff7f4!important;
+    background:#4a383e!important;
+  }
+  html[data-theme="night"] .auth-tabs button:not(.active),
+  html[data-theme="night"] .mode-switch button:not(.active){
+    color:var(--muted)!important;
+  }
+  html[data-theme="night"] .notification-item,
+  html[data-theme="night"] .chat-list-item,
+  html[data-theme="night"] .comments-empty,
+  html[data-theme="night"] .comment-reaction-summary{
+    border-color:var(--line)!important;
+    background:#342a2d!important;
+    color:var(--ink)!important;
+  }
+  html[data-theme="night"] .comment-reply-form textarea{
+    color:var(--ink)!important;
+    border-color:#58464c!important;
+    background:#1d1719!important;
+  }
+  html[data-theme="night"] .desktop-thread-context .chat-thread-menu-sheet{
+    color:var(--ink);
+    border-color:var(--line);
+    background:#2d2427;
+  }
+  html[data-theme="night"] .desktop-thread-context .chat-thread-menu-person{
+    border-bottom-color:var(--line);
+  }
+  html[data-theme="night"] .desktop-thread-context .chat-thread-menu-person small{
+    color:var(--muted);
+  }
+  html[data-theme="night"] .desktop-thread-context .chat-thread-menu-actions button{
+    color:var(--ink);
+  }
+  html[data-theme="night"] .desktop-thread-context .chat-thread-menu-actions button:hover{
+    background:#49383e;
+  }
+  html[data-theme="night"] .desktop-thread-context .chat-thread-menu-actions button.danger{
+    color:#ff7b87;
+  }
+
+  /* Keep the scrapbook itself paper-like in night mode. */
+  html[data-theme="night"] .paper-page,
+  html[data-theme="night"] .stream-card,
+  html[data-theme="night"] .saved-canvas,
+  html[data-theme="night"] .preview-paper{
+    color:#352729!important;
+    background-color:#fffaf1!important;
+  }
+  html[data-theme="night"] .saved-canvas *,
+  html[data-theme="night"] .preview-paper .saved-text-item{
+    --ink:#352729;
+  }
+
+  /* Keyboard focus is more useful on desktop. */
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible{
+    outline:2px solid var(--rose);
+    outline-offset:2px;
+  }
+}
