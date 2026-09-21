@@ -4074,7 +4074,14 @@ async function refreshChatRealtime(payload = {}) {
 }
 
 function showView(mode) {
+  const previousMode = currentMode;
   currentMode = mode;
+  if (isNativeScrapellaApp() && isPhoneUI() && previousMode !== mode) {
+    requestAnimationFrame(() => {
+      try { journalApp.scrollTo({ top:0, left:0, behavior:'auto' }); }
+      catch { journalApp.scrollTop = 0; journalApp.scrollLeft = 0; }
+    });
+  }
   renderPersonalPrivacyQuick();
   if (isPhoneUI()) {
     renderMobileBookShelf();
