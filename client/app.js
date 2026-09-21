@@ -3076,7 +3076,7 @@ $('#personProfileBackBtn').addEventListener('click', async () => {
     phoneBackButton();
     return;
   }
-  const mode = ['home','cover','book','stream','connections','messages'].includes(personProfileReturnMode) ? personProfileReturnMode : 'connections';
+  const mode = ['home','cover','book','stream','universe','connections','messages'].includes(personProfileReturnMode) ? personProfileReturnMode : 'connections';
   if (mode === 'home' || mode === 'connections') await refreshAndShow(mode);
   else showView(mode);
 });
