@@ -5999,6 +5999,34 @@ $('#deleteEntryBtn').addEventListener('click', async () => {
   } catch (err) { $('#editorError').textContent = err.message; }
 });
 
+let nativeBackButtonInstalled = false;
+async function installNativeBackButtonHandler() {
+  if (nativeBackButtonInstalled || !isNativeScrapellaApp()) return;
+  const appPlugin = nativePlugin('App');
+  if (!appPlugin?.addListener) return;
+  nativeBackButtonInstalled = true;
+  try {
+    await appPlugin.addListener('backButton', () => {
+      if (!isPhoneUI()) return;
+      const gate = $('#nativePermissionGate');
+      if (gate && !gate.classList.contains('hidden')) {
+        closeNativePermissionGate('skipped');
+        return;
+      }
+      if (!me) return;
+      if (closePhoneTransientLayer()) return;
+      if (phoneHistoryReady) {
+        history.back();
+        return;
+      }
+      showView('home');
+    });
+  } catch {
+    nativeBackButtonInstalled = false;
+  }
+}
+installNativeBackButtonHandler();
+
 window.addEventListener('popstate', async e => {
   if (!isPhoneUI() || !me || !phoneHistoryReady) return;
 
