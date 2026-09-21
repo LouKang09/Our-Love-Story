@@ -124,10 +124,29 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload Xcode project
+      - name: Build unsigned iPhone release
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ios/device-build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package single iOS IPA
+        run: |
+          rm -rf Payload Scrapella-iOS-Unsigned.ipa
+          mkdir -p Payload
+          cp -R ios/device-build/Build/Products/Release-iphoneos/App.app Payload/Scrapella.app
+          zip -qry Scrapella-iOS-Unsigned.ipa Payload
+
+      - name: Upload single iOS IPA
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-ios-xcode-project
-          path: ios/
+          name: scrapella-ios-unsigned-ipa
+          path: Scrapella-iOS-Unsigned.ipa
           if-no-files-found: error
           retention-days: 30
