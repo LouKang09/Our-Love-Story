@@ -1072,8 +1072,9 @@ function commentReactions(comment) {
 }
 function commentReactionHtml(entryId, comment) {
   const reactions = commentReactions(comment);
+  const readOnly = !commentsEnabledForActiveBook();
   return reactions.length
-    ? `<div class="comment-reaction-summary">${reactions.map(item=>`<button type="button" class="comment-reaction-chip ${item.reactedByMe?'mine':''}" data-entry-id="${escapeHtml(entryId)}" data-comment-id="${escapeHtml(comment.id)}" data-emoji="${escapeHtml(item.emoji)}"><span>${escapeHtml(item.emoji)}</span><b>${item.count}</b></button>`).join('')}</div>`
+    ? `<div class="comment-reaction-summary">${reactions.map(item=>`<button type="button" class="comment-reaction-chip ${item.reactedByMe?'mine':''}" data-entry-id="${escapeHtml(entryId)}" data-comment-id="${escapeHtml(comment.id)}" data-emoji="${escapeHtml(item.emoji)}"${readOnly ? ' disabled aria-disabled="true"' : ''}><span>${escapeHtml(item.emoji)}</span><b>${item.count}</b></button>`).join('')}</div>`
     : '';
 }
 function commentNodeHtml(entry, comment, childrenMap, depth = 0) {
@@ -1085,13 +1086,13 @@ function commentNodeHtml(entry, comment, childrenMap, depth = 0) {
       <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
       <div class="comment-main" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}"><p>${mentionTextHtml(comment.text || '')}</p></div>
       <div class="comment-actions">
-        <button class="comment-reply-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">Reply</button>
+        ${commentsEnabledForActiveBook() ? `<button class="comment-reply-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">Reply</button>` : ''}
         ${commentReactionHtml(entry.id,comment)}
       </div>
-      <form class="comment-reply-form hidden" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">
+      ${commentsEnabledForActiveBook() ? `<form class="comment-reply-form hidden" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">
         <textarea maxlength="600" rows="2" placeholder="Write a reply… Tag someone with @tag"></textarea>
         <div><button class="ghost comment-reply-cancel" type="button">Cancel</button><button class="primary" type="submit">Reply</button></div>
-      </form>
+      </form>` : ''}
       ${canDelete ? `<button class="comment-delete" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="Delete comment">×</button>` : ''}
     </article>
     ${children.length ? `<div class="comment-replies">${children.map(child=>commentNodeHtml(entry,child,childrenMap,depth+1)).join('')}</div>` : ''}
@@ -1171,6 +1172,7 @@ function showCommentReactionPicker(entryId,commentId,anchor) {
   }));
 }
 function wireCommentGestures(root) {
+  if (!commentsEnabledForActiveBook()) return;
   root.querySelectorAll('.comment-main').forEach(main=>{
     let lastTap=0,hold=null,startX=0,startY=0,cancelled=false,longPressed=false;
     main.addEventListener('pointerdown',e=>{
