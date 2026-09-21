@@ -1242,7 +1242,7 @@ function pageHtml(entry) {
     <div class="entry-meta">${authorHtml(entry)}</div>
     <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
     ${commentsHtml(entry)}
-    ${editable ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this page</button></div>` : ''}
+    ${(editable || isNativeScrapellaApp()) ? `<div class="page-actions">${editable ? `<button class="ghost edit-entry" data-id="${entry.id}">Edit this page</button>` : ''}${isNativeScrapellaApp() ? `<button class="ghost share-entry" data-id="${entry.id}" type="button" aria-label="Share this memory"><span aria-hidden="true">↗</span> Share</button>` : ''}</div>` : ''}
   </div>`;
 }
 function chronologicalEntries() {
@@ -1301,15 +1301,57 @@ function renderTimeline() {
         <div class="entry-meta">${authorHtml(entry)}</div>
         <div class="entry-body canvas-entry-body">${entryContentHtml(entry)}</div>
         ${commentsHtml(entry)}
-        ${me && entry.author === me.tag ? `<div class="page-actions"><button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button></div>` : ''}
+        ${((me && entry.author === me.tag) || isNativeScrapellaApp()) ? `<div class="page-actions">${me && entry.author === me.tag ? `<button class="ghost edit-entry" data-id="${entry.id}">Edit this memory</button>` : ''}${isNativeScrapellaApp() ? `<button class="ghost share-entry" data-id="${entry.id}" type="button" aria-label="Share this memory"><span aria-hidden="true">↗</span> Share</button>` : ''}</div>` : ''}
       </div>
     </article>`;
   }).join('');
   wireEntryButtons($('#timeline'));
 }
 
+function memoryShareUrl(entryId) {
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = '';
+  if (activeScrapbook?.id) url.searchParams.set('book', activeScrapbook.id);
+  if (entryId) url.searchParams.set('entry', entryId);
+  return url.toString();
+}
+async function shareMemory(entryId) {
+  const entry = entries.find(item => item.id === entryId);
+  if (!entry) return;
+  const bookName = activeScrapbook?.name || 'Scrapella';
+  const title = entry.title || 'A Scrapella memory';
+  const text = `${title} · ${bookName}`;
+  const url = memoryShareUrl(entry.id);
+  try {
+    const sharePlugin = nativePlugin('Share');
+    if (isNativeScrapellaApp() && sharePlugin?.share) {
+      await sharePlugin.share({ title, text, url, dialogTitle:'Share this memory' });
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title, text, url });
+      return;
+    }
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      showToast('Memory link copied.');
+      return;
+    }
+    showToast('Sharing is not supported on this device.');
+  } catch (err) {
+    if (err?.name === 'AbortError' || String(err?.message || '').toLowerCase().includes('cancel')) return;
+    try {
+      await navigator.clipboard?.writeText?.(url);
+      showToast('Memory link copied.');
+    } catch {
+      showToast('Could not open sharing on this device.');
+    }
+  }
+}
 function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
+  root.querySelectorAll('.share-entry').forEach(btn => btn.addEventListener('click', () => shareMemory(btn.dataset.id)));
   root.querySelectorAll('.saved-photo-frame img,.memory-photo img').forEach(img => {
     if (img.dataset.scrapbookZoomWired === '1') return;
     img.dataset.scrapbookZoomWired = '1';
