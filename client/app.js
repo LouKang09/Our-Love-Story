@@ -5408,10 +5408,32 @@ function finishSessionBootstrap(authenticated) {
   lockScreen.classList.toggle('hidden', authenticated === true);
   journalApp.classList.toggle('hidden', authenticated !== true);
 }
+function sharedMemoryTarget() {
+  const params = new URLSearchParams(location.search);
+  return {
+    bookId:String(params.get('book') || ''),
+    entryId:String(params.get('entry') || '')
+  };
+}
+async function openSharedMemoryTarget(target) {
+  if (!target?.bookId || !target?.entryId) return false;
+  if (activeScrapbook?.id !== target.bookId) await loadSession(target.bookId);
+  if (activeScrapbook?.id !== target.bookId || !entries.some(entry => entry.id === target.entryId)) {
+    showToast('This memory is unavailable or private.');
+    return false;
+  }
+  showView('stream');
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.querySelector(`#timeline [data-entry-id="${CSS.escape(target.entryId)}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
+  }));
+  return true;
+}
 async function enterApp() {
-  await loadSession();
+  const sharedTarget = sharedMemoryTarget();
+  await loadSession(sharedTarget.bookId || null);
   finishSessionBootstrap(true);
-  showView('home');
+  const openedShared = await openSharedMemoryTarget(sharedTarget);
+  if (!openedShared) showView('home');
   initializePhoneHistory();
   connectLiveEvents();
   startPresenceHeartbeat();
