@@ -9291,53 +9291,119 @@ html.native-app .lock-screen.hidden{
 }
 
 
-/* Native scrolling hotfix — keep Home and Book vertically scrollable. */
+/* Native app scrolling v2 — one reliable vertical scroller for all main views. */
 @media(max-width:800px){
-  html.native-app body:not(.brand-intro-active):not(.native-permission-open):not(.guide-active){
+  html.native-app,
+  html.native-app body,
+  html.native-app #app{
+    width:100%!important;
+    max-width:100%!important;
+    height:100%!important;
+    min-height:100%!important;
+    overflow:hidden!important;
+  }
+
+  html.native-app #journalApp:not(.hidden){
+    display:block!important;
+    position:relative;
+    width:100%!important;
+    height:100dvh!important;
+    min-height:0!important;
+    max-height:100dvh!important;
     overflow-x:hidden!important;
     overflow-y:auto!important;
-    height:auto!important;
-    min-height:100dvh!important;
-    touch-action:pan-y!important;
+    overscroll-behavior-x:none;
+    overscroll-behavior-y:contain;
     -webkit-overflow-scrolling:touch;
+    touch-action:pan-y!important;
   }
-  html.native-app #journalApp:not(.hidden){
-    display:block;
-    min-height:100dvh;
-    overflow:visible!important;
+
+  html.native-app #journalApp>.topbar{
+    position:sticky;
+    top:0;
+    z-index:5000;
   }
-  html.native-app .home-view,
-  html.native-app .book-view{
-    width:min(100% - 18px,1180px);
+
+  html.native-app #journalApp>.home-view,
+  html.native-app #journalApp>.book-view,
+  html.native-app #journalApp>.stream-view,
+  html.native-app #journalApp>.connections-view,
+  html.native-app #journalApp>.person-profile-view{
     max-height:none!important;
     overflow:visible!important;
     touch-action:pan-y!important;
   }
+
   html.native-app .home-view{
-    padding-bottom:calc(84px + env(safe-area-inset-bottom));
+    width:min(100% - 18px,760px)!important;
+    padding:20px 0 calc(96px + env(safe-area-inset-bottom))!important;
   }
+
   html.native-app .book-view{
-    min-height:100dvh;
-    padding-bottom:calc(84px + env(safe-area-inset-bottom));
+    width:100%!important;
+    min-height:0!important;
+    padding:18px 7px calc(96px + env(safe-area-inset-bottom))!important;
   }
+
   html.native-app .book-shell{
+    display:block!important;
+    width:100%!important;
     height:auto!important;
     min-height:0!important;
     max-height:none!important;
     overflow:visible!important;
   }
+
   html.native-app .right-page{
+    width:100%!important;
     height:auto!important;
-    min-height:calc(100dvh - 230px);
+    min-height:calc(100dvh - 250px)!important;
     max-height:none!important;
     overflow:visible!important;
+    touch-action:pan-y!important;
   }
+
   html.native-app .right-page .entry-page{
-    min-height:calc(100dvh - 310px);
+    min-height:0!important;
   }
+
   html.native-app .right-page .entry-body,
   html.native-app .right-page .journal-flow{
-    overflow:visible!important;
+    height:auto!important;
     max-height:none!important;
+    overflow:visible!important;
+    touch-action:pan-y!important;
+  }
+
+  html.native-app .stream-view{
+    width:calc(100% - 12px)!important;
+    margin:0 auto!important;
+    padding:24px 0 calc(104px + env(safe-area-inset-bottom))!important;
+    max-height:none!important;
+    overflow:visible!important;
+    touch-action:pan-y!important;
+  }
+
+  html.native-app .stream-view .timeline,
+  html.native-app .stream-view .timeline-item,
+  html.native-app .stream-view .stream-card,
+  html.native-app .stream-view .entry-body,
+  html.native-app .stream-view .journal-flow{
+    max-height:none!important;
+    overflow:visible!important;
+    touch-action:pan-y!important;
+  }
+
+  html.native-app .connections-view,
+  html.native-app .person-profile-view{
+    padding-bottom:calc(96px + env(safe-area-inset-bottom))!important;
+  }
+
+  /* Dialogs and temporary overlays keep their own scrolling and must not
+     hand the gesture to the main app underneath. */
+  html.native-app dialog[open],
+  html.native-app .native-permission-gate,
+  html.native-app .guide-overlay{
+    overscroll-behavior:contain;
   }
 }
