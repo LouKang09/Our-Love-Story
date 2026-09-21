@@ -60,6 +60,7 @@ let chatAudioAnalyser = null;
 let chatAudioAnimationFrame = null;
 let reactionViewer = null;
 let viewedPersonData = null;
+let ownerOverrideTargetTag = null;
 let personListMode = 'followers';
 let personProfileReturnMode = 'connections';
 let guideState = { version: 8, seenVersion: 7, required: false };
@@ -1277,6 +1278,22 @@ function renderTimeline() {
 
 function wireEntryButtons(root) {
   root.querySelectorAll('.edit-entry').forEach(btn => btn.addEventListener('click', () => openEditor(btn.dataset.id)));
+  root.querySelectorAll('.saved-photo-frame img,.memory-photo img').forEach(img => {
+    if (img.dataset.scrapbookZoomWired === '1') return;
+    img.dataset.scrapbookZoomWired = '1';
+    img.setAttribute('role','button');
+    img.setAttribute('tabindex','0');
+    img.setAttribute('aria-label','Open scrapbook photo');
+    const open = e => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      openChatImageViewer(img.currentSrc || img.src);
+    };
+    img.addEventListener('click', open);
+    img.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') open(e);
+    });
+  });
   wireProfileLinks(root);
   root.querySelectorAll('.comment-form').forEach(form => {
     wireMentionAutocomplete(form.querySelector('textarea'));
@@ -2426,7 +2443,7 @@ async function saveChatImages(message) {
   showToast(`Saving ${images.length} photos.`);
 }
 function openChatImageViewer(src) {
-  if(!isPhoneUI()||!src)return;
+  if(!src)return;
   const viewer=$('#chatImageViewer');
   const img=$('#chatImageViewerImg');
   if(!viewer||!img)return;
@@ -2501,13 +2518,19 @@ function renderPersonConnections() {
     : `<div class="person-list-empty">No ${personListMode === 'following' ? 'following' : 'followers'} yet.</div>`;
   wireProfileLinks($('#personConnectionsList'));
 }
+function isOwnerOverrideBook(bookId) {
+  if (!bookId || ownerOverrideTargetTag !== viewedPersonData?.profile?.tag || viewedPersonData?.overrideActive !== true) return false;
+  return (viewedPersonData.personalScrapbooks || []).some(book => book?.id === bookId);
+}
 function personPersonalBookHtml(book) {
   if (!book) return '';
   return `<div class="person-book-layout">
     <div class="person-book-copy">
       <p class="eyebrow">PERSONAL SCRAPBOOK</p>
       <h3>${escapeHtml(book.name || 'Personal Scrapbook')}</h3>
-      <p>${escapeHtml(privacyLabel(book.privacy))} · Shared with you. Open it as a flip book or read it as a continuous Memory Stream.</p>
+      <p>${book.overrideAccess
+        ? `<span class="owner-override-note">Owner Override</span> · ${escapeHtml(privacyLabel(book.privacy))} · Read-only access.`
+        : `${escapeHtml(privacyLabel(book.privacy))} · Shared with you.`} Open it as a flip book or read it as a continuous Memory Stream.</p>
       <div class="person-book-actions">
         <button class="primary person-open-book" data-id="${escapeHtml(book.id)}" data-mode="book" type="button">Open book</button>
         <button class="ghost person-open-book" data-id="${escapeHtml(book.id)}" data-mode="stream" type="button">Memory stream</button>
@@ -2528,24 +2551,28 @@ function renderPersonProfile() {
   if (!viewedPersonData) return;
   const data = viewedPersonData;
   const p = data.profile || {};
+  const ownerBadge = p.isPlatformOwner
+    ? '<span class="owner-verified-badge" title="Scrapella Owner" aria-label="Scrapella Owner">✓</span>'
+    : '';
+  const avatarCore = `<span class="person-avatar-owner-wrap">${avatarHtml(p,'person-profile-avatar')}${ownerBadge}</span>`;
   const personAvatarMarkup = !data.isSelf && p.avatar
-    ? `<button id="personAvatarZoomBtn" class="person-avatar-zoom" type="button" aria-label="Enlarge ${escapeHtml(p.displayName || p.tag)} profile photo">${avatarHtml(p,'person-profile-avatar')}<small>Tap to enlarge</small></button>`
-    : avatarHtml(p,'person-profile-avatar');
+    ? `<button id="personAvatarZoomBtn" class="person-avatar-zoom" type="button" aria-label="Enlarge ${escapeHtml(p.displayName || p.tag)} profile photo">${avatarCore}<small>Tap to enlarge</small></button>`
+    : avatarCore;
   $('#personProfileIdentity').innerHTML = `
     ${personAvatarMarkup}
     <div>
       <p class="eyebrow">${data.isSelf ? 'YOUR SOCIAL PROFILE' : 'SCRAPBOOK PROFILE'}</p>
-      <h2>${escapeHtml(p.displayName || p.tag)}</h2>
+      <h2>${escapeHtml(p.displayName || p.tag)}${p.isPlatformOwner ? '<span class="owner-name-label">(Owner)</span>' : ''}</h2>
       <span>@${escapeHtml(p.tag || '')}</span>
       ${p.bio ? `<p class="profile-about-text">${mentionTextHtml(p.bio)}</p>` : '<p class="muted">No bio yet.</p>'}
-      <div class="person-relation-badges">${data.isPartner ? '<span>Partner</span>' : ''}${data.followsYou ? '<span>Follows you</span>' : ''}${data.isFollowing ? '<span>You follow</span>' : ''}</div>
+      <div class="person-relation-badges">${data.isPartner ? '<span>Partner</span>' : ''}${data.followsYou ? '<span>Follows you</span>' : ''}${data.isFollowing ? '<span>You follow</span>' : ''}${p.isPlatformOwner ? '<span class="owner-relation-badge">Verified owner</span>' : ''}</div>
     </div>`;
   $('#personFollowerCount').textContent = compactPhoneCount(data.followerCount || 0);
   $('#personFollowingCount').textContent = compactPhoneCount(data.followingCount || 0);
 
   $('#personProfileActions').innerHTML = data.isSelf
     ? '<button id="personEditOwnProfile" class="ghost" type="button">Edit my profile</button>'
-    : `<button class="primary person-message-btn" type="button">Message</button><button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>`;
+    : `<button class="primary person-message-btn" type="button">Message</button><button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>${data.overrideAvailable ? `<button id="personOverrideBtn" class="primary owner-override-btn ${data.overrideActive ? 'active' : ''}" type="button">${data.overrideActive ? 'Override active' : 'Override'}</button>` : ''}`;
 
   const personalBooks = Array.isArray(data.personalScrapbooks)
     ? data.personalScrapbooks
@@ -2571,6 +2598,20 @@ function renderPersonProfile() {
   $('#personAvatarZoomBtn')?.addEventListener('click', () => openProfileImageViewer(p));
   $('#personEditOwnProfile')?.addEventListener('click', () => $('#profileBtn').click());
   $('#personProfileActions .person-message-btn')?.addEventListener('click', () => startPrivateChat(p.tag));
+  $('#personOverrideBtn')?.addEventListener('click', async e => {
+    if (!data.overrideAvailable) return;
+    e.currentTarget.disabled = true;
+    ownerOverrideTargetTag = data.overrideActive ? null : p.tag;
+    try {
+      await openPersonProfile(p.tag, { preserveReturn:true, list:personListMode });
+      showToast(ownerOverrideTargetTag === p.tag
+        ? `Owner Override enabled for @${p.tag}. Private Personal scrapbooks are visible read-only.`
+        : 'Owner Override closed.');
+    } catch (err) {
+      showToast(err.message || 'Could not change Override access.');
+      e.currentTarget.disabled = false;
+    }
+  });
   $('#personProfileActions .person-follow-toggle')?.addEventListener('click', async e => {
     const wasFollowing = data.isFollowing === true;
     e.currentTarget.disabled = true;
@@ -2595,7 +2636,8 @@ async function openPersonProfile(tag, options = {}) {
   if (currentMode !== 'person' && !options.preserveReturn) personProfileReturnMode = currentMode;
   if (options.list === 'following' || options.list === 'followers') personListMode = options.list;
   try {
-    viewedPersonData = await api(`/api/people/${encodeURIComponent(cleanTag)}/profile`);
+    const overrideQuery = ownerOverrideTargetTag === cleanTag ? '?override=1' : '';
+    viewedPersonData = await api(`/api/people/${encodeURIComponent(cleanTag)}/profile${overrideQuery}`);
     if (isPhoneUI()) mobileBookContextTag = cleanTag;
     renderPersonProfile();
     showView('person');
@@ -4197,7 +4239,8 @@ function showView(mode) {
 
 async function refreshEntries() {
   if (!activeScrapbook) { entries = []; authorProfiles = {}; return; }
-  const data = await api(`/api/entries?scrapbookId=${encodeURIComponent(activeScrapbook.id)}`);
+  const overrideQuery = activeScrapbook.overrideAccess || isOwnerOverrideBook(activeScrapbook.id) ? '&override=1' : '';
+  const data = await api(`/api/entries?scrapbookId=${encodeURIComponent(activeScrapbook.id)}${overrideQuery}`);
   entries = data.entries || [];
   authorProfiles = data.profiles || {};
   if (data.scrapbook) {
@@ -4209,7 +4252,9 @@ async function refreshEntries() {
   if (currentMode === 'stream') renderTimeline();
 }
 async function loadSession(preferredBookId = null) {
-  const data = await api('/api/me');
+  const overrideBookId = isOwnerOverrideBook(preferredBookId) ? preferredBookId : null;
+  const meUrl = overrideBookId ? `/api/me?overrideBookId=${encodeURIComponent(overrideBookId)}` : '/api/me';
+  const data = await api(meUrl);
   me = data.profile;
   const sessionAppearance = isNativeScrapellaApp() ? storedNativeAppearanceMode() : (me?.appearanceMode || 'light');
   me.appearanceMode = sessionAppearance;
