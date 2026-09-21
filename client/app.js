@@ -33,6 +33,8 @@ let notificationItems = [];
 let chats = [];
 let activeChatId = null;
 let activeChatMessages = [];
+let activeChatUnreadBoundaryAt = null;
+let activeChatBoundaryChatId = null;
 let chatUnreadCount = 0;
 let pendingChatFiles = [];
 let pendingChatPreviewUrls = [];
@@ -104,6 +106,8 @@ let mobileHomeSearchTimer = null;
 let mobileHomeSearchSeq = 0;
 let desktopHomeSearchTimer = null;
 let desktopHomeSearchSeq = 0;
+let desktopDiscoverSearchTimer = null;
+let desktopDiscoverSearchSeq = 0;
 let mobilePrivateChatSearchTimer = null;
 let mobilePrivateChatSearchSeq = 0;
 let mobileInviteSearchTimer = null;
@@ -2934,6 +2938,23 @@ function chatWhen(value) {
     ? { hour:'numeric', minute:'2-digit' }
     : { month:'short', day:'numeric' }).format(d);
 }
+function chatMessageTimestamp(value) {
+  const d = new Date(value || '');
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat(undefined, sameDay
+    ? { hour:'numeric', minute:'2-digit' }
+    : { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).format(d);
+}
+function chatMessageSeenLabel(message) {
+  if (!message || message.author !== me?.tag || message.deleted) return '';
+  const count = Number(message.seenByCount) || 0;
+  if (count < 1) return '';
+  const chat = activeChat();
+  if (chat?.type === 'group') return `Seen by ${count}`;
+  return 'Seen';
+}
 function activeChat() {
   return chats.find(chat => chat.id === activeChatId) || null;
 }
@@ -3509,6 +3530,12 @@ async function copyChatMessage(message) {
 }
 async function editOwnChatMessage(message) {
   if(!message||message.author!==me?.tag||message.deleted)return;
+  const createdMs=Date.parse(message.createdAt||'')||0;
+  const withinWindow=message.canEdit===true || (createdMs && Date.now() <= createdMs + (15*60*1000));
+  if(!withinWindow){
+    showToast('Messages can only be edited within 15 minutes of sending.');
+    return;
+  }
   const current=String(message.text||'');
   const next=prompt('Edit message',current);
   if(next===null)return;
@@ -3615,9 +3642,11 @@ function showChatReactionPicker(message,bubble,point=null) {
   overlay.className=`chat-reaction-picker chat-message-menu-overlay${phone ? '' : ' desktop-chat-message-menu'}`;
   overlay.setAttribute('role','presentation');
   const hasText=Boolean(String(message.text||'').trim());
+  const createdMs=Date.parse(message.createdAt||'')||0;
+  const canEdit=Boolean(mine&&!message.deleted&&hasText&&(message.canEdit===true || (createdMs && Date.now() <= createdMs + (15*60*1000))));
   const actions=[
     {id:'reply',label:'Reply',show:!message.deleted},
-    {id:'edit',label:'Edit',show:mine&&!message.deleted&&hasText},
+    {id:'edit',label:'Edit',show:canEdit},
     {id:'forward',label:'Forward',show:mine&&!message.deleted},
     {id:'copy',label:'Copy',show:!message.deleted&&hasText},
     {id:'translate',label:'Translate',show:!message.deleted&&hasText},
@@ -3850,13 +3879,25 @@ function renderChatMessages({stickBottom=true}={}) {
     host.innerHTML = '<div class="chat-messages-empty"><span>♡</span><p>This conversation is just getting started.</p></div>';
     return;
   }
+
+  const boundaryMs = Date.parse(activeChatUnreadBoundaryAt || '') || 0;
+  let lastSeenInserted = false;
   host.innerHTML = activeChatMessages.map(message => {
     const mine = message.author === me?.tag;
     const profile = message.profile || {};
     const reply=message.replyTo;
     const images=chatMessageImages(message);
     const reactions=Array.isArray(message.reactions)?message.reactions:[];
-    return `<article class="chat-message ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
+    const messageMs=Date.parse(message.createdAt||'')||0;
+    const showLastSeen = !lastSeenInserted && boundaryMs > 0 && messageMs > boundaryMs;
+    if (showLastSeen) lastSeenInserted = true;
+    const seenLabel=chatMessageSeenLabel(message);
+    const metaParts=[
+      chatMessageTimestamp(message.createdAt),
+      message.editedAt ? 'Edited' : '',
+      seenLabel
+    ].filter(Boolean);
+    return `${showLastSeen ? '<div class="chat-last-seen-divider" role="separator"><span>Last seen</span></div>' : ''}<article class="chat-message ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
       ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}">${avatarHtml(profile,'chat-message-avatar')}</button>`}
       <span class="chat-swipe-reply-indicator" aria-hidden="true">↪</span>
       <div class="chat-bubble" data-message-id="${escapeHtml(message.id || '')}">
@@ -3864,13 +3905,11 @@ function renderChatMessages({stickBottom=true}={}) {
         ${message.deleted
           ? '<p class="chat-message-deleted"><span>⊘</span> Message deleted</p>'
           : `${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
-             ${images.length ? (isPhoneUI()
-               ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>`
-               : `<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(images[0])}" aria-label="View photo"><img class="chat-message-image" src="${escapeHtml(images[0])}" alt="Chat photo" loading="lazy" /></button>`) : ''}
+             ${images.length ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>` : ''}
              ${chatVoiceHtml(message)}
              ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
-             ${isPhoneUI() && message.pinnedAt ? '<span class="chat-message-pinned">📌 Pinned</span>' : ''}`}
-        <time>${escapeHtml(chatWhen(message.createdAt))}${isPhoneUI() && message.editedAt ? ' · Edited' : ''}</time>
+             ${message.pinnedAt ? '<span class="chat-message-pinned">📌 Pinned</span>' : ''}`}
+        <time class="chat-message-meta">${escapeHtml(metaParts.join(' · '))}</time>
         ${!message.deleted && reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
       </div>
     </article>`;
@@ -3900,13 +3939,6 @@ function renderPendingChatImage() {
     return;
   }
   host.classList.remove('hidden');
-  if(!isPhoneUI()){
-    const file=pendingChatFiles[0];
-    const url=pendingChatPreviewUrls[0] || '';
-    host.innerHTML=`<div><img src="${escapeHtml(url)}" alt="Photo to send" /><button id="removeChatImageBtn" type="button" aria-label="Remove attached photo">×</button><span>${escapeHtml(file?.name || 'Photo')}</span></div>`;
-    $('#removeChatImageBtn')?.addEventListener('click',()=>clearPendingChatImage());
-    return;
-  }
   host.innerHTML = `<div class="chat-pending-image-grid" data-count="${pendingChatFiles.length}">
     ${pendingChatFiles.map((file,index)=>`<div class="chat-pending-image-item">
       <img src="${escapeHtml(pendingChatPreviewUrls[index]||'')}" alt="Photo ${index+1} to send" />
@@ -4202,6 +4234,10 @@ async function loadChatMessages(chatId = activeChatId) {
   if (!chatId) return;
   const data = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`);
   activeChatId = chatId;
+  if (activeChatBoundaryChatId !== chatId) {
+    activeChatBoundaryChatId = chatId;
+    activeChatUnreadBoundaryAt = data.previousReadAt || null;
+  }
   activeChatMessages = data.messages || [];
   if(pendingChatReply){
     const latestReply=activeChatMessages.find(item=>item.id===pendingChatReply.id);
@@ -4227,6 +4263,8 @@ async function openChat(chatId) {
   if(activeChatId && activeChatId!==chatId){
     clearPendingChatReply();
     closeChatReactionPicker();
+    activeChatUnreadBoundaryAt = null;
+    activeChatBoundaryChatId = null;
   }
   activeChatId = chatId;
   if (currentMode !== 'messages') showView('messages');
@@ -5514,10 +5552,40 @@ function renderDiscoverResults(people) {
     } catch (err) { showToast(err.message); }
   }));
 }
+async function runDesktopDiscoverSearch(rawQuery = $('#discoverTag')?.value || '') {
+  if (isPhoneUI()) return;
+  const q=String(rawQuery||'').trim();
+  if(!q){
+    $('#discoverResults').innerHTML='';
+    return;
+  }
+  const seq=++desktopDiscoverSearchSeq;
+  try{
+    const data=await api(`/api/people?q=${encodeURIComponent(q)}`);
+    if(seq!==desktopDiscoverSearchSeq || isPhoneUI())return;
+    renderDiscoverResults(data.people || []);
+  }catch(err){
+    if(seq===desktopDiscoverSearchSeq)showToast(err.message||'Could not search profiles.');
+  }
+}
+$('#discoverTag').addEventListener('input',e=>{
+  if(isPhoneUI())return;
+  clearTimeout(desktopDiscoverSearchTimer);
+  const q=e.currentTarget.value.trim();
+  if(!q){
+    $('#discoverResults').innerHTML='';
+    return;
+  }
+  desktopDiscoverSearchTimer=setTimeout(()=>runDesktopDiscoverSearch(q),120);
+});
 $('#discoverForm').addEventListener('submit', async e => {
   e.preventDefault();
   const q = $('#discoverTag').value.trim();
   if (!q) return;
+  if(!isPhoneUI()){
+    await runDesktopDiscoverSearch(q);
+    return;
+  }
   try {
     const data = await api(`/api/people?q=${encodeURIComponent(q)}`);
     renderDiscoverResults(data.people || []);
