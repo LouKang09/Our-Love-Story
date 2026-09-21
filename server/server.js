@@ -2713,6 +2713,9 @@ const server = http.createServer(async (req, res) => {
       if (!assetName || assetName !== pathname.slice('/assets/'.length)) return notFound(res);
       return serveFile(res, path.join(PUBLIC, 'assets', assetName));
     }
+    if (pathname === '/vendor/html2canvas.min.js') {
+      return serveFile(res, path.join(ROOT, 'node_modules', 'html2canvas', 'dist', 'html2canvas.min.js'));
+    }
     const safeName = path.basename(pathname);
     if (['styles.css','app.js','sw.js'].includes(safeName)) return serveFile(res, path.join(PUBLIC, safeName));
     return notFound(res);
