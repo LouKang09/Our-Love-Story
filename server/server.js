@@ -228,6 +228,7 @@ async function readSocial() {
   data.chatRead = data.chatRead && typeof data.chatRead === 'object' ? data.chatRead : {};
   data.chatPreferences = data.chatPreferences && typeof data.chatPreferences === 'object' ? data.chatPreferences : {};
   data.blockedUsers = data.blockedUsers && typeof data.blockedUsers === 'object' ? data.blockedUsers : {};
+  data.freedomWall = Array.isArray(data.freedomWall) ? data.freedomWall : [];
   for (const book of data.scrapbooks) {
     if (book?.type !== 'group') continue;
     const members = Array.isArray(book.members) ? book.members.filter(Boolean) : [];
@@ -255,7 +256,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {} });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [] });
   await ensureFile(PRESENCE_FILE, {});
   await loadPresenceStore();
 
@@ -1571,6 +1572,49 @@ async function handleApi(req, res, url) {
         isPartner: isActivePartner(social, user, t)
       }))
     });
+  }
+
+  if (pathname === '/api/preview/freedom-wall' && req.method === 'GET') {
+    const posts = [...social.freedomWall]
+      .sort((a,b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+      .slice(-250);
+    const profiles = Object.fromEntries(
+      [...new Set(posts.map(post => post.author).filter(Boolean))]
+        .map(tag => [tag, publicProfileFor(social, tag)])
+    );
+    return json(res, 200, { posts, profiles });
+  }
+
+  if (pathname === '/api/preview/freedom-wall' && req.method === 'POST') {
+    const body = await readBody(req, 256 * 1024);
+    const text = String(body.text || '').trim().slice(0, 900);
+    const image = String(body.image || '');
+    const safeImage = image.startsWith('/uploads/') ? image : '';
+    if (!text && !safeImage) return json(res, 400, { error:'Write something or add one photo.' });
+    const post = {
+      id:crypto.randomUUID(),
+      author:user,
+      text,
+      image:safeImage,
+      createdAt:new Date().toISOString()
+    };
+    social.freedomWall.push(post);
+    if (social.freedomWall.length > 1200) social.freedomWall = social.freedomWall.slice(-1200);
+    await writeSocial(social);
+    for (const tag of LIVE_CLIENTS.keys()) emitLiveEvent(tag,'wall',{ type:'wall_posted', postId:post.id, from:user });
+    return json(res, 201, { post, profile:publicProfileFor(social,user) });
+  }
+
+  const freedomWallDeleteMatch = pathname.match(/^\/api\/preview\/freedom-wall\/([a-f0-9-]+)$/i);
+  if (freedomWallDeleteMatch && req.method === 'DELETE') {
+    const index = social.freedomWall.findIndex(post => post.id === freedomWallDeleteMatch[1]);
+    if (index < 0) return notFound(res);
+    const post = social.freedomWall[index];
+    if (post.author !== user && !isPlatformOwner(social,user)) return forbidden(res,'You can only remove your own wall post.');
+    social.freedomWall.splice(index,1);
+    await writeSocial(social);
+    for (const tag of LIVE_CLIENTS.keys()) emitLiveEvent(tag,'wall',{ type:'wall_deleted', postId:post.id, from:user });
+    return json(res,200,{ ok:true });
   }
 
   const personProfileMatch = pathname.match(/^\/api\/people\/([^/]+)\/profile$/);
