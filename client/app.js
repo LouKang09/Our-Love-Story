@@ -5708,7 +5708,9 @@ function syncResponsiveChrome() {
     [$('#createScrapbookBtn'), $('#profileBtn'), $('#messagesModeBtn'), $('#notificationWrap'), $('#guideBtn'), $('#logoutBtn')]
       .filter(Boolean).forEach(el => mobileActions?.appendChild(el));
     if ($('#themeModeBtn')) mobileThemeSlot?.appendChild($('#themeModeBtn'));
-    if ($('#scrapbookPicker')) mobileBookSlot?.appendChild($('#scrapbookPicker'));
+    if ($('#scrapbookPicker') && mobileBookSlot && $('#scrapbookPicker').parentNode !== mobileBookSlot) {
+      mobileBookSlot.appendChild($('#scrapbookPicker'));
+    }
     if (privacyQuick && mobileBookShelf && privacyQuick.parentNode !== mobileBookShelf) mobileBookShelf.appendChild(privacyQuick);
     if (suggestions && searchSection && suggestions.parentNode !== searchSection) searchSection.appendChild(suggestions);
     setPhoneMessageButtonVisual(true);
@@ -5717,7 +5719,9 @@ function syncResponsiveChrome() {
     if (privacyQuick && $('#inviteBanner') && privacyQuick.previousElementSibling !== $('#inviteBanner')) {
       $('#inviteBanner').insertAdjacentElement('afterend', privacyQuick);
     }
-    if ($('#scrapbookPicker') && pickerWrap) pickerWrap.insertBefore($('#scrapbookPicker'), $('#createScrapbookBtn') || null);
+    if ($('#scrapbookPicker') && pickerWrap && $('#scrapbookPicker').parentNode !== pickerWrap) {
+      pickerWrap.insertBefore($('#scrapbookPicker'), $('#createScrapbookBtn') || null);
+    }
     if ($('#createScrapbookBtn') && pickerWrap) pickerWrap.appendChild($('#createScrapbookBtn'));
     if ($('#messagesModeBtn') && modeSwitch) modeSwitch.appendChild($('#messagesModeBtn'));
     if ($('#notificationWrap') && toolbar) toolbar.appendChild($('#notificationWrap'));
@@ -6155,12 +6159,27 @@ setInterval(() => refreshNotificationCount(), 60 * 1000);
 })();
 
 
+let scrapbookPickerInteracting = false;
+const scrapbookPickerEl = $('#scrapbookPicker');
+scrapbookPickerEl?.addEventListener('pointerdown', () => { scrapbookPickerInteracting = true; });
+scrapbookPickerEl?.addEventListener('focus', () => { scrapbookPickerInteracting = true; });
+scrapbookPickerEl?.addEventListener('change', () => {
+  window.setTimeout(() => { scrapbookPickerInteracting = false; }, 250);
+});
+scrapbookPickerEl?.addEventListener('blur', () => {
+  window.setTimeout(() => { scrapbookPickerInteracting = false; }, 120);
+});
+
 window.addEventListener('resize', () => {
-  syncResponsiveChrome();
+  // Android's native select briefly resizes the visual viewport while open.
+  // Do not move/rebuild responsive chrome until the chooser is finished.
+  if (!scrapbookPickerInteracting) syncResponsiveChrome();
   if (isPhoneUI()) {
-    renderMobileBookShelf();
+    if (!scrapbookPickerInteracting) renderMobileBookShelf();
     if (me && !phoneHistoryReady) initializePhoneHistory();
   }
 });
-window.addEventListener('orientationchange', () => setTimeout(syncResponsiveChrome, 120));
+window.addEventListener('orientationchange', () => setTimeout(() => {
+  if (!scrapbookPickerInteracting) syncResponsiveChrome();
+}, 120));
 syncResponsiveChrome();
