@@ -10456,3 +10456,210 @@ html[data-theme="night"] .owner-override-btn{
     background:#382d31!important;
   }
 }
+
+
+/* =========================================================
+   DESKTOP SCREENSHOT FIXES V4 — structural final pass
+   ========================================================= */
+@media(min-width:801px){
+  /* Official brand in the desktop header. */
+  .topbar .brand-button{
+    width:118px!important;
+    min-width:118px!important;
+    height:50px!important;
+    display:grid!important;
+    place-items:center!important;
+    overflow:hidden!important;
+    padding:0!important;
+    border:0!important;
+    background:transparent!important;
+  }
+  .topbar .brand-header-logo{
+    width:118px!important;
+    height:50px!important;
+    display:block!important;
+    object-fit:cover!important;
+    object-position:center 50%!important;
+    border-radius:9px!important;
+    background:#faf8f2!important;
+  }
+  .topbar .brand-header-label,
+  .topbar .brand-button>span{
+    display:none!important;
+  }
+
+  /* Auth has one clean background. No body radial glow may bleed through. */
+  body:has(#lockScreen:not(.hidden)){
+    background:linear-gradient(145deg,#eadfd8,#d8c6bf 58%,#c8b5ae)!important;
+  }
+  body:has(#lockScreen:not(.hidden))::before,
+  body:has(#lockScreen:not(.hidden))::after,
+  #lockScreen::before,
+  #lockScreen::after{
+    display:none!important;
+    content:none!important;
+    background:none!important;
+    box-shadow:none!important;
+  }
+  #lockScreen{
+    width:100%!important;
+    min-height:100vh!important;
+    background:linear-gradient(145deg,#eadfd8,#d8c6bf 58%,#c8b5ae)!important;
+  }
+  html[data-theme="night"] body:has(#lockScreen:not(.hidden)),
+  html[data-theme="night"] #lockScreen{
+    background:linear-gradient(145deg,#21191b,#181315 58%,#100d0e)!important;
+  }
+
+  /* Keep the chosen logo comfortably visible on auth instead of hard cropping it. */
+  #lockScreen .lock-brand-logo{
+    width:min(320px,82%)!important;
+    height:126px!important;
+    margin:-8px auto 4px!important;
+    object-fit:cover!important;
+    object-position:center 50%!important;
+  }
+
+  /* Find People: typing itself is the search action. */
+  .home-search-section{
+    grid-template-columns:minmax(0,1fr) minmax(300px,440px)!important;
+  }
+  #homeSearchForm{
+    display:block!important;
+    width:100%!important;
+    margin:0!important;
+  }
+  #homeSearchForm>button{
+    display:none!important;
+  }
+  #homeSearchInput{
+    width:100%!important;
+    min-height:50px!important;
+  }
+
+  /* Followers / Following must remain two independent pills. */
+  .person-social-stats{
+    width:fit-content!important;
+    max-width:100%!important;
+    min-height:0!important;
+    display:flex!important;
+    align-items:center!important;
+    gap:9px!important;
+    margin-top:14px!important;
+    padding:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+  }
+  .person-social-stats>button{
+    flex:0 0 auto!important;
+    width:auto!important;
+    margin:0!important;
+    border-radius:12px!important;
+  }
+  html[data-theme="night"] .person-social-stats{
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+  }
+
+  /* Desktop message action cards: desktop typography, straight separators,
+     readable vector icons, no inherited scrapbook serif styling. */
+  .desktop-chat-message-menu .chat-message-action-sheet{
+    width:236px!important;
+    border-radius:14px!important;
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>time{
+    padding:9px 13px 7px!important;
+    font:500 10px/1.2 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button{
+    width:100%!important;
+    min-height:41px!important;
+    grid-template-columns:25px minmax(0,1fr)!important;
+    gap:9px!important;
+    padding:7px 13px!important;
+    border:0!important;
+    border-top:1px solid rgba(255,255,255,.065)!important;
+    border-radius:0!important;
+    color:#f5eff1!important;
+    background:transparent!important;
+    text-align:left!important;
+    font:600 13px/1.2 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button span{
+    min-width:0!important;
+    color:inherit!important;
+    font:inherit!important;
+    text-align:left!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button svg{
+    width:18px!important;
+    height:18px!important;
+    fill:none!important;
+    stroke:currentColor!important;
+    color:inherit!important;
+    stroke-width:1.9!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button:hover{
+    background:rgba(255,255,255,.075)!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button.danger{
+    color:#ff6573!important;
+  }
+
+  /* Emoji bar must render as color emoji, not monochrome text glyphs. */
+  .desktop-chat-message-menu .chat-message-reaction-bar button{
+    color:initial!important;
+    font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif!important;
+    font-size:22px!important;
+    font-weight:400!important;
+  }
+
+  /* Guided tour stays fully legible in dark mode. */
+  html[data-theme="night"] #guideCard{
+    color:#f5ece9!important;
+    background:#2c2326!important;
+    border:1px solid rgba(246,225,222,.15)!important;
+  }
+  html[data-theme="night"] #guideCard h2{
+    color:#fff6f3!important;
+    opacity:1!important;
+  }
+  html[data-theme="night"] #guideCard #guideText,
+  html[data-theme="night"] #guideCard #guideTip{
+    color:#cbb9b5!important;
+    opacity:1!important;
+  }
+  html[data-theme="night"] #guideCard .eyebrow,
+  html[data-theme="night"] #guideCard #guideStepLabel{
+    color:#e491a5!important;
+    opacity:1!important;
+  }
+  html[data-theme="night"] #guideCard #guideNextBtn{
+    color:#fff!important;
+    background:#c8788c!important;
+  }
+  html[data-theme="night"] #guideCard #guideBackBtn{
+    color:#f5ece9!important;
+    background:#3a2e32!important;
+    border-color:rgba(246,225,222,.14)!important;
+  }
+
+  /* The desktop pencil intro is always above auth for its full two seconds. */
+  body.brand-intro-active #brandIntro{
+    display:grid!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+  }
+  #brandIntro .brand-intro-pencil{
+    display:block!important;
+    opacity:1!important;
+  }
+  #brandIntro .brand-trace-stroke{
+    visibility:visible!important;
+  }
+}
