@@ -278,8 +278,43 @@ async function verifyCredential(stored, supplied) {
   if (!stored || stored.disabled === true) return false;
   if (stored.type === 'sha256') return safeEqualBuffer(Buffer.from(stored.hash, 'hex'), sha256(supplied));
   const value = String(stored.passwordHash || stored.hash || '');
-  if (!value.startsWith('scrypt
+  if (!value.startsWith('scrypt$')) return false;
+  const [, salt, expectedHex] = value.split('$');
+  if (!salt || !expectedHex) return false;
+  const calculated = await scryptHash(supplied, salt);
+  const actualHex = calculated.split('$')[2];
+  return safeEqualBuffer(Buffer.from(expectedHex, 'hex'), Buffer.from(actualHex, 'hex'));
+}
+async function getCredential(tag) {
+  const accounts = await readAccounts();
+  const stored = accounts.find(a => a.tag === tag);
+  if (stored) return stored;
+  if (BOOTSTRAP_USERS.has(tag)) return BOOTSTRAP_USERS.get(tag);
+  return null;
+}
+async function accountExists(tag) {
+  return Boolean(await getCredential(tag));
+}
+async function allKnownTags() {
+  const accounts = await readAccounts();
+  const disabled = new Set(accounts.filter(a => a.disabled === true).map(a => a.tag));
+  return [...new Set([
+    ...[...BOOTSTRAP_USERS.keys()].filter(tag => !disabled.has(tag)),
+    ...accounts.filter(a => a.disabled !== true).map(a => a.tag)
+  ])];
+}
 
+function renameExactTagDeep(value, oldTag, newTag) {
+  if (typeof value === 'string') return value === oldTag ? newTag : value;
+  if (Array.isArray(value)) return value.map(item => renameExactTagDeep(item, oldTag, newTag));
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key,item] of Object.entries(value)) {
+    const nextKey = key === oldTag ? newTag : key;
+    out[nextKey] = renameExactTagDeep(item, oldTag, newTag);
+  }
+  return out;
+}
 function makeSession(tag) {
   const payload = Buffer.from(JSON.stringify({ tag, exp: Date.now() + SESSION_MAX_AGE * 1000 })).toString('base64url');
   return `${payload}.${sign(payload)}`;
