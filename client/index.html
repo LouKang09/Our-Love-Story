@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260921-polish12" />
+  <link rel="stylesheet" href="/styles.css?v=20260921-polish13" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -595,6 +595,29 @@
 
         <div id="mobileThemeSlot" class="mobile-theme-slot"></div>
 
+        <section class="app-permission-settings">
+          <div class="app-permission-settings-head">
+            <strong>App permissions</strong>
+            <p>Check or allow the features Scrapella uses on this device.</p>
+          </div>
+          <div class="app-permission-row" data-profile-permission="notifications">
+            <span aria-hidden="true">🔔</span>
+            <div><strong>Notifications</strong><small id="profilePermissionNotificationsStatus">Checking…</small></div>
+            <button id="profilePermissionNotificationsBtn" class="ghost" type="button">Check / Allow</button>
+          </div>
+          <div class="app-permission-row" data-profile-permission="camera">
+            <span aria-hidden="true">📷</span>
+            <div><strong>Camera</strong><small id="profilePermissionCameraStatus">Checking…</small></div>
+            <button id="profilePermissionCameraBtn" class="ghost" type="button">Check / Allow</button>
+          </div>
+          <div class="app-permission-row" data-profile-permission="microphone">
+            <span aria-hidden="true">🎙️</span>
+            <div><strong>Microphone</strong><small id="profilePermissionMicrophoneStatus">Checking…</small></div>
+            <button id="profilePermissionMicrophoneBtn" class="ghost" type="button">Check / Allow</button>
+          </div>
+          <p class="helper app-permission-help">If a permission was blocked permanently, enable it from your phone's App settings, then return here and tap Check / Allow again.</p>
+        </section>
+
         <section class="notification-settings">
           <div>
             <strong>Daily journey reminder</strong>
@@ -637,6 +660,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260921-polish12" defer></script>
+  <script src="/app.js?v=20260921-polish13" defer></script>
 </body>
 </html>
