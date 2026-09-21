@@ -1456,7 +1456,7 @@ function updateCover() {
   applyActiveCoverTheme();
   syncBookCoverControls();
   renderPersonalPrivacyQuick();
-  $('#brandTitle').textContent = activeBookLabel();
+  $('#brandTitle').textContent = isPhoneUI() ? activeBookLabel() : 'Scrapella';
   if ($('#desktopBookTitle')) $('#desktopBookTitle').textContent = activeBookLabel();
   if (activeScrapbook?.type === 'couple') {
     const archived = activeScrapbook.bindingStatus === 'unbound';
@@ -2958,10 +2958,11 @@ function chatThreadActionIcon(kind) {
     delete:'🗑'
   })[kind] || '•';
 }
-function showChatThreadActionMenu(chat) {
-  if (!isPhoneUI() || !chat) return;
+function showChatThreadActionMenu(chat, point = null) {
+  if (!chat) return;
   closeChatThreadActionMenu();
   closeChatReactionPicker();
+  const phone = isPhoneUI();
 
   const actions = [
     { id:'pin', label:chat.pinned ? 'Unpin' : 'Pin', value:!chat.pinned },
@@ -2974,7 +2975,7 @@ function showChatThreadActionMenu(chat) {
   ];
 
   const overlay=document.createElement('div');
-  overlay.className='chat-thread-menu-overlay';
+  overlay.className=`chat-thread-menu-overlay${phone ? '' : ' desktop-thread-context'}`;
   overlay.innerHTML=`<section class="chat-thread-menu-sheet" role="menu" aria-label="Conversation actions">
     <div class="chat-thread-menu-handle" aria-hidden="true"></div>
     <div class="chat-thread-menu-person">
@@ -2987,6 +2988,16 @@ function showChatThreadActionMenu(chat) {
   </section>`;
   document.body.appendChild(overlay);
   chatThreadActionMenu=overlay;
+  if (!phone) {
+    const sheet = overlay.querySelector('.chat-thread-menu-sheet');
+    requestAnimationFrame(() => {
+      const rect = sheet.getBoundingClientRect();
+      const x = Number(point?.x) || (window.innerWidth / 2);
+      const y = Number(point?.y) || (window.innerHeight / 2);
+      sheet.style.left = `${Math.max(10, Math.min(window.innerWidth - rect.width - 10, x))}px`;
+      sheet.style.top = `${Math.max(10, Math.min(window.innerHeight - rect.height - 10, y))}px`;
+    });
+  }
   overlay.addEventListener('pointerdown',e=>{if(e.target===overlay)closeChatThreadActionMenu();});
   overlay.querySelectorAll('[data-thread-action]').forEach(button=>button.addEventListener('click',async()=>{
     const action=button.dataset.threadAction;
@@ -2995,7 +3006,17 @@ function showChatThreadActionMenu(chat) {
   }));
 }
 function wireChatThreadGestures(host) {
-  if (!host || !isPhoneUI()) return;
+  if (!host) return;
+  if (!isPhoneUI()) {
+    host.querySelectorAll('.chat-list-item').forEach(button => {
+      button.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const chat = chats.find(item => item.id === button.dataset.chatId);
+        if (chat) showChatThreadActionMenu(chat, { x:e.clientX, y:e.clientY });
+      });
+    });
+    return;
+  }
   host.querySelectorAll('.chat-list-item').forEach(button => {
     let timer=null;
     let sx=0,sy=0;
@@ -3559,13 +3580,14 @@ function chatActionIcon(kind) {
   };
   return icons[kind]||'';
 }
-function showChatReactionPicker(message,bubble) {
-  if(!isPhoneUI()||!message||!bubble)return;
+function showChatReactionPicker(message,bubble,point=null) {
+  if(!message||!bubble)return;
+  const phone=isPhoneUI();
   closeChatReactionPicker();
   const images=chatMessageImages(message);
   const mine=message.author===me?.tag;
   const overlay=document.createElement('div');
-  overlay.className='chat-reaction-picker chat-message-menu-overlay';
+  overlay.className=`chat-reaction-picker chat-message-menu-overlay${phone ? '' : ' desktop-chat-message-menu'}`;
   overlay.setAttribute('role','presentation');
   const hasText=Boolean(String(message.text||'').trim());
   const actions=[
@@ -3593,14 +3615,21 @@ function showChatReactionPicker(message,bubble) {
 
   const rect=bubble.getBoundingClientRect();
   const anchor=overlay.querySelector('.chat-message-menu-anchor');
-  const width=Math.min(370,window.innerWidth-20);
+  const width=phone ? Math.min(370,window.innerWidth-20) : 330;
   anchor.style.width=`${width}px`;
   requestAnimationFrame(()=>{
     const h=anchor.offsetHeight||320;
-    let top=rect.top-h*.42;
-    top=Math.max(8,Math.min(window.innerHeight-h-8,top));
-    anchor.style.top=`${top}px`;
-    anchor.style.left=`${Math.max(10,window.innerWidth-width-10)}px`;
+    if (phone) {
+      let top=rect.top-h*.42;
+      top=Math.max(8,Math.min(window.innerHeight-h-8,top));
+      anchor.style.top=`${top}px`;
+      anchor.style.left=`${Math.max(10,window.innerWidth-width-10)}px`;
+    } else {
+      const x=Number(point?.x)||rect.right;
+      const y=Number(point?.y)||rect.top;
+      anchor.style.left=`${Math.max(10,Math.min(window.innerWidth-width-10,x))}px`;
+      anchor.style.top=`${Math.max(10,Math.min(window.innerHeight-h-10,y))}px`;
+    }
   });
 
   overlay.addEventListener('pointerdown',e=>{if(e.target===overlay)closeChatReactionPicker();});
@@ -3662,7 +3691,23 @@ function wireChatMessageGestures(host) {
       onSelfReaction:emoji=>toggleChatReaction(message.id,emoji)
     });
   }));
-  if(!isPhoneUI())return;
+  if(!isPhoneUI()){
+    host.querySelectorAll('.chat-bubble[data-message-id]').forEach(bubble=>{
+      const message=activeChatMessages.find(item=>item.id===bubble.dataset.messageId);
+      if(!message||message.deleted)return;
+      bubble.addEventListener('contextmenu',e=>{
+        if(e.target.closest('audio,button:not(.chat-message-image-button)'))return;
+        e.preventDefault();
+        showChatReactionPicker(message,bubble,{x:e.clientX,y:e.clientY});
+      });
+      bubble.addEventListener('dblclick',e=>{
+        if(e.target.closest('audio,button:not(.chat-message-image-button)'))return;
+        e.preventDefault();
+        toggleChatReaction(message.id,'❤️');
+      });
+    });
+    return;
+  }
 
   host.querySelectorAll('.chat-bubble[data-message-id]').forEach(bubble=>{
     const message=activeChatMessages.find(item=>item.id===bubble.dataset.messageId);
@@ -5180,6 +5225,10 @@ $('#logoutBtn').addEventListener('click', async () => {
   location.reload();
 });
 $('#brandButton').addEventListener('click', async () => {
+  if (!isPhoneUI()) {
+    await refreshAndShow('home');
+    return;
+  }
   setBookCoverOpen(false);
   await refreshAndShow('cover');
 });
@@ -5802,7 +5851,7 @@ function setPhoneMessageButtonVisual(phone) {
 }
 function syncResponsiveChrome() {
   const phone = isPhoneUI();
-  if($('#chatPhotoInput')) $('#chatPhotoInput').multiple = phone;
+  if($('#chatPhotoInput')) $('#chatPhotoInput').multiple = true;
   const toolbar = document.querySelector('.toolbar');
   const modeSwitch = document.querySelector('.mode-switch');
   const pickerWrap = document.querySelector('.scrapbook-picker-wrap');
