@@ -4886,7 +4886,7 @@ function renderMemoryPerspectives(ordered) {
   host.querySelectorAll('[data-universe-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.universeEntry)));
 }
 function renderMemoryUniverse() {
-  if(isNativeScrapellaApp()||isPhoneUI())return;
+  if(isNativeScrapellaApp())return;
   const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
   if(!activeScrapbook){
     $('#memoryUniverseStats').innerHTML='';
@@ -4913,7 +4913,7 @@ function closeMemoryReplay() {
   document.body.classList.remove('memory-replay-open');
 }
 function startMemoryReplay(startEntryId='') {
-  if(isNativeScrapellaApp()||isPhoneUI())return;
+  if(isNativeScrapellaApp())return;
   const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
   if(!ordered.length){showToast('Add a memory first.');return;}
   closeMemoryReplay();
@@ -4949,7 +4949,7 @@ function startMemoryReplay(startEntryId='') {
   render();
 }
 function showView(mode) {
-  if (mode === 'universe' && (isNativeScrapellaApp() || isPhoneUI())) mode = 'home';
+  if (mode === 'universe' && isNativeScrapellaApp()) mode = 'home';
   const previousMode = currentMode;
   currentMode = mode;
   if (isNativeScrapellaApp() && isPhoneUI() && previousMode !== mode) {
@@ -6001,7 +6001,7 @@ $('#closeBookViewBtn').addEventListener('click', async () => {
 });
 $('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
 $('#universeModeBtn')?.addEventListener('click', async () => {
-  if (isNativeScrapellaApp() || isPhoneUI()) return;
+  if (isNativeScrapellaApp()) return;
   try {
     if (activeScrapbook) await refreshEntries();
     showView('universe');
@@ -6036,6 +6036,15 @@ $('#mobileNewMemoryBtn')?.addEventListener('click', () => {
 $('#mobileStreamBtn')?.addEventListener('click', () => {
   if (!isPhoneUI() || !activeScrapbook) return;
   showView('stream');
+});
+$('#mobileUniverseBtn')?.addEventListener('click', async () => {
+  if (isNativeScrapellaApp()) return;
+  try {
+    if (activeScrapbook) await refreshEntries();
+    showView('universe');
+  } catch (err) {
+    showToast(err?.message || 'Could not open Memory Universe.');
+  }
 });
 $('#mobileDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
 $('#emptyDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
@@ -6639,7 +6648,7 @@ function setPhoneMessageButtonVisual(phone) {
 }
 function syncResponsiveChrome() {
   const phone = isPhoneUI();
-  document.documentElement.classList.toggle('web-memory-preview', !isNativeScrapellaApp() && !phone);
+  document.documentElement.classList.toggle('web-memory-preview', !isNativeScrapellaApp());
   if($('#chatPhotoInput')) $('#chatPhotoInput').multiple = true;
   const toolbar = document.querySelector('.toolbar');
   const modeSwitch = document.querySelector('.mode-switch');
@@ -6824,7 +6833,7 @@ function isTypingFieldFocused() {
   return Boolean(active && active.matches?.('input,textarea,[contenteditable="true"]'));
 }
 window.addEventListener('resize', () => {
-  if (currentMode === 'universe' && (isPhoneUI() || isNativeScrapellaApp())) {
+  if (currentMode === 'universe' && isNativeScrapellaApp()) {
     showView('home');
     return;
   }
