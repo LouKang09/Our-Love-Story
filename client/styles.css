@@ -10897,3 +10897,185 @@ html[data-theme="night"] .chat-last-seen-divider::before,
 html[data-theme="night"] .chat-last-seen-divider::after{
   background:#4b3b40;
 }
+
+
+/* ===== 2026-09-21 APP + DESKTOP POLISH ===== */
+
+/* Native app only: give chat reactions breathing room and keep Seen readable. */
+@media(max-width:800px){
+  html.native-app .chat-messages{
+    gap:18px!important;
+    padding-top:20px;
+    padding-bottom:28px;
+  }
+  html.native-app .chat-message{
+    margin-bottom:12px;
+  }
+  html.native-app .chat-bubble{
+    padding-bottom:18px!important;
+  }
+  html.native-app .chat-reactions{
+    right:-4px!important;
+    bottom:-16px!important;
+  }
+  html.native-app .chat-message.mine .chat-message-meta{
+    min-height:12px;
+    margin-top:8px;
+    margin-bottom:3px;
+    padding-right:70px;
+    opacity:.84;
+  }
+  html.native-app .chat-message.theirs .chat-message-meta{
+    padding-right:0;
+  }
+}
+
+/* Desktop web: roomier scrapbook designer, mouse panning and bottom drag handle. */
+@media(min-width:801px){
+  .editor-dialog{
+    width:min(1320px,calc(100vw - 24px));
+    max-height:96svh;
+  }
+  .editor-card{
+    max-height:96svh;
+  }
+  .scrap-canvas-stage{
+    height:min(76vh,860px);
+    min-height:560px;
+    padding:30px;
+    cursor:grab;
+  }
+  .scrap-canvas-stage.mouse-panning{
+    cursor:grabbing;
+    user-select:none;
+  }
+  .canvas-text-item .canvas-drag-handle{
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:7;
+    min-height:27px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:5px 9px;
+    border-radius:0 0 7px 7px;
+  }
+  .canvas-text-item .canvas-text-content{
+    padding-bottom:36px;
+  }
+}
+
+/* Desktop web night mode: book pages and designed paper belong to the dark palette. */
+@media(min-width:801px){
+  html[data-theme="night"]:not(.native-app) .paper-page,
+  html[data-theme="night"]:not(.native-app) .stream-card{
+    color:#f4eae7!important;
+    border-color:#4c3d41!important;
+    background:
+      linear-gradient(90deg,rgba(255,255,255,.018),transparent 8%),
+      #2c2426!important;
+  }
+  html[data-theme="night"]:not(.native-app) .paper-page .muted,
+  html[data-theme="night"]:not(.native-app) .stream-card .muted,
+  html[data-theme="night"]:not(.native-app) .entry-page .helper{
+    color:#b8a6a3!important;
+  }
+  html[data-theme="night"]:not(.native-app) .entry-page h2,
+  html[data-theme="night"]:not(.native-app) .entry-page h3,
+  html[data-theme="night"]:not(.native-app) .stream-card h2,
+  html[data-theme="night"]:not(.native-app) .stream-card h3{
+    color:#f7efec!important;
+  }
+
+  html[data-theme="night"]:not(.native-app) .scrap-canvas,
+  html[data-theme="night"]:not(.native-app) .saved-canvas{
+    color:#f4eae7!important;
+    border-color:#514145!important;
+    background:
+      radial-gradient(circle at 16% 10%,rgba(255,255,255,.035),transparent 28%),
+      #2b2325!important;
+    box-shadow:0 18px 45px rgba(0,0,0,.22);
+  }
+  html[data-theme="night"]:not(.native-app) .scrap-canvas.canvas-lined,
+  html[data-theme="night"]:not(.native-app) .saved-canvas.canvas-lined{
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 5.3cqw,
+        rgba(226,190,199,.14) 5.3cqw,
+        rgba(226,190,199,.14) calc(5.3cqw + 1px)
+      ),
+      linear-gradient(rgba(43,35,37,.93),rgba(43,35,37,.93)),
+      #2b2325!important;
+  }
+  html[data-theme="night"]:not(.native-app) .saved-text-item,
+  html[data-theme="night"]:not(.native-app) .canvas-text-item{
+    color:#f4eae7!important;
+    background:rgba(54,43,47,.72)!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-text-content:empty::before{
+    color:#a79390!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-drag-handle{
+    color:#f5e9e6!important;
+    background:#4b383e!important;
+  }
+
+  html[data-theme="night"]:not(.native-app) .canvas-lined-toggle{
+    color:#f2e8e5!important;
+    border:1px solid #544348;
+    background:#2a2224!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-text-inspector{
+    color:#f4eae7!important;
+    border-color:#56454a!important;
+    background:#342a2d!important;
+    box-shadow:0 12px 30px rgba(0,0,0,.28);
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-text-inspector>strong,
+  html[data-theme="night"]:not(.native-app) .canvas-size-control,
+  html[data-theme="night"]:not(.native-app) #canvasFontSizeValue{
+    color:#f1e5e2!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-text-inspector .rich-tool,
+  html[data-theme="night"]:not(.native-app) .canvas-text-inspector .ghost{
+    color:#f4eae7!important;
+    border-color:#5b484e!important;
+    background:#211a1c!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-text-inspector .rich-tool.active{
+    color:#fff!important;
+    background:var(--rose)!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-zoom-controls{
+    border-color:#544348!important;
+    background:#2a2224!important;
+  }
+  html[data-theme="night"]:not(.native-app) .canvas-zoom-controls button,
+  html[data-theme="night"]:not(.native-app) #canvasZoomValue{
+    color:#f1e5e2!important;
+  }
+  html[data-theme="night"]:not(.native-app) .scrap-canvas-stage{
+    border-color:#4c3c41!important;
+    background:
+      linear-gradient(45deg,rgba(255,255,255,.018) 25%,transparent 25% 75%,rgba(255,255,255,.018) 75%),
+      linear-gradient(45deg,rgba(255,255,255,.018) 25%,transparent 25% 75%,rgba(255,255,255,.018) 75%),
+      #171214!important;
+    background-position:0 0,8px 8px!important;
+    background-size:16px 16px!important;
+  }
+}
+
+.guide-btn .guide-compass-icon{
+  width:20px;
+  height:20px;
+  display:block;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
