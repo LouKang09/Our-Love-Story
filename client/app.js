@@ -122,7 +122,7 @@ function isPhoneUI() {
   return window.matchMedia(PHONE_UI_QUERY).matches;
 }
 
-const NATIVE_PERMISSION_KEY = 'scrapella-native-permissions-v3';
+const NATIVE_PERMISSION_KEY = 'scrapella-native-permissions-v4';
 const NATIVE_THEME_KEY = 'scrapella-native-theme-v1';
 const nativePluginCache = {};
 
@@ -191,6 +191,7 @@ async function maybeShowNativePermissionGate() {
   document.body.classList.add('native-permission-open');
   setNativePermissionState('notifications','','Ready');
   setNativePermissionState('camera','','Ready');
+  setNativePermissionState('microphone','','Ready');
 
   const platform = nativePlatform();
   if (platform === 'android') {
@@ -221,6 +222,13 @@ async function maybeShowNativePermissionGate() {
           setNativePermissionState('photos','denied','Not allowed');
         }
       }
+    }
+  } catch {}
+  try {
+    if (navigator.permissions?.query) {
+      const mic = await permissionTimeout(navigator.permissions.query({ name:'microphone' }),3500);
+      if (mic?.state === 'granted') setNativePermissionState('microphone','granted','Allowed');
+      else if (mic?.state === 'denied') setNativePermissionState('microphone','denied','Not allowed');
     }
   } catch {}
 }
@@ -256,6 +264,19 @@ async function requestScrapellaNativePermissions() {
     setNativePermissionState('camera',allowed ? 'granted' : 'denied',allowed ? 'Allowed' : 'Not allowed');
   } catch {
     setNativePermissionState('camera','denied','Skipped');
+  }
+
+  try {
+    setNativePermissionState('microphone','working','Waiting…');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setNativePermissionState('microphone','denied','Unavailable');
+    } else {
+      const stream = await permissionTimeout(navigator.mediaDevices.getUserMedia({ audio:true }),12000);
+      stream?.getTracks?.().forEach(track => track.stop());
+      setNativePermissionState('microphone','granted','Allowed');
+    }
+  } catch {
+    setNativePermissionState('microphone','denied','Not allowed');
   }
 
   if (platform === 'android') {
@@ -4140,7 +4161,7 @@ async function sendChatVoiceFile(file) {
 }
 async function startChatAudioRecording(mode='tap') {
   const button=$('#chatMicBtn');
-  if(!button||!isPhoneUI())return false;
+  if(!button)return false;
   if(chatMediaRecorder?.state==='recording')return true;
   if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined'){
     showToast('Voice recording is not supported by this browser.');
@@ -4222,6 +4243,11 @@ async function toggleChatAudioRecording() {
 function wireChatMicHold() {
   const mic=$('#chatMicBtn');
   if(!mic)return;
+  mic.addEventListener('click',e=>{
+    if(isPhoneUI())return;
+    e.preventDefault();
+    toggleChatAudioRecording();
+  });
   mic.addEventListener('pointerdown',e=>{
     if(!isPhoneUI())return;
     chatMicPointerId=e.pointerId;
