@@ -342,7 +342,7 @@ async function requestScrapellaNativePermissions() {
     }
   }
 
-  if (statusText) statusText.textContent = 'Setup complete. You can change permissions later in phone settings.';
+  if (statusText) statusText.textContent = 'Setup complete. You can review permissions anytime in Profile → App permissions.';
   try { localStorage.setItem(NATIVE_PERMISSION_KEY, 'done'); } catch {}
   window.setTimeout(() => closeNativePermissionGate('done'), 550);
   if (button) button.disabled = false;
