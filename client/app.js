@@ -99,6 +99,8 @@ let liveEventSource = null;
 let realtimeEntryTimer = null;
 let realtimeSocialTimer = null;
 let realtimeChatTimer = null;
+let presencePingTimer = null;
+let presenceUiTimer = null;
 
 const PHONE_UI_QUERY = '(max-width: 800px)';
 let mobileBookContextTag = null;
@@ -1817,6 +1819,27 @@ function scheduleRealtimeSocialRefresh() {
   };
   realtimeSocialTimer = setTimeout(run, 180);
 }
+async function sendPresencePing() {
+  if (journalApp.classList.contains('hidden') || document.visibilityState === 'hidden') return;
+  try { await api('/api/presence', { method:'POST', body:'{}' }); } catch {}
+}
+function refreshPresenceUi() {
+  if (currentMode !== 'messages') return;
+  renderChatList();
+  const chat = activeChat();
+  if (chat) renderChatHeader(chat);
+}
+function startPresenceHeartbeat() {
+  clearInterval(presencePingTimer);
+  clearInterval(presenceUiTimer);
+  sendPresencePing();
+  presencePingTimer = setInterval(sendPresencePing, 45000);
+  presenceUiTimer = setInterval(refreshPresenceUi, 30000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !journalApp.classList.contains('hidden')) sendPresencePing();
+});
+
 function connectLiveEvents() {
   if (!('EventSource' in window) || journalApp.classList.contains('hidden')) return;
   if (liveEventSource) {
@@ -1837,6 +1860,12 @@ function connectLiveEvents() {
   source.addEventListener('chat', e => {
     try { refreshChatRealtime(JSON.parse(e.data || '{}')); }
     catch { refreshChatRealtime({}); }
+  });
+  source.addEventListener('presence', () => {
+    loadChats().then(() => {
+      const chat = activeChat();
+      if (chat) renderChatHeader(chat);
+    }).catch(() => {});
   });
   source.onerror = () => {
     // EventSource reconnects automatically. The 60-second polling remains as fallback.
@@ -2962,8 +2991,28 @@ function chatMessageSeenLabel(message) {
 function activeChat() {
   return chats.find(chat => chat.id === activeChatId) || null;
 }
+function chatPresenceDisplay(profile) {
+  const presence = profile?.presence || {};
+  const lastMs = Date.parse(presence.lastActiveAt || '') || 0;
+  const age = lastMs ? Math.max(0, Date.now() - lastMs) : Infinity;
+  if (presence.explicitOffline === true) return { state:'offline', label:'×', title:'Offline' };
+  if (lastMs && age <= 90000) return { state:'active', label:'', title:'Active now' };
+  if (lastMs && age <= 24 * 60 * 60 * 1000) {
+    const minutes = Math.max(1, Math.floor(age / 60000));
+    const label = minutes < 60 ? `${minutes}m` : `${Math.max(1,Math.floor(minutes / 60))}h`;
+    return { state:'away', label, title:`Away ${label}` };
+  }
+  return { state:'offline', label:'×', title:'Offline' };
+}
+function chatPresenceBadgeHtml(profile) {
+  const status = chatPresenceDisplay(profile);
+  return `<span class="chat-presence-badge ${status.state}" title="${escapeHtml(status.title)}" aria-label="${escapeHtml(status.title)}">${escapeHtml(status.label)}</span>`;
+}
 function chatAvatarHtml(chat) {
-  if (chat.type === 'private') return avatarHtml(chat.otherProfile || {}, 'chat-list-avatar');
+  if (chat.type === 'private') {
+    const profile = chat.otherProfile || {};
+    return `<span class="chat-presence-avatar-wrap">${avatarHtml(profile, 'chat-list-avatar')}${chatPresenceBadgeHtml(profile)}</span>`;
+  }
   const members = Array.isArray(chat.members) ? chat.members.slice(0,3) : [];
   return `<span class="chat-group-avatar">${members.map((member,i)=>avatarHtml(member,`chat-stack-avatar chat-stack-${i}`)).join('')}<b>👥</b></span>`;
 }
@@ -5283,6 +5332,7 @@ async function enterApp() {
   showView('home');
   initializePhoneHistory();
   connectLiveEvents();
+  startPresenceHeartbeat();
   if (guideState.required) setTimeout(() => startGuide(true), 180);
   else maybeOpenReminderComposer();
 }
@@ -5663,7 +5713,6 @@ function hideMobilePrivateChatSuggestions() {
   if (host) host.innerHTML = '';
 }
 function renderMobilePrivateChatSuggestions(people = []) {
-  if (!isPhoneUI()) return;
   const host = $('#privateChatSuggestions');
   if (!host) return;
   const filtered = people.filter(person => person?.tag && person.tag !== me?.tag).slice(0,8);
@@ -5687,27 +5736,25 @@ function renderMobilePrivateChatSuggestions(people = []) {
   }));
 }
 async function runMobilePrivateChatSearch(rawQuery = $('#privateChatTag')?.value || '') {
-  if (!isPhoneUI()) return;
   const query = String(rawQuery || '').trim();
   if (!query) return hideMobilePrivateChatSuggestions();
   const seq = ++mobilePrivateChatSearchSeq;
   try {
     const data = await api(`/api/people?q=${encodeURIComponent(query)}`);
-    if (seq !== mobilePrivateChatSearchSeq || !isPhoneUI()) return;
+    if (seq !== mobilePrivateChatSearchSeq) return;
     renderMobilePrivateChatSuggestions(data.people || []);
   } catch {
     if (seq === mobilePrivateChatSearchSeq) hideMobilePrivateChatSuggestions();
   }
 }
 $('#privateChatTag').addEventListener('input', e => {
-  if (!isPhoneUI()) return;
   clearTimeout(mobilePrivateChatSearchTimer);
   const query = e.currentTarget.value.trim();
   if (!query) return hideMobilePrivateChatSuggestions();
   mobilePrivateChatSearchTimer = setTimeout(() => runMobilePrivateChatSearch(query), 100);
 });
 $('#privateChatTag').addEventListener('blur', () => {
-  if (isPhoneUI()) setTimeout(hideMobilePrivateChatSuggestions, 160);
+  setTimeout(hideMobilePrivateChatSuggestions, 160);
 });
 function validChatPhoto(file) {
   return Boolean(file && /^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type) && file.size <= 16 * 1024 * 1024);
