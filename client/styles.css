@@ -10663,3 +10663,237 @@ html[data-theme="night"] .owner-override-btn{
     visibility:visible!important;
   }
 }
+
+
+/* =========================================================
+   DESKTOP FINAL POLISH V5
+   Screenshot fixes + chat read/edit metadata.
+   Phone layout remains governed by <=800px rules.
+   ========================================================= */
+@media(min-width:801px){
+  /* Round official Scrapella brand in the desktop header. */
+  .topbar .brand-button{
+    width:auto!important;
+    min-width:150px!important;
+    height:52px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+    gap:10px!important;
+    overflow:visible!important;
+    padding:3px 8px 3px 3px!important;
+    border:0!important;
+    border-radius:999px!important;
+    background:transparent!important;
+  }
+  .topbar .brand-header-logo{
+    width:46px!important;
+    height:46px!important;
+    flex:0 0 46px!important;
+    display:block!important;
+    object-fit:cover!important;
+    object-position:center 50%!important;
+    border-radius:50%!important;
+    clip-path:circle(50%)!important;
+    background:#faf8f2!important;
+    box-shadow:0 0 0 1px rgba(146,86,97,.18),0 5px 14px rgba(60,39,36,.10)!important;
+  }
+  .topbar .brand-header-label{
+    display:block!important;
+    max-width:none!important;
+    color:var(--ink)!important;
+    font:700 18px/1 Georgia,"Times New Roman",serif!important;
+  }
+  html[data-theme="night"] .topbar .brand-header-logo{
+    box-shadow:0 0 0 1px rgba(255,255,255,.12),0 5px 14px rgba(0,0,0,.22)!important;
+  }
+
+  /* Book pages should not each have their own scrollbar. The desktop page
+     grows with its memory/comments and the browser handles vertical scroll. */
+  .book-view{
+    overflow:visible!important;
+  }
+  .book-shell{
+    height:auto!important;
+    min-height:680px!important;
+    max-height:none!important;
+    align-items:stretch!important;
+  }
+  .paper-page{
+    min-height:680px!important;
+    height:auto!important;
+    max-height:none!important;
+    overflow:visible!important;
+  }
+  .entry-page,
+  .entry-body{
+    min-height:0!important;
+    height:auto!important;
+    max-height:none!important;
+    overflow:visible!important;
+  }
+
+  /* Home + People: typing is the search action. */
+  #homeSearchForm>button,
+  #discoverForm>button{
+    display:none!important;
+  }
+  #discoverForm{
+    display:block!important;
+    width:100%!important;
+  }
+  #discoverTag{
+    width:100%!important;
+  }
+
+  /* Followers / Following: remove the nested gray/black pill look. */
+  .follow-stats{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    gap:8px!important;
+    padding:0!important;
+    background:transparent!important;
+    border:0!important;
+  }
+  .follow-stat-button{
+    display:inline-flex!important;
+    align-items:center!important;
+    gap:6px!important;
+    min-height:40px!important;
+    padding:8px 12px!important;
+    border:1px solid var(--line)!important;
+    border-radius:999px!important;
+    color:var(--ink)!important;
+    background:rgba(255,255,255,.72)!important;
+    box-shadow:none!important;
+  }
+  .follow-stat-button>b{
+    color:var(--ink)!important;
+    font:800 13px/1 ui-sans-serif,system-ui,sans-serif!important;
+  }
+  .follow-stat-button>span{
+    padding:0!important;
+    border:0!important;
+    border-radius:0!important;
+    color:var(--muted)!important;
+    background:transparent!important;
+    font:700 11px/1 ui-sans-serif,system-ui,sans-serif!important;
+  }
+  html[data-theme="night"] .follow-stat-button{
+    border-color:var(--line)!important;
+    color:var(--ink)!important;
+    background:#382d31!important;
+  }
+
+  /* Auth/login: no decorative spotlight leak; keep the 2-second pencil intro. */
+  body:has(#lockScreen:not(.hidden)),
+  #lockScreen{
+    background:linear-gradient(145deg,#eadfd8,#d8c6bf 58%,#c8b5ae)!important;
+    background-image:linear-gradient(145deg,#eadfd8,#d8c6bf 58%,#c8b5ae)!important;
+  }
+  body:has(#lockScreen:not(.hidden))::before,
+  body:has(#lockScreen:not(.hidden))::after,
+  #lockScreen::before,
+  #lockScreen::after{
+    display:none!important;
+    content:none!important;
+    opacity:0!important;
+    background:none!important;
+    box-shadow:none!important;
+  }
+  html[data-theme="night"] body:has(#lockScreen:not(.hidden)),
+  html[data-theme="night"] #lockScreen{
+    background:#181315!important;
+    background-image:linear-gradient(145deg,#21191b,#181315 58%,#100d0e)!important;
+  }
+  body.brand-intro-active #brandIntro{
+    display:grid!important;
+    visibility:visible!important;
+    opacity:1!important;
+    z-index:2147483600!important;
+  }
+  #brandIntro .brand-intro-pencil{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+  }
+
+  /* Dark onboarding card must stay fully legible. */
+  html[data-theme="night"] #guideCard{
+    opacity:1!important;
+    color:#f6eeeb!important;
+    background:#2c2326!important;
+    border-color:rgba(246,225,222,.16)!important;
+  }
+  html[data-theme="night"] #guideCard h2{
+    color:#fff8f5!important;
+    opacity:1!important;
+  }
+  html[data-theme="night"] #guideCard #guideText{
+    color:#d1c0bc!important;
+    opacity:1!important;
+  }
+  html[data-theme="night"] #guideCard #guideStepLabel{
+    color:#e59aae!important;
+    opacity:1!important;
+  }
+
+  /* Chat menu/actions use UI typography, not scrapbook serif text. */
+  .desktop-chat-message-menu .chat-message-action-sheet,
+  .desktop-chat-message-menu .chat-message-action-sheet *{
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  }
+  .desktop-chat-message-menu .chat-message-action-sheet>button svg{
+    flex:0 0 18px!important;
+  }
+
+  /* Desktop multi-photo groups use the same grid as app messages. */
+  .chat-image-group{
+    width:min(430px,100%);
+  }
+  .chat-pending-image-grid{
+    width:min(560px,100%);
+  }
+}
+
+/* Chat metadata applies to desktop + apps. */
+.chat-message-meta{
+  display:block;
+  margin-top:5px;
+  color:inherit;
+  font:600 9px/1.25 ui-sans-serif,system-ui,sans-serif;
+  opacity:.68;
+  text-align:right;
+}
+.chat-message.theirs .chat-message-meta{
+  text-align:left;
+}
+.chat-last-seen-divider{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:10px 0;
+  color:var(--muted);
+  font:800 9px/1 ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.chat-last-seen-divider::before,
+.chat-last-seen-divider::after{
+  content:"";
+  height:1px;
+  flex:1 1 auto;
+  background:var(--line);
+}
+.chat-last-seen-divider>span{
+  flex:0 0 auto;
+}
+html[data-theme="night"] .chat-last-seen-divider{
+  color:#a99896;
+}
+html[data-theme="night"] .chat-last-seen-divider::before,
+html[data-theme="night"] .chat-last-seen-divider::after{
+  background:#4b3b40;
+}
