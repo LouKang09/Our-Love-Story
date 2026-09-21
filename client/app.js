@@ -4034,7 +4034,9 @@ async function refreshEntries() {
 async function loadSession(preferredBookId = null) {
   const data = await api('/api/me');
   me = data.profile;
-  applyAppearanceMode(me?.appearanceMode || 'light');
+  const sessionAppearance = isNativeScrapellaApp() ? storedNativeAppearanceMode() : (me?.appearanceMode || 'light');
+  me.appearanceMode = sessionAppearance;
+  applyAppearanceMode(sessionAppearance);
   scrapbooks = data.scrapbooks || [];
   invites = data.invites || [];
   following = data.following || [];
@@ -4805,6 +4807,14 @@ function setAuthTab(tab) {
 }
 $('#signInTab').addEventListener('click', () => setAuthTab('signin'));
 $('#signUpTab').addEventListener('click', () => setAuthTab('signup'));
+document.querySelectorAll('.password-visibility').forEach(button => button.addEventListener('click', () => {
+  const input = document.getElementById(button.dataset.passwordTarget || '');
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  button.textContent = reveal ? 'Hide' : 'Show';
+  button.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+}));
 
 let signupTagCheckTimer = null;
 let signupTagCheckSeq = 0;
@@ -4844,8 +4854,15 @@ loginForm.addEventListener('submit', async e => {
 });
 signupForm.addEventListener('submit', async e => {
   e.preventDefault(); $('#signupError').textContent = '';
+  const password = $('#signupPassword').value;
+  const confirmPassword = $('#signupPasswordConfirm').value;
+  if (password !== confirmPassword) {
+    $('#signupError').textContent = 'Passwords do not match. Please re-enter them.';
+    $('#signupPasswordConfirm').focus();
+    return;
+  }
   try {
-    await api('/api/signup', { method:'POST', body:JSON.stringify({ displayName:$('#signupName').value.trim(), tag:$('#signupTag').value.trim(), password:$('#signupPassword').value }) });
+    await api('/api/signup', { method:'POST', body:JSON.stringify({ displayName:$('#signupName').value.trim(), tag:$('#signupTag').value.trim(), password }) });
     await enterApp(); showView('home');
   } catch (err) { $('#signupError').textContent = err.message; }
 });
@@ -4866,9 +4883,10 @@ async function enterApp() {
 }
 $('#logoutBtn').addEventListener('click', async () => {
   disconnectLiveEvents();
-  applyAppearanceMode('light');
+  if (isNativeScrapellaApp()) rememberNativeAppearanceMode(document.documentElement.dataset.theme || me?.appearanceMode || 'light');
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
-  localStorage.removeItem('activeScrapbookId'); location.reload();
+  localStorage.removeItem('activeScrapbookId');
+  location.reload();
 });
 $('#brandButton').addEventListener('click', async () => {
   setBookCoverOpen(false);
@@ -5133,10 +5151,16 @@ $('#discoverForm').addEventListener('submit', async e => {
 });
 
 $('#themeModeBtn').addEventListener('click', async () => {
-  const previous = normalizeAppearanceMode(me?.appearanceMode);
+  const previous = normalizeAppearanceMode(me?.appearanceMode || document.documentElement.dataset.theme);
   const next = previous === 'night' ? 'light' : 'night';
   applyAppearanceMode(next);
   if (me) me.appearanceMode = next;
+
+  if (isNativeScrapellaApp()) {
+    rememberNativeAppearanceMode(next);
+    return;
+  }
+
   try {
     await api('/api/preferences', { method:'PUT', body:JSON.stringify({ appearanceMode:next }) });
   } catch (err) {
