@@ -1086,7 +1086,7 @@ function commentNodeHtml(entry, comment, childrenMap, depth = 0) {
       <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
       <div class="comment-main" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}"><p>${mentionTextHtml(comment.text || '')}</p></div>
       <div class="comment-actions">
-        ${commentsEnabledForActiveBook() ? `<button class="comment-reply-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">Reply</button>` : ''}
+        ${commentsEnabledForActiveBook() ? `<button class="comment-reply-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">Reply</button>${isPhoneUI() ? '' : `<button class="comment-react-trigger" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">React</button>`}` : ''}
         ${commentReactionHtml(entry.id,comment)}
       </div>
       ${commentsEnabledForActiveBook() ? `<form class="comment-reply-form hidden" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}">
@@ -1101,21 +1101,6 @@ function commentNodeHtml(entry, comment, childrenMap, depth = 0) {
 function commentsHtml(entry) {
   if (!activeScrapbook || !['personal','group','couple'].includes(activeScrapbook.type)) return '';
   const comments = Array.isArray(entry.comments) ? entry.comments : [];
-  if (!isPhoneUI()) {
-    const list = comments.length ? comments.map(comment => {
-      const p = commentProfile(comment);
-      const canDelete = me && (comment.author === me.tag || activeScrapbook.owner === me.tag);
-      return `<article class="memory-comment" data-comment-id="${escapeHtml(comment.id || '')}">
-        <button class="comment-author" type="button" data-profile-tag="${escapeHtml(p.tag || comment.author || '')}">${avatarHtml(p,'comment-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong><small>@${escapeHtml(p.tag || comment.author || '')} · ${escapeHtml(notificationWhen(comment.createdAt))}</small></span></button>
-        <p>${mentionTextHtml(comment.text || '')}</p>
-        ${canDelete ? `<button class="comment-delete" type="button" data-entry-id="${escapeHtml(entry.id)}" data-comment-id="${escapeHtml(comment.id)}" aria-label="Delete comment">×</button>` : ''}
-      </article>`;
-    }).join('') : '<p class="comments-empty">No comments yet. Leave the first little note.</p>';
-    const composer = commentsEnabledForActiveBook()
-      ? `<form class="comment-form" data-entry-id="${escapeHtml(entry.id)}"><textarea maxlength="600" rows="2" placeholder="Write a comment… Tag someone with @tag"></textarea><button class="primary" type="submit">Post</button></form>`
-      : '';
-    return `<section class="memory-comments"><div class="comments-head"><strong>Comments</strong><span>${comments.length}</span></div><div class="comments-list">${list}</div>${composer}</section>`;
-  }
   const childrenMap = new Map();
   comments.forEach(comment => {
     if (!comment.parentId) return;
@@ -1148,7 +1133,7 @@ async function toggleCommentReaction(entryId,commentId,emoji='👍') {
   }
 }
 function showCommentReactionPicker(entryId,commentId,anchor) {
-  if (!isPhoneUI() || !anchor) return;
+  if (!anchor) return;
   closeCommentReactionPicker();
   const picker=document.createElement('div');
   picker.className='comment-reaction-picker';
@@ -1173,7 +1158,24 @@ function showCommentReactionPicker(entryId,commentId,anchor) {
 }
 function wireCommentGestures(root) {
   if (!commentsEnabledForActiveBook()) return;
+  root.querySelectorAll('.comment-react-trigger').forEach(button=>button.addEventListener('click',e=>{
+    e.preventDefault();
+    const article=button.closest('.memory-comment');
+    const main=article?.querySelector('.comment-main');
+    if(main)showCommentReactionPicker(button.dataset.entryId,button.dataset.commentId,main);
+  }));
   root.querySelectorAll('.comment-main').forEach(main=>{
+    if(!isPhoneUI()){
+      main.addEventListener('contextmenu',e=>{
+        e.preventDefault();
+        showCommentReactionPicker(main.dataset.entryId,main.dataset.commentId,main);
+      });
+      main.addEventListener('dblclick',e=>{
+        e.preventDefault();
+        toggleCommentReaction(main.dataset.entryId,main.dataset.commentId,'👍');
+      });
+      return;
+    }
     let lastTap=0,hold=null,startX=0,startY=0,cancelled=false,longPressed=false;
     main.addEventListener('pointerdown',e=>{
       if(!isPhoneUI()||e.pointerType==='mouse')return;
