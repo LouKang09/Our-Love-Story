@@ -11549,8 +11549,10 @@ html.native-app .chat-mini-presence-badge.offline{
 
 /* This experiment is deliberately desktop-web only until approved. */
 .web-memory-universe-only{display:none!important}
-html.web-memory-preview #universeModeBtn.web-memory-universe-only{display:inline-flex!important;align-items:center;gap:6px}
+html.web-memory-preview #universeModeBtn.web-memory-universe-only,
+html.web-memory-preview #mobileUniverseBtn.web-memory-universe-only{display:inline-flex!important;align-items:center;gap:6px}
 html.web-memory-preview #memoryUniverseView.web-memory-universe-only:not(.hidden){display:block!important}
+html.native-app .web-memory-universe-only{display:none!important}
 html.web-memory-preview #memoryUniverseView.hidden{display:none!important}
 .universe-beta{
   padding:2px 5px;
@@ -11964,5 +11966,36 @@ html[data-theme="night"] .universe-person-avatar{border-color:#34282d}
   .memory-echoes-grid,.memory-perspectives-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:800px){
-  .web-memory-universe-only{display:none!important}
+  html.web-memory-preview .memory-universe-view{
+    width:calc(100vw - 18px);
+    margin:10px auto 80px;
+    gap:12px;
+  }
+  html.web-memory-preview .universe-hero{
+    min-height:0;
+    display:grid;
+    align-items:start;
+    padding:22px 18px;
+    border-radius:20px;
+  }
+  html.web-memory-preview .universe-hero h2{font-size:30px}
+  html.web-memory-preview .universe-hero-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
+  html.web-memory-preview .memory-universe-stats{grid-template-columns:1fr 1fr}
+  html.web-memory-preview .memory-universe-stats>div{min-height:60px;padding:13px}
+  html.web-memory-preview .universe-panel{padding:14px;border-radius:18px}
+  html.web-memory-preview .universe-panel-head{display:grid;gap:8px}
+  html.web-memory-preview .universe-hint{display:none}
+  html.web-memory-preview .constellation-layout{grid-template-columns:1fr}
+  html.web-memory-preview .memory-constellation{min-height:520px}
+  html.web-memory-preview .memory-universe-detail{min-height:0}
+  html.web-memory-preview .universe-detail-card{display:block}
+  html.web-memory-preview .universe-detail-image{height:210px}
+  html.web-memory-preview .memory-echoes-grid,
+  html.web-memory-preview .memory-perspectives-grid{grid-template-columns:1fr}
+  html.web-memory-preview .memory-echo-pair{grid-template-columns:1fr}
+  html.web-memory-preview .universe-mini-memory{grid-template-columns:86px 1fr}
+  html.web-memory-preview .memory-replay-overlay{padding:0}
+  html.web-memory-preview .memory-replay{width:100vw;height:100svh;border:0;border-radius:0}
+  html.web-memory-preview .memory-replay-content{left:7%;right:7%;bottom:17%;width:auto}
+  html.web-memory-preview .memory-replay-title{font-size:40px}
 }
