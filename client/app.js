@@ -4885,6 +4885,363 @@ function renderMemoryPerspectives(ordered) {
   host.innerHTML=shared.map(([date,group])=>`<article class="perspective-card"><header><small>${escapeHtml(universeDateLabel(date))}</small><strong>${group.length} memories · ${new Set(group.map(e=>e.author)).size} perspectives</strong></header><div class="perspective-memory-list">${group.slice(0,4).map(entry=>`<button type="button" data-universe-entry="${escapeHtml(entry.id)}"><strong>${escapeHtml(entry.title||'Untitled memory')}</strong><span>${escapeHtml(universeAuthor(entry).displayName||entry.author||'Someone')}</span><p>${escapeHtml(universeExcerpt(entry,90))}</p></button>`).join('')}</div></article>`).join('');
   host.querySelectorAll('[data-universe-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.universeEntry)));
 }
+let universeLabMode = 'layers';
+let universeVoiceRecorder = null;
+let universeVoiceStream = null;
+let universeVoiceChunks = [];
+let universeVoiceTimer = null;
+let universeVoiceStartedAt = 0;
+const universeVoiceClips = [];
+const UNIVERSE_INTERVIEW_PROMPTS = ["What happened right before this moment?","What happened immediately after it?","Who was there that the photo does not show?","What sound do you remember from this day?","What detail would future you probably forget?","What were you worried about at the time?","What made you laugh that day?","What did this place feel like in person?","If you could return to this moment for five minutes, what would you notice first?","What would you tell the version of yourself in this memory?","Why did this ordinary moment become important?","Was there something you wanted to say but did not?","Who took the photo, and what were they doing?","What song, smell, food, or weather belongs to this memory?","How do you feel about this memory now compared with then?","What do you hope someone else remembers about this day?"];
+
+function universePreviewStorageKey(type) {
+  return `scrapella-universe-preview-v1:${me?.tag || 'guest'}:${activeScrapbook?.id || 'none'}:${type}`;
+}
+
+function loadUniversePreview(type, fallback) {
+  try {
+    const raw = localStorage.getItem(universePreviewStorageKey(type));
+    if (!raw) return structuredClone ? structuredClone(fallback) : JSON.parse(JSON.stringify(fallback));
+    return JSON.parse(raw);
+  } catch {
+    return Array.isArray(fallback) ? [] : {};
+  }
+}
+
+function saveUniversePreview(type, value) {
+  try { localStorage.setItem(universePreviewStorageKey(type), JSON.stringify(value)); } catch {}
+}
+
+function universeSelectedEntry() {
+  return entries.find(entry => entry.id === universeSelectedEntryId) || entries[entries.length - 1] || null;
+}
+
+function universeMemorySelectOptions(selectedId = '') {
+  const ordered = [...entries].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  return ordered.map(entry => `<option value="${escapeHtml(entry.id)}"${entry.id===selectedId?' selected':''}>${escapeHtml(universeDateLabel(entry.date,{month:'short',day:'numeric',year:'numeric'}))} · ${escapeHtml(entry.title || 'Untitled memory')}</option>`).join('');
+}
+
+function universeLabSetMode(mode) {
+  const allowed = ['layers','interview','capsules','heirlooms','voice','museum','archive'];
+  universeLabMode = allowed.includes(mode) ? mode : 'layers';
+  document.querySelectorAll('[data-universe-lab]').forEach(btn => btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode));
+  renderUniverseLabStage();
+}
+
+function renderUniverseLabs() {
+  const stage = $('#universeLabStage');
+  if (!stage || isNativeScrapellaApp()) return;
+  document.querySelectorAll('[data-universe-lab]').forEach(btn => {
+    btn.onclick = () => universeLabSetMode(btn.dataset.universeLab || 'layers');
+    btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode);
+  });
+  renderUniverseLabStage();
+}
+
+function renderUniverseLabStage() {
+  const stage = $('#universeLabStage');
+  if (!stage) return;
+  if (!activeScrapbook) {
+    stage.innerHTML = '<div class="universe-empty wide"><span>♡</span><strong>Choose a scrapbook first.</strong><p>The preview tools use the active scrapbook and never change its original memories.</p></div>';
+    return;
+  }
+  if (!entries.length && universeLabMode !== 'archive') {
+    stage.innerHTML = '<div class="universe-empty wide"><span>✧</span><strong>Add a memory to try this preview.</strong><p>Once this scrapbook has a page, Scrapella Labs can begin experimenting with it.</p></div>';
+    return;
+  }
+  if (universeLabMode === 'layers') renderUniverseLayersLab();
+  else if (universeLabMode === 'interview') renderUniverseInterviewLab();
+  else if (universeLabMode === 'capsules') renderUniverseCapsulesLab();
+  else if (universeLabMode === 'heirlooms') renderUniverseHeirloomsLab();
+  else if (universeLabMode === 'voice') renderUniverseVoiceLab();
+  else if (universeLabMode === 'museum') renderUniverseMuseumLab();
+  else renderUniverseArchiveLab();
+}
+
+function renderUniverseLayersLab() {
+  const stage = $('#universeLabStage');
+  const entry = universeSelectedEntry();
+  if (!stage || !entry) return;
+  const allLayers = loadUniversePreview('layers',{});
+  const layers = Array.isArray(allLayers[entry.id]) ? allLayers[entry.id] : [];
+  stage.innerHTML = `<div class="lab-split">
+    <section class="lab-workbench">
+      <div class="lab-title-row"><div><p class="eyebrow">MEMORY LAYERS</p><h4>Let a memory grow without rewriting the past.</h4></div><span class="lab-preview-pill">Browser preview</span></div>
+      <label class="lab-field">Memory<select id="layersMemorySelect">${universeMemorySelectOptions(entry.id)}</select></label>
+      <article class="memory-layer-original">
+        <small>ORIGINAL · ${escapeHtml(universeDateLabel(entry.date))}</small>
+        <strong>${escapeHtml(entry.title || 'Untitled memory')}</strong>
+        <p>${escapeHtml(universeExcerpt(entry,360))}</p>
+      </article>
+      <div class="memory-layer-thread">${layers.map((layer,index)=>`<article class="memory-layer-reflection"><span>${index+1}</span><div><small>REFLECTION · ${escapeHtml(universeDateLabel(String(layer.createdAt||'').slice(0,10)))}</small><p>${escapeHtml(layer.text || '')}</p></div></article>`).join('') || '<div class="lab-soft-empty">No reflections yet. Add what this memory means to you now.</div>'}</div>
+    </section>
+    <aside class="lab-compose-card">
+      <span class="lab-icon">↻</span>
+      <h4>Reflect without erasing.</h4>
+      <p>Your original page stays exactly as it was. This adds a new layer beside it.</p>
+      <textarea id="memoryLayerText" rows="6" maxlength="1200" placeholder="Looking back now, I realize…"></textarea>
+      <button id="addMemoryLayerBtn" class="primary" type="button">Add reflection layer</button>
+      <small>This preview saves only in this browser.</small>
+    </aside>
+  </div>`;
+  $('#layersMemorySelect')?.addEventListener('change',e=>{universeSelectedEntryId=e.target.value;renderUniverseLayersLab();});
+  $('#addMemoryLayerBtn')?.addEventListener('click',()=>{
+    const text=String($('#memoryLayerText')?.value||'').trim();
+    if(!text){showToast('Write a reflection first.');return;}
+    allLayers[entry.id]=layers.concat({id:crypto.randomUUID?.()||String(Date.now()),text,createdAt:new Date().toISOString()});
+    saveUniversePreview('layers',allLayers);
+    renderUniverseLayersLab();
+    showToast('Reflection layer added to the web preview.');
+  });
+}
+
+function renderUniverseInterviewLab() {
+  const stage = $('#universeLabStage');
+  const entry = universeSelectedEntry();
+  if (!stage || !entry) return;
+  const answers = loadUniversePreview('interviews',{});
+  const entryAnswers = answers[entry.id] || {};
+  const seed = String(entry.id || '').split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+  const promptSet = [];
+  for (let i=0;i<4;i++) promptSet.push(UNIVERSE_INTERVIEW_PROMPTS[(seed+i*3)%UNIVERSE_INTERVIEW_PROMPTS.length]);
+  stage.innerHTML = `<div class="lab-split interview-lab">
+    <section class="lab-workbench">
+      <div class="lab-title-row"><div><p class="eyebrow">MEMORY INTERVIEW</p><h4>Turn a photo into the story behind the photo.</h4></div><span class="lab-preview-pill">Guided memory</span></div>
+      <label class="lab-field">Memory<select id="interviewMemorySelect">${universeMemorySelectOptions(entry.id)}</select></label>
+      <div class="interview-memory-brief">
+        ${universeEntryImage(entry)?`<img src="${escapeHtml(universeEntryImage(entry))}" alt="" />`:'<span>✦</span>'}
+        <div><small>${escapeHtml(universeDateLabel(entry.date))}</small><strong>${escapeHtml(entry.title||'Untitled memory')}</strong><p>${escapeHtml(universeExcerpt(entry,180))}</p></div>
+      </div>
+    </section>
+    <form id="memoryInterviewForm" class="interview-prompt-list">
+      ${promptSet.map((prompt,index)=>`<label><span>${index+1}</span><strong>${escapeHtml(prompt)}</strong><textarea rows="3" maxlength="700" data-interview-prompt="${escapeHtml(prompt)}" placeholder="Your answer…">${escapeHtml(entryAnswers[prompt]||'')}</textarea></label>`).join('')}
+      <button class="primary" type="submit">Save interview notes</button>
+      <small>Preview notes stay on this browser and do not edit the original page.</small>
+    </form>
+  </div>`;
+  $('#interviewMemorySelect')?.addEventListener('change',e=>{universeSelectedEntryId=e.target.value;renderUniverseInterviewLab();});
+  $('#memoryInterviewForm')?.addEventListener('submit',e=>{
+    e.preventDefault();
+    const next={...entryAnswers};
+    e.currentTarget.querySelectorAll('[data-interview-prompt]').forEach(area=>{
+      const value=String(area.value||'').trim();
+      if(value)next[area.dataset.interviewPrompt]=value;
+      else delete next[area.dataset.interviewPrompt];
+    });
+    answers[entry.id]=next;
+    saveUniversePreview('interviews',answers);
+    showToast('Memory interview saved in this browser.');
+  });
+}
+
+function renderUniverseCapsulesLab() {
+  const stage=$('#universeLabStage');
+  if(!stage)return;
+  const capsules=loadUniversePreview('capsules',[]);
+  const selected=universeSelectedEntry();
+  const future=new Date();
+  future.setFullYear(future.getFullYear()+1);
+  const defaultDate=future.toISOString().slice(0,10);
+  const today=new Date().toISOString().slice(0,10);
+  stage.innerHTML=`<div class="lab-split">
+    <form id="memoryCapsuleForm" class="lab-compose-card lab-form-card">
+      <span class="lab-icon">⌛</span>
+      <p class="eyebrow">FUTURE CAPSULE</p>
+      <h4>Send a memory forward in time.</h4>
+      <label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(selected?.id||'')}</select></label>
+      <label class="lab-field">Unlock on<input name="unlockDate" type="date" min="${today}" value="${defaultDate}" required /></label>
+      <label class="lab-field">A note for that day<textarea name="note" rows="4" maxlength="700" placeholder="When this opens, remember…"></textarea></label>
+      <button class="primary" type="submit">Seal preview capsule</button>
+      <small>This preview does not hide or lock the original memory.</small>
+    </form>
+    <section class="lab-workbench">
+      <div class="lab-title-row"><div><p class="eyebrow">YOUR CAPSULE SHELF</p><h4>Memories waiting for another day.</h4></div><span class="lab-preview-pill">${capsules.length} sealed</span></div>
+      <div class="capsule-list">${capsules.map(capsule=>{
+        const entry=entries.find(e=>e.id===capsule.entryId);
+        const unlocked=String(capsule.unlockDate||'')<=today;
+        const days=Math.max(0,Math.ceil((new Date(capsule.unlockDate+'T12:00:00')-new Date())/86400000));
+        return `<article class="capsule-card ${unlocked?'unlocked':'locked'}"><div class="capsule-lock">${unlocked?'♡':'⌛'}</div><div><small>${unlocked?'READY TO OPEN':`${days} days to go`}</small><strong>${escapeHtml(entry?.title||'Memory')}</strong><p>${escapeHtml(capsule.note||'No note added.')}</p><span>Unlocks ${escapeHtml(universeDateLabel(capsule.unlockDate))}</span></div><button type="button" class="icon-btn remove-preview-item" data-preview-id="${escapeHtml(capsule.id)}" aria-label="Remove preview capsule">×</button></article>`;
+      }).join('')||'<div class="lab-soft-empty">No capsules yet. Seal one from the form beside this shelf.</div>'}</div>
+    </section>
+  </div>`;
+  $('#memoryCapsuleForm')?.addEventListener('submit',e=>{
+    e.preventDefault();
+    const form=new FormData(e.currentTarget);
+    const item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(form.get('entryId')||''),unlockDate:String(form.get('unlockDate')||''),note:String(form.get('note')||'').trim(),createdAt:new Date().toISOString()};
+    saveUniversePreview('capsules',capsules.concat(item));
+    renderUniverseCapsulesLab();
+    showToast('Future capsule sealed in the preview.');
+  });
+  stage.querySelectorAll('.remove-preview-item').forEach(btn=>btn.addEventListener('click',()=>{
+    saveUniversePreview('capsules',capsules.filter(item=>item.id!==btn.dataset.previewId));
+    renderUniverseCapsulesLab();
+  }));
+}
+
+function renderUniverseHeirloomsLab() {
+  const stage=$('#universeLabStage');
+  if(!stage)return;
+  const heirlooms=loadUniversePreview('heirlooms',[]);
+  const selected=universeSelectedEntry();
+  stage.innerHTML=`<div class="lab-split">
+    <form id="memoryHeirloomForm" class="lab-compose-card lab-form-card">
+      <span class="lab-icon">◇</span>
+      <p class="eyebrow">DIGITAL HEIRLOOM</p>
+      <h4>Choose what deserves to outlive a timeline.</h4>
+      <label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(selected?.id||'')}</select></label>
+      <label class="lab-field">For<input name="recipient" maxlength="40" placeholder="@child, @partner, family…" /></label>
+      <label class="lab-field">Why this matters<textarea name="note" rows="4" maxlength="700" placeholder="I want you to keep this because…"></textarea></label>
+      <button class="primary" type="submit">Mark as heirloom preview</button>
+      <small>No access or ownership is transferred in preview mode.</small>
+    </form>
+    <section class="lab-workbench">
+      <div class="lab-title-row"><div><p class="eyebrow">HEIRLOOM CHEST</p><h4>Stories intentionally kept for someone.</h4></div><span class="lab-preview-pill">${heirlooms.length} chosen</span></div>
+      <div class="heirloom-grid">${heirlooms.map(item=>{
+        const entry=entries.find(e=>e.id===item.entryId);
+        const image=universeEntryImage(entry);
+        return `<article class="heirloom-card">${image?`<img src="${escapeHtml(image)}" alt="" />`:'<div class="heirloom-placeholder">◇</div>'}<div><small>FOR ${escapeHtml(item.recipient||'SOMEONE SPECIAL')}</small><strong>${escapeHtml(entry?.title||'Memory')}</strong><p>${escapeHtml(item.note||'A memory worth keeping.')}</p></div><button class="icon-btn remove-heirloom-preview" data-preview-id="${escapeHtml(item.id)}" type="button">×</button></article>`;
+      }).join('')||'<div class="lab-soft-empty">Your heirloom chest is empty.</div>'}</div>
+    </section>
+  </div>`;
+  $('#memoryHeirloomForm')?.addEventListener('submit',e=>{
+    e.preventDefault();
+    const form=new FormData(e.currentTarget);
+    const item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(form.get('entryId')||''),recipient:String(form.get('recipient')||'').trim(),note:String(form.get('note')||'').trim(),createdAt:new Date().toISOString()};
+    saveUniversePreview('heirlooms',heirlooms.concat(item));
+    renderUniverseHeirloomsLab();
+    showToast('Heirloom marked in the preview.');
+  });
+  stage.querySelectorAll('.remove-heirloom-preview').forEach(btn=>btn.addEventListener('click',()=>{
+    saveUniversePreview('heirlooms',heirlooms.filter(item=>item.id!==btn.dataset.previewId));
+    renderUniverseHeirloomsLab();
+  }));
+}
+
+function renderUniverseVoiceLab() {
+  const stage=$('#universeLabStage');
+  if(!stage)return;
+  const people=[...new Set(entries.map(e=>e.author).filter(Boolean))].map(tag=>authorProfiles?.[tag]||{tag,displayName:tag,avatar:''});
+  const clips=universeVoiceClips.filter(clip=>clip.bookId===activeScrapbook?.id);
+  stage.innerHTML=`<div class="lab-split">
+    <section class="voice-portrait-stage">
+      <div class="voice-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="voice-person-preview">${people[0]?avatarHtml(people[0],'voice-portrait-avatar'):'<span class="voice-portrait-avatar">♡</span>'}<strong>Preserve the voice, not only the photo.</strong><p>A laugh, a story, a recipe, advice, or simply the way someone says your name can become part of the scrapbook.</p></div>
+    </section>
+    <section class="lab-workbench">
+      <div class="lab-title-row"><div><p class="eyebrow">VOICE PORTRAITS</p><h4>Record a tiny piece of someone’s voice.</h4></div><span class="lab-preview-pill">Up to 30 sec</span></div>
+      <label class="lab-field">Person<select id="voicePortraitPerson">${people.map(p=>`<option value="${escapeHtml(p.tag)}">${escapeHtml(p.displayName||p.tag)} · @${escapeHtml(p.tag)}</option>`).join('')}</select></label>
+      <div class="voice-record-controls"><button id="voicePortraitRecordBtn" class="primary" type="button">● Start recording</button><button id="voicePortraitStopBtn" class="ghost" type="button" disabled>■ Stop</button><span id="voicePortraitStatus">Ready</span></div>
+      <p class="helper">Preview recordings stay only until this browser tab closes. Nothing is uploaded.</p>
+      <div class="voice-clip-list">${clips.map(clip=>{
+        const person=authorProfiles?.[clip.tag]||{tag:clip.tag,displayName:clip.tag};
+        return `<article><div><strong>${escapeHtml(person.displayName||person.tag||'Voice')}</strong><small>${Math.max(1,Math.round(clip.duration/1000))} sec · this session</small></div><audio controls src="${escapeHtml(clip.url)}"></audio></article>`;
+      }).join('')||'<div class="lab-soft-empty">No voice portraits recorded in this session.</div>'}</div>
+    </section>
+  </div>`;
+  $('#voicePortraitRecordBtn')?.addEventListener('click',()=>startUniverseVoiceRecording(String($('#voicePortraitPerson')?.value||'')));
+  $('#voicePortraitStopBtn')?.addEventListener('click',()=>stopUniverseVoiceRecording());
+}
+
+async function startUniverseVoiceRecording(tag) {
+  if(universeVoiceRecorder?.state==='recording')return;
+  const status=$('#voicePortraitStatus'),start=$('#voicePortraitRecordBtn'),stop=$('#voicePortraitStopBtn');
+  try{
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){showToast('Voice recording is not supported in this browser.');return;}
+    universeVoiceStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    universeVoiceChunks=[];
+    universeVoiceStartedAt=Date.now();
+    universeVoiceRecorder=new MediaRecorder(universeVoiceStream);
+    universeVoiceRecorder.ondataavailable=e=>{if(e.data?.size)universeVoiceChunks.push(e.data);};
+    universeVoiceRecorder.onstop=()=>{
+      const blob=new Blob(universeVoiceChunks,{type:universeVoiceRecorder?.mimeType||'audio/webm'});
+      const url=URL.createObjectURL(blob);
+      universeVoiceClips.push({id:crypto.randomUUID?.()||String(Date.now()),bookId:activeScrapbook?.id||'',tag,url,duration:Date.now()-universeVoiceStartedAt});
+      universeVoiceStream?.getTracks?.().forEach(track=>track.stop());
+      universeVoiceStream=null;
+      universeVoiceRecorder=null;
+      clearTimeout(universeVoiceTimer);
+      renderUniverseVoiceLab();
+    };
+    universeVoiceRecorder.start(250);
+    if(status)status.textContent='Recording…';
+    if(start)start.disabled=true;
+    if(stop)stop.disabled=false;
+    universeVoiceTimer=setTimeout(stopUniverseVoiceRecording,30000);
+  }catch(err){
+    universeVoiceStream?.getTracks?.().forEach(track=>track.stop());
+    universeVoiceStream=null;
+    if(status)status.textContent='Microphone unavailable';
+    showToast(err?.name==='NotAllowedError'?'Microphone permission was not allowed.':'Could not start voice recording.');
+  }
+}
+
+function stopUniverseVoiceRecording() {
+  clearTimeout(universeVoiceTimer);
+  if(universeVoiceRecorder?.state==='recording')universeVoiceRecorder.stop();
+}
+
+function renderUniverseMuseumLab() {
+  const stage=$('#universeLabStage');
+  if(!stage)return;
+  const visual=entries.filter(entry=>universeEntryImage(entry)).slice(-8);
+  if(!visual.length){
+    stage.innerHTML='<div class="universe-empty wide"><span>▣</span><strong>Your Life Museum needs photographs.</strong><p>Add visual memories and Scrapella will hang them in a quiet gallery instead of another scrolling feed.</p></div>';
+    return;
+  }
+  stage.innerHTML=`<section class="life-museum">
+    <div class="museum-ceiling"><i></i><i></i><i></i></div>
+    <div class="museum-wall">
+      <div class="museum-title-plaque"><small>LIFE MUSEUM · ${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</small><strong>A room made from memories.</strong></div>
+      <div class="museum-gallery">${visual.map((entry,index)=>`<button class="museum-frame museum-frame-${(index%4)+1}" type="button" data-museum-entry="${escapeHtml(entry.id)}"><span><img src="${escapeHtml(universeEntryImage(entry))}" alt="" loading="lazy" /></span><small>${escapeHtml(entry.title||'Untitled memory')}</small><em>${escapeHtml(universeDateLabel(entry.date,{month:'short',year:'numeric'}))}</em></button>`).join('')}</div>
+    </div>
+    <div class="museum-floor"></div>
+    <p class="museum-caption">Preview concept: tap a frame to step back into that memory.</p>
+  </section>`;
+  stage.querySelectorAll('[data-museum-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.museumEntry)));
+}
+
+function downloadUniverseFile(name,blob) {
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+
+function downloadUniverseArchive(format='json') {
+  if(!activeScrapbook)return;
+  const safeName=String(activeScrapbook.name||'scrapbook').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'scrapbook';
+  if(format==='json'){
+    const archive={format:'Scrapella Portable Archive Preview',version:1,exportedAt:new Date().toISOString(),scrapbook:activeScrapbook,profiles:authorProfiles,entries};
+    downloadUniverseFile(`${safeName}-scrapella-archive.json`,new Blob([JSON.stringify(archive,null,2)],{type:'application/json'}));
+    return;
+  }
+  const cards=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(entry=>{
+    const image=universeEntryImage(entry);
+    return `<article>${image?`<img src="${escapeHtml(image)}" alt="">`:''}<small>${escapeHtml(universeDateLabel(entry.date))}</small><h2>${escapeHtml(entry.title||'Untitled memory')}</h2><p>${escapeHtml(universeExcerpt(entry,1000))}</p></article>`;
+  }).join('');
+  const doc=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(activeScrapbook.name||'Scrapella Archive')}</title><style>body{max-width:900px;margin:50px auto;padding:0 24px;font-family:Georgia,serif;color:#352729;background:#fffaf1}header{border-bottom:1px solid #d9c7c2;padding-bottom:24px;margin-bottom:30px}article{padding:26px 0;border-bottom:1px solid #e4d6d1}img{max-width:100%;max-height:520px;object-fit:contain;border-radius:12px}small{color:#8a6d71}p{line-height:1.65;white-space:pre-wrap}</style></head><body><header><small>SCRAPELLA PORTABLE KEEPSAKE PREVIEW</small><h1>${escapeHtml(activeScrapbook.name||'Scrapbook')}</h1><p>Exported ${escapeHtml(new Date().toLocaleString())}</p></header>${cards}</body></html>`;
+  downloadUniverseFile(`${safeName}-keepsake.html`,new Blob([doc],{type:'text/html'}));
+}
+
+function renderUniverseArchiveLab() {
+  const stage=$('#universeLabStage');
+  if(!stage)return;
+  const comments=entries.reduce((sum,entry)=>sum+(Array.isArray(entry.comments)?entry.comments.length:0),0);
+  const photos=entries.reduce((sum,entry)=>sum+(Array.isArray(entry.photos)?entry.photos.length:0)+(Array.isArray(entry.canvasItems)?entry.canvasItems.filter(item=>item?.type==='photo').length:0),0);
+  stage.innerHTML=`<div class="archive-lab">
+    <section class="archive-vault-visual"><div class="archive-box"><span>♡</span><strong>${escapeHtml(activeScrapbook?.name||'Your scrapbook')}</strong><small>PORTABLE MEMORY ARCHIVE</small></div><div class="archive-shadow"></div></section>
+    <section class="lab-workbench archive-copy">
+      <div class="lab-title-row"><div><p class="eyebrow">PORTABLE ARCHIVE</p><h4>Your memories should never feel trapped inside one app.</h4></div><span class="lab-preview-pill">Functional preview</span></div>
+      <p>Export a readable copy of this chapter. The JSON keeps the scrapbook structure and metadata; the HTML keeps a simple human-readable keepsake you can open in a browser.</p>
+      <div class="archive-stats"><div><strong>${entries.length}</strong><span>memories</span></div><div><strong>${photos}</strong><span>visual items</span></div><div><strong>${comments}</strong><span>comments</span></div></div>
+      <div class="archive-actions"><button id="downloadArchiveJsonBtn" class="primary" type="button">↓ Download archive JSON</button><button id="downloadArchiveHtmlBtn" class="ghost" type="button">↓ Download keepsake HTML</button></div>
+      <small class="helper">This is a preview format. Before a production rollout, we can design a long-term Scrapella archive specification with original media files included.</small>
+    </section>
+  </div>`;
+  $('#downloadArchiveJsonBtn')?.addEventListener('click',()=>downloadUniverseArchive('json'));
+  $('#downloadArchiveHtmlBtn')?.addEventListener('click',()=>downloadUniverseArchive('html'));
+}
+
 function renderMemoryUniverse() {
   if(isNativeScrapellaApp())return;
   const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
@@ -4895,6 +5252,7 @@ function renderMemoryUniverse() {
     $('#memoryEchoesGrid').innerHTML='';
     $('#memoryPerspectivesGrid').innerHTML='';
     renderMemoryUniverseDetail(null);
+    renderUniverseLabs();
     return;
   }
   const people=new Set(ordered.map(e=>e.author).filter(Boolean)).size;
@@ -4904,6 +5262,7 @@ function renderMemoryUniverse() {
   renderMemoryConstellation(ordered);
   renderMemoryEchoes(ordered);
   renderMemoryPerspectives(ordered);
+  renderUniverseLabs();
 }
 function closeMemoryReplay() {
   clearTimeout(universeReplayTimer);
