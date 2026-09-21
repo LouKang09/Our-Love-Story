@@ -10076,3 +10076,181 @@ html[data-theme="night"] .owner-override-btn{
     outline-offset:2px;
   }
 }
+
+
+@media(min-width:801px){
+  /* Reactor list is available on desktop when reaction chips are clicked. */
+  .reaction-viewer{
+    position:fixed;
+    inset:0;
+    z-index:2147483630;
+    display:flex!important;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:rgba(0,0,0,.42);
+    backdrop-filter:blur(4px);
+    -webkit-backdrop-filter:blur(4px);
+  }
+  .reaction-viewer.hidden{
+    display:none!important;
+  }
+  .reaction-viewer-sheet{
+    width:min(480px,calc(100vw - 48px));
+    max-height:min(70vh,620px);
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr);
+    overflow:hidden;
+    border:1px solid var(--line);
+    border-radius:18px;
+    background:var(--paper);
+    box-shadow:0 24px 70px rgba(0,0,0,.32);
+  }
+  .reaction-viewer-sheet>header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:15px 16px;
+    border-bottom:1px solid var(--line);
+  }
+  .reaction-viewer-sheet>header small,
+  .reaction-viewer-sheet>header strong{
+    display:block;
+  }
+  .reaction-viewer-sheet>header small{
+    color:var(--rose);
+    font:800 8px ui-sans-serif,system-ui,sans-serif;
+    letter-spacing:.12em;
+  }
+  .reaction-viewer-sheet>header strong{
+    margin-top:2px;
+    font:800 15px ui-sans-serif,system-ui,sans-serif;
+  }
+  .reaction-viewer-close{
+    width:36px;
+    height:36px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:var(--paper-2);
+    color:var(--ink);
+    font-size:21px;
+  }
+  .reaction-viewer-list{
+    overflow:auto;
+    padding:8px;
+  }
+  .reaction-viewer-person{
+    width:100%;
+    display:grid;
+    grid-template-columns:42px minmax(0,1fr) auto;
+    align-items:center;
+    gap:10px;
+    padding:9px;
+    border:0;
+    border-radius:12px;
+    background:transparent;
+    color:var(--ink);
+    text-align:left;
+  }
+  .reaction-viewer-person:hover{
+    background:var(--paper-2);
+  }
+  .reaction-viewer-avatar{
+    width:42px;
+    height:42px;
+    border-radius:50%;
+    object-fit:cover;
+  }
+  .reaction-viewer-person span{
+    min-width:0;
+  }
+  .reaction-viewer-person strong,
+  .reaction-viewer-person small{
+    display:block;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .reaction-viewer-person strong{
+    font:800 11px ui-sans-serif,system-ui,sans-serif;
+  }
+  .reaction-viewer-person small{
+    color:var(--muted);
+    font:9px ui-sans-serif,system-ui,sans-serif;
+  }
+  .reaction-viewer-person em{
+    font-style:normal;
+    font-size:20px;
+  }
+
+  /* Voice messages created on mobile remain fully usable from desktop. */
+  .chat-voice-player{
+    width:min(330px,100%);
+    display:grid;
+    grid-template-columns:40px minmax(0,1fr) auto;
+    align-items:center;
+    gap:8px;
+    margin:4px 0 7px;
+    padding:8px 10px;
+    border-radius:20px;
+    background:rgba(200,120,140,.16);
+  }
+  .chat-message.mine .chat-voice-player{
+    background:rgba(255,255,255,.10);
+  }
+  .chat-voice-play{
+    width:36px;
+    height:36px;
+    display:grid;
+    place-items:center;
+    padding:0;
+    border:0;
+    border-radius:50%;
+    background:var(--rose);
+    color:#fff;
+    font:800 15px/1 ui-sans-serif,system-ui,sans-serif;
+  }
+  .chat-voice-wave{
+    height:34px;
+    display:flex;
+    align-items:center;
+    gap:2px;
+    padding:0;
+    border:0;
+    background:transparent;
+  }
+  .chat-voice-wave i{
+    width:3px;
+    min-width:2px;
+    height:16px;
+    display:block;
+    flex:1 1 3px;
+    max-width:4px;
+    border-radius:999px;
+    background:rgba(146,86,97,.34);
+    transform:scaleY(calc(.45 + (var(--bar) % 5) * .12));
+    transform-origin:center;
+  }
+  .chat-voice-wave i:nth-child(3n){height:27px}
+  .chat-voice-wave i:nth-child(4n){height:20px}
+  .chat-voice-wave i.played{background:var(--rose)}
+  .chat-voice-duration{
+    min-width:34px;
+    color:inherit;
+    font:700 10px/1 ui-sans-serif,system-ui,sans-serif;
+    text-align:right;
+    opacity:.84;
+  }
+  html[data-theme="night"] .reaction-viewer-sheet{
+    background:#2d2427;
+    border-color:var(--line);
+  }
+  html[data-theme="night"] .reaction-viewer-person:hover,
+  html[data-theme="night"] .reaction-viewer-close{
+    background:#49383e;
+  }
+}
