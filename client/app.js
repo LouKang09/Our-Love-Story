@@ -4861,6 +4861,19 @@ async function getPushRegistration() {
 }
 async function saveReminderSettings(enabled, reminderTime) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+  // Native Scrapella uses the phone permission flow, not the browser
+  // Notification/service-worker APIs. Keep the user's reminder preference
+  // without showing browser-only errors inside Android/iOS.
+  if (isNativeScrapellaApp()) {
+    const data = await api('/api/push/settings', {
+      method:'PUT',
+      body:JSON.stringify({ enabled:Boolean(enabled), reminderTime, timezone })
+    });
+    if (me) me.notifications = data.settings;
+    return data.settings;
+  }
+
   if (!enabled) {
     const data = await api('/api/push/settings', { method:'PUT', body:JSON.stringify({ enabled:false, reminderTime, timezone }) });
     if (me) me.notifications = data.settings;
@@ -4886,9 +4899,28 @@ async function saveReminderSettings(enabled, reminderTime) {
   if (me) me.notifications = data.settings;
   return data.settings;
 }
-function updateNotificationStatus() {
+async function updateNotificationStatus() {
   const el = $('#notificationStatus');
   if (!el) return;
+
+  if (isNativeScrapellaApp()) {
+    const enabled = $('#dailyReminderEnabled')?.checked === true;
+    const push = nativePlugin('PushNotifications');
+    try {
+      const status = push?.checkPermissions ? await permissionTimeout(push.checkPermissions(),3000) : null;
+      if (status?.receive === 'denied') {
+        el.textContent = 'Notifications are turned off for Scrapella in your phone settings.';
+        return;
+      }
+      el.textContent = enabled
+        ? 'Daily reminder is on. Scrapella uses your phone notification permission.'
+        : 'Daily reminder is off.';
+    } catch {
+      el.textContent = enabled ? 'Daily reminder is on.' : 'Daily reminder is off.';
+    }
+    return;
+  }
+
   if (!config.pushEnabled) { el.textContent = 'Push reminders are unavailable until the server keys are configured.'; return; }
   if (!('Notification' in window) || !('serviceWorker' in navigator)) { el.textContent = 'This browser does not support web push reminders.'; return; }
   if (Notification.permission === 'denied') { el.textContent = 'Notifications are blocked in your browser settings.'; return; }
@@ -4987,6 +5019,10 @@ signupForm.addEventListener('submit', async e => {
 });
 function finishSessionBootstrap(authenticated) {
   document.body.classList.remove('auth-pending');
+  if (authenticated === true) {
+    document.body.classList.remove('native-permission-open','brand-intro-active');
+    $('#nativePermissionGate')?.classList.add('hidden');
+  }
   $('#sessionSplash')?.classList.add('hidden');
   lockScreen.classList.toggle('hidden', authenticated === true);
   journalApp.classList.toggle('hidden', authenticated !== true);
