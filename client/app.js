@@ -1330,12 +1330,38 @@ function privacyLabel(value) {
 }
 function renderScrapbookPicker() {
   const picker = $('#scrapbookPicker');
-  const source = isPhoneUI() ? mobileBookOptions() : scrapbooks;
-  picker.innerHTML = source.length ? source.map(book => {
+  if (!picker) return;
+  const phone = isPhoneUI();
+  const source = phone ? mobileBookOptions() : scrapbooks;
+  const desired = source.map(book => {
     const icon = book.type === 'couple' ? '♡' : book.type === 'personal' ? '✎' : '◌';
-    const ownerNote = !isPhoneUI() && book.type === 'personal' && book.owner !== me?.tag ? ` · @${escapeHtml(book.owner)}` : '';
-    return `<option value="${book.id}" ${book.id === activeScrapbook?.id ? 'selected' : ''}>${icon} ${escapeHtml(book.name)}${ownerNote}</option>`;
-  }).join('') : '<option value="">No scrapbook yet</option>';
+    const ownerNote = !phone && book.type === 'personal' && book.owner !== me?.tag ? ` · @${book.owner}` : '';
+    return { value:String(book.id), label:`${icon} ${book.name}${ownerNote}` };
+  });
+  const desiredSignature = JSON.stringify(desired);
+  const currentSignature = picker.dataset.optionsSignature || '';
+
+  // Do not rebuild the native select on every phone viewport resize.
+  // Android changes the visual viewport while its chooser is opening;
+  // replacing <option> nodes at that moment immediately closes the chooser.
+  if (currentSignature !== desiredSignature) {
+    picker.replaceChildren(...(
+      desired.length
+        ? desired.map(item => {
+            const option = document.createElement('option');
+            option.value = item.value;
+            option.textContent = item.label;
+            return option;
+          })
+        : [Object.assign(document.createElement('option'), { value:'', textContent:'No scrapbook yet' })]
+    ));
+    picker.dataset.optionsSignature = desiredSignature;
+  }
+
+  const selectedId = activeScrapbook?.id ? String(activeScrapbook.id) : '';
+  if (picker.value !== selectedId && document.activeElement !== picker) {
+    picker.value = selectedId;
+  }
   picker.disabled = !source.length;
   renderMobileBookShelf();
 }
