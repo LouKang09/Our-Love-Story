@@ -924,7 +924,7 @@ function initCanvasViewportGestures() {
   ));
 
   stage.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'mouse') return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     canvasGesturePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
 
     if (canvasGesturePointers.size >= 2) {
@@ -947,6 +947,7 @@ function initCanvasViewportGestures() {
         top:stage.scrollTop
       };
       try { stage.setPointerCapture(e.pointerId); } catch {}
+      if (e.pointerType === 'mouse') stage.classList.add('mouse-panning');
       e.preventDefault();
       e.stopPropagation();
     }
@@ -984,7 +985,10 @@ function initCanvasViewportGestures() {
 
   const finishPointer = e => {
     canvasGesturePointers.delete(e.pointerId);
-    if (panState?.pointerId === e.pointerId) panState = null;
+    if (panState?.pointerId === e.pointerId) {
+      panState = null;
+      stage.classList.remove('mouse-panning');
+    }
     if (canvasGesturePointers.size >= 2) {
       const g = canvasPinchGeometry();
       canvasPinchState = g ? { distance:g.distance, x:g.x, y:g.y } : null;
@@ -4915,7 +4919,9 @@ function wireCanvasItems() {
 
       content.addEventListener('pointerdown',e=>{
         bringItemFront();
-        if(!isPhoneUI() || e.pointerType==='mouse')return;
+        const desktopMouseDrag = !isPhoneUI() && e.pointerType === 'mouse' && e.button === 0;
+        const phoneTouchDrag = isPhoneUI() && e.pointerType !== 'mouse';
+        if(!desktopMouseDrag && !phoneTouchDrag)return;
 
         const r=rect();
         const sx=e.clientX,sy=e.clientY,ox=item.x,oy=item.y;
@@ -5287,7 +5293,13 @@ $('#logoutBtn').addEventListener('click', async () => {
   localStorage.removeItem('activeScrapbookId');
   location.reload();
 });
-$('#brandButton').addEventListener('click', async () => {
+$('#brandButton').addEventListener('click', async e => {
+  if (!isPhoneUI() && e.target?.closest?.('.brand-header-logo')) {
+    e.preventDefault();
+    e.stopPropagation();
+    openChatImageViewer('/assets/scrapella-logo.webp');
+    return;
+  }
   if (!isPhoneUI()) {
     await refreshAndShow('home');
     return;
