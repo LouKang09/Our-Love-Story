@@ -9517,3 +9517,158 @@ html[data-theme="night"] .owner-override-btn{
     font-size:.4em!important;
   }
 }
+
+
+/* =========================================================
+   DESKTOP BOOK WORKSPACE V1
+   Desktop-only chrome. Phone layout remains isolated below 800px.
+   ========================================================= */
+.desktop-scrapbook-bar{
+  display:none;
+}
+
+@media(min-width:801px){
+  /* Keep the desktop app bar clean: account/system actions only. */
+  .topbar>.brand-button,
+  .topbar>.scrapbook-picker-wrap,
+  .topbar .mode-switch,
+  .topbar>#newEntryBtn,
+  .topbar .toolbar>#newEntryBtn{
+    display:none!important;
+  }
+
+  .topbar{
+    min-height:62px;
+    justify-content:flex-end;
+    padding-top:8px;
+    padding-bottom:8px;
+  }
+  .topbar .toolbar{
+    width:auto;
+    margin-left:auto;
+    justify-content:flex-end;
+  }
+
+  /* Active scrapbook identity and picker now live with the book itself. */
+  .desktop-scrapbook-bar:not(.hidden){
+    width:min(1180px,calc(100% - 32px));
+    min-height:64px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:18px auto 0;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:17px;
+    background:rgba(255,250,241,.82);
+    box-shadow:0 9px 24px rgba(60,39,36,.055);
+  }
+  .desktop-book-title{
+    min-width:0;
+    max-width:340px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:5px 8px 5px 5px;
+    border:0;
+    background:transparent;
+    color:var(--ink);
+    text-align:left;
+  }
+  .desktop-book-title>span{
+    width:36px;
+    height:36px;
+    display:grid;
+    place-items:center;
+    flex:0 0 auto;
+    border-radius:50%;
+    background:var(--rose);
+    color:#fff;
+    font-size:17px;
+  }
+  .desktop-book-title strong{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font:700 18px/1.15 Georgia,"Times New Roman",serif;
+  }
+  .desktop-book-picker-slot{
+    min-width:240px;
+    display:flex;
+    align-items:center;
+  }
+  .desktop-book-picker-slot .scrapbook-picker-wrap{
+    width:min(360px,34vw);
+    min-width:240px;
+    display:flex!important;
+    align-items:center;
+    gap:7px;
+    order:initial!important;
+  }
+  .desktop-book-picker-slot .scrapbook-picker-wrap select{
+    flex:1;
+    min-width:0;
+    min-height:40px;
+  }
+  .desktop-book-action-slot{
+    min-width:0;
+    margin-left:auto;
+    display:flex;
+    justify-content:flex-end;
+  }
+  .desktop-new-memory-btn{
+    min-height:40px;
+    padding:9px 16px;
+    white-space:nowrap;
+  }
+
+  /* Personal privacy stays with Book, and New memory sits beneath it. */
+  .personal-privacy-quick{
+    width:min(1180px,calc(100% - 32px));
+    margin:10px auto 0;
+  }
+  .privacy-quick-inner{
+    align-items:stretch;
+    flex-direction:column;
+    gap:10px;
+    padding:11px 12px;
+  }
+  .privacy-quick-main{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+  }
+  .desktop-privacy-new-memory{
+    width:100%;
+    display:flex;
+    justify-content:flex-end;
+    padding-top:10px;
+    border-top:1px solid var(--line);
+  }
+  .desktop-privacy-new-memory .desktop-new-memory-btn{
+    min-width:150px;
+  }
+
+  .book-view{
+    padding-top:16px;
+  }
+
+  html[data-theme="night"] .desktop-scrapbook-bar{
+    background:#2d2527;
+    border-color:var(--line);
+  }
+}
+
+/* Structural wrapper is transparent on phones so the existing phone privacy
+   layout remains pixel-for-pixel governed by its existing rules. */
+@media(max-width:800px){
+  .desktop-scrapbook-bar{
+    display:none!important;
+  }
+  .privacy-quick-main{
+    display:contents;
+  }
+}
