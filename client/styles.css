@@ -9407,3 +9407,23 @@ html.native-app .lock-screen.hidden{
     overscroll-behavior:contain;
   }
 }
+
+
+/* Book navigation v2 — center arrows on the scrapbook page/canvas,
+   never on the comments area below it. */
+@media(max-width:800px){
+  .book-shell{
+    --mobile-page-arrow-top:50%;
+  }
+  .mobile-page-arrow{
+    top:var(--mobile-page-arrow-top)!important;
+  }
+  #profileTagStatus.tag-ok{
+    color:#4f8b62!important;
+    font-weight:700;
+  }
+  #profileTagStatus.tag-bad{
+    color:#c84e5b!important;
+    font-weight:700;
+  }
+}
