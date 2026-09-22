@@ -6988,7 +6988,15 @@ async function enterApp() {
 }
 $('#logoutBtn').addEventListener('click', async () => {
   disconnectLiveEvents();
-  if (isNativeScrapellaApp()) rememberNativeAppearanceMode(document.documentElement.dataset.theme || me?.appearanceMode || 'light');
+  if (isNativeScrapellaApp()) {
+    rememberNativeAppearanceMode(document.documentElement.dataset.theme || me?.appearanceMode || 'light');
+    if (nativePushToken) {
+      await api('/api/push/native/unregister',{
+        method:'POST',
+        body:JSON.stringify({token:nativePushToken})
+      }).catch(()=>{});
+    }
+  }
   await api('/api/logout', { method:'POST', body:'{}' }).catch(()=>{});
   localStorage.removeItem('activeScrapbookId');
   location.reload();
