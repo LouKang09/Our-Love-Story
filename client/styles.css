@@ -12936,3 +12936,63 @@ html[data-theme="night"] .freedom-wall-canvas{filter:brightness(.82) saturate(.9
   .freedom-note{padding:10px}
   .theme-scene-page{width:94%;padding:22px}
 }
+
+
+/* ===== 2026-09-22 NATIVE MEMORY UNIVERSE BETA ===== */
+html.memory-universe-beta-enabled #mobileUniverseBtn.web-memory-universe-only,
+html.memory-universe-beta-enabled #universeModeBtn.web-memory-universe-only{
+  display:inline-flex!important;
+  align-items:center;
+  gap:6px;
+}
+html.memory-universe-beta-enabled #memoryUniverseView.web-memory-universe-only:not(.hidden){
+  display:block!important;
+}
+html.native-app .universe-hero-actions,
+html.native-app .universe-perspectives-panel,
+html.native-app .universe-replay-here{
+  display:none!important;
+}
+html.native-app .universe-overlap-note{display:none!important}
+html.native-app .universe-lab-tabs button[hidden]{display:none!important}
+html.native-app .universe-hero .eyebrow:after{
+  content:" · MOBILE BETA";
+  opacity:.65;
+}
+html.native-app .memory-universe-view{
+  width:calc(100vw - 14px);
+  margin:8px auto 86px;
+  gap:10px;
+}
+html.native-app .universe-hero{
+  min-height:0;
+  display:grid;
+  padding:20px 16px;
+  border-radius:18px;
+}
+html.native-app .universe-hero h2{font-size:28px}
+html.native-app .universe-hero p:not(.eyebrow){font-size:11px}
+html.native-app .memory-universe-stats{grid-template-columns:1fr 1fr}
+html.native-app .memory-universe-stats>div{min-height:56px;padding:12px}
+html.native-app .universe-panel{padding:13px;border-radius:17px}
+html.native-app .universe-panel-head{display:grid;gap:6px}
+html.native-app .universe-hint{display:none}
+html.native-app .constellation-layout{grid-template-columns:1fr}
+html.native-app .memory-constellation{min-height:510px}
+html.native-app .memory-universe-detail{min-height:0}
+html.native-app .universe-detail-card{display:block}
+html.native-app .universe-detail-image{height:200px}
+html.native-app .memory-echoes-grid,
+html.native-app .memory-perspectives-grid{grid-template-columns:1fr}
+html.native-app .memory-echo-pair{grid-template-columns:1fr}
+html.native-app .universe-lab-tabs{
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  margin-left:-2px;
+  margin-right:-2px;
+  padding-bottom:10px;
+}
+html.native-app .universe-lab-tabs button{
+  font-size:8px;
+  padding:8px 10px;
+}
