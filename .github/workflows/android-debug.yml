@@ -68,9 +68,6 @@ jobs:
           cat > android/app/src/main/java/com/loukang/scrapella/MainActivity.java <<'JAVA'
           package com.loukang.scrapella;
 
-          import android.app.NotificationChannel;
-          import android.app.NotificationManager;
-          import android.content.Context;
           import android.os.Build;
           import android.os.Bundle;
           import android.view.View;
@@ -82,34 +79,14 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   registerPlugin(MicrophonePermissionPlugin.class);
-                  registerPlugin(NativeAudioPlayerPlugin.class);
                   super.onCreate(savedInstanceState);
-                  try { createMessageNotificationChannel(); } catch (Exception ignored) {}
-                  try { hideNavigationBar(); } catch (Exception ignored) {}
-              }
-
-              private void createMessageNotificationChannel() {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                      if (manager == null) return;
-                      NotificationChannel channel = new NotificationChannel(
-                          "messages",
-                          "Messages",
-                          NotificationManager.IMPORTANCE_HIGH
-                      );
-                      channel.setDescription("Scrapella chat messages");
-                      channel.enableVibration(true);
-                      channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
-                      manager.createNotificationChannel(channel);
-                  }
+                  hideNavigationBar();
               }
 
               @Override
               public void onWindowFocusChanged(boolean hasFocus) {
                   super.onWindowFocusChanged(hasFocus);
-                  if (hasFocus) {
-                      try { hideNavigationBar(); } catch (Exception ignored) {}
-                  }
+                  if (hasFocus) hideNavigationBar();
               }
 
               private void hideNavigationBar() {
@@ -129,131 +106,6 @@ jobs:
                           View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                       );
                   }
-              }
-          }
-          JAVA
-
-          cat > android/app/src/main/java/com/loukang/scrapella/NativeAudioPlayerPlugin.java <<'JAVA'
-          package com.loukang.scrapella;
-
-          import android.media.AudioAttributes;
-          import android.media.MediaPlayer;
-          import android.net.Uri;
-          import android.webkit.CookieManager;
-          import com.getcapacitor.JSObject;
-          import com.getcapacitor.Plugin;
-          import com.getcapacitor.PluginCall;
-          import com.getcapacitor.PluginMethod;
-          import com.getcapacitor.annotation.CapacitorPlugin;
-          import java.util.HashMap;
-          import java.util.Map;
-
-          @CapacitorPlugin(name = "NativeAudioPlayer")
-          public class NativeAudioPlayerPlugin extends Plugin {
-              private MediaPlayer player;
-
-              private synchronized void stopInternal() {
-                  MediaPlayer current = player;
-                  player = null;
-                  if (current == null) return;
-                  try { current.setOnPreparedListener(null); } catch (Exception ignored) {}
-                  try { current.setOnCompletionListener(null); } catch (Exception ignored) {}
-                  try { current.setOnErrorListener(null); } catch (Exception ignored) {}
-                  try { current.stop(); } catch (Exception ignored) {}
-                  try { current.reset(); } catch (Exception ignored) {}
-                  try { current.release(); } catch (Exception ignored) {}
-              }
-
-              @PluginMethod
-              public void play(PluginCall call) {
-                  String url = call.getString("url", "");
-                  if (url == null || url.trim().isEmpty()) {
-                      call.reject("Missing audio URL.");
-                      return;
-                  }
-
-                  try {
-                      stopInternal();
-
-                      MediaPlayer next = new MediaPlayer();
-                      player = next;
-                      final boolean[] settled = { false };
-
-                      next.setAudioAttributes(
-                          new AudioAttributes.Builder()
-                              .setUsage(AudioAttributes.USAGE_MEDIA)
-                              .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                              .build()
-                      );
-
-                      Map<String, String> headers = new HashMap<>();
-                      try {
-                          String cookie = CookieManager.getInstance().getCookie(url);
-                          if (cookie != null && !cookie.trim().isEmpty()) {
-                              headers.put("Cookie", cookie);
-                          }
-                      } catch (Exception ignored) {}
-                      headers.put("User-Agent", "Scrapella-Android");
-
-                      next.setDataSource(getContext(), Uri.parse(url), headers);
-
-                      next.setOnPreparedListener(mp -> {
-                          if (player != mp) {
-                              try { mp.release(); } catch (Exception ignored) {}
-                              return;
-                          }
-                          try {
-                              int durationMs = Math.max(0, mp.getDuration());
-                              mp.start();
-                              JSObject result = new JSObject();
-                              result.put("durationMs", durationMs);
-                              settled[0] = true;
-                              call.resolve(result);
-                          } catch (Exception error) {
-                              stopInternal();
-                              if (!settled[0]) call.reject("Could not start voice message.", error);
-                          }
-                      });
-
-                      next.setOnCompletionListener(mp -> {
-                          if (player != mp) return;
-                          JSObject event = new JSObject();
-                          event.put("ended", true);
-                          notifyListeners("ended", event);
-                          stopInternal();
-                      });
-
-                      next.setOnErrorListener((mp, what, extra) -> {
-                          if (player == mp) stopInternal();
-                          if (!settled[0]) {
-                              settled[0] = true;
-                              call.reject("Could not play voice message.");
-                          } else {
-                              JSObject event = new JSObject();
-                              event.put("what", what);
-                              event.put("extra", extra);
-                              notifyListeners("error", event);
-                          }
-                          return true;
-                      });
-
-                      next.prepareAsync();
-                  } catch (Exception error) {
-                      stopInternal();
-                      call.reject("Could not play voice message.", error);
-                  }
-              }
-
-              @PluginMethod
-              public void stop(PluginCall call) {
-                  stopInternal();
-                  call.resolve();
-              }
-
-              @Override
-              protected void handleOnDestroy() {
-                  stopInternal();
-                  super.handleOnDestroy();
               }
           }
           JAVA
@@ -328,15 +180,6 @@ jobs:
               pos = manifest.find(">", manifest.find("<manifest"))
               addition = "\n    " + "\n    ".join(missing)
               manifest = manifest[:pos+1] + addition + manifest[pos+1:]
-          app_tag = '<application'
-          app_pos = manifest.find(app_tag)
-          if app_pos >= 0 and 'com.google.firebase.messaging.default_notification_channel_id' not in manifest:
-              close_pos = manifest.find('>', app_pos)
-              metadata = '''
-              <meta-data
-                  android:name="com.google.firebase.messaging.default_notification_channel_id"
-                  android:value="messages" />'''
-              manifest = manifest[:close_pos+1] + metadata + manifest[close_pos+1:]
           manifest_path.write_text(manifest)
           PY
 
@@ -349,8 +192,8 @@ jobs:
           gradle_path = Path("android/app/build.gradle")
           gradle = gradle_path.read_text()
 
-          gradle = re.sub(r'versionCode\s+\d+', 'versionCode 235', gradle, count=1)
-          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.2.16"', gradle, count=1)
+          gradle = re.sub(r'versionCode\s+\d+', 'versionCode 236', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.2.17"', gradle, count=1)
 
           if 'scrapella-ci-release.keystore' not in gradle:
               gradle = gradle.replace(
@@ -422,7 +265,7 @@ jobs:
       - name: Upload Scrapella Android release APK
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-android-release-v2.2.16
+          name: scrapella-android-release-v2.2.17
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
