@@ -1858,7 +1858,7 @@ async function handleApi(req, res, url) {
     return json(res,200,{ projects });
   }
 
-  if (pathname === '/api/preview/secret-contributors' && req.method === 'POST') {
+  if (['/api/preview/secret-contributors','/api/memory-universe/secret-contributors'].includes(pathname) && req.method === 'POST') {
     const body = await readBody(req,128 * 1024);
     const title = String(body.title || '').trim().slice(0,90);
     const recipient = slugTag(body.recipient);
@@ -1904,7 +1904,7 @@ async function handleApi(req, res, url) {
     return json(res,201,{ project:decorateSecretProject(social,project,user) });
   }
 
-  const secretContributionMatch = pathname.match(/^\\/api\\/(?:preview|memory-universe)\\/secret-contributors\/([a-f0-9-]+)\/contributions$/i);
+  const secretContributionMatch = pathname.match(/^\/api\/(?:preview|memory-universe)\/secret-contributors\/([a-f0-9-]+)\/contributions$/i);
   if (secretContributionMatch && req.method === 'POST') {
     const project = (social.secretContributorProjects || []).find(item => item.id === secretContributionMatch[1]);
     if (!project) return notFound(res);
@@ -1932,11 +1932,11 @@ async function handleApi(req, res, url) {
     return json(res,201,{ project:decorateSecretProject(social,project,user) });
   }
 
-  const secretProjectDeleteMatch = pathname.match(/^\\/api\\/(?:preview|memory-universe)\\/secret-contributors\/([a-f0-9-]+)$/i);
+  const secretProjectDeleteMatch = pathname.match(/^\/api\/(?:preview|memory-universe)\/secret-contributors\/([a-f0-9-]+)$/i);
   if (secretProjectDeleteMatch && req.method === 'DELETE') {
     const project = (social.secretContributorProjects || []).find(item => item.id === secretProjectDeleteMatch[1]);
     if (!project) return notFound(res);
-    if (project.owner !== user) return forbidden(res,'Only the creator can remove this preview surprise.');
+    if (project.owner !== user) return forbidden(res,'Only the creator can remove this surprise.');
     social.secretContributorProjects = social.secretContributorProjects.filter(item => item.id !== project.id);
     await writeSocial(social);
     return json(res,200,{ ok:true });
@@ -1964,7 +1964,7 @@ async function handleApi(req, res, url) {
     }
   }
 
-  if (pathname === '/api/preview/freedom-wall' && req.method === 'POST') {
+  if (['/api/preview/freedom-wall','/api/memory-universe/freedom-wall'].includes(pathname) && req.method === 'POST') {
     const body = await readBody(req, 256 * 1024);
     const text = String(body.text || '').trim().slice(0, 900);
     const image = String(body.image || '');
@@ -1984,7 +1984,7 @@ async function handleApi(req, res, url) {
     return json(res, 201, { post, profile:publicProfileFor(social,user) });
   }
 
-  const freedomWallDeleteMatch = pathname.match(/^\\/api\\/(?:preview|memory-universe)\\/freedom-wall\/([a-f0-9-]+)$/i);
+  const freedomWallDeleteMatch = pathname.match(/^\/api\/(?:preview|memory-universe)\/freedom-wall\/([a-f0-9-]+)$/i);
   if (freedomWallDeleteMatch && req.method === 'DELETE') {
     const index = social.freedomWall.findIndex(post => post.id === freedomWallDeleteMatch[1]);
     if (index < 0) return notFound(res);
