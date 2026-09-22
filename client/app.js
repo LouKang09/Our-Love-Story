@@ -4941,12 +4941,16 @@ function universeLabSetMode(mode) {
   renderUniverseLabStage();
 }
 
+const NATIVE_UNIVERSE_BETA_MODES = ['voiceMemory','letters','prompts','anniversaries','box','themes','peopleMemory','vault','family','inherited','secret','faith','wall','capsules','museum'];
 function renderUniverseLabs() {
   const stage = $('#universeLabStage');
-  if (!stage || isNativeScrapellaApp()) return;
+  if (!stage) return;
+  if (isNativeScrapellaApp() && !NATIVE_UNIVERSE_BETA_MODES.includes(universeLabMode)) universeLabMode='voiceMemory';
   document.querySelectorAll('[data-universe-lab]').forEach(btn => {
-    btn.onclick = () => universeLabSetMode(btn.dataset.universeLab || 'layers');
-    btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode);
+    const nativeAllowed = !isNativeScrapellaApp() || NATIVE_UNIVERSE_BETA_MODES.includes(btn.dataset.universeLab || '');
+    btn.hidden = !nativeAllowed;
+    btn.onclick = nativeAllowed ? (() => universeLabSetMode(btn.dataset.universeLab || 'voiceMemory')) : null;
+    btn.classList.toggle('active',nativeAllowed && btn.dataset.universeLab===universeLabMode);
   });
   renderUniverseLabStage();
 }
@@ -5502,7 +5506,6 @@ function renderUniverseArchiveLab() {
 }
 
 function renderMemoryUniverse() {
-  if(isNativeScrapellaApp())return;
   const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
   if(!activeScrapbook){
     $('#memoryUniverseStats').innerHTML='';
@@ -5567,7 +5570,6 @@ function startMemoryReplay(startEntryId='') {
   render();
 }
 function showView(mode) {
-  if (mode === 'universe' && isNativeScrapellaApp()) mode = 'home';
   const previousMode = currentMode;
   currentMode = mode;
   if (isNativeScrapellaApp() && isPhoneUI() && previousMode !== mode) {
@@ -6723,7 +6725,6 @@ $('#mobileStreamBtn')?.addEventListener('click', () => {
   showView('stream');
 });
 $('#mobileUniverseBtn')?.addEventListener('click', async () => {
-  if (isNativeScrapellaApp()) return;
   try {
     if (activeScrapbook) await refreshEntries();
     showView('universe');
@@ -7334,6 +7335,7 @@ function setPhoneMessageButtonVisual(phone) {
 function syncResponsiveChrome() {
   const phone = isPhoneUI();
   document.documentElement.classList.toggle('web-memory-preview', !isNativeScrapellaApp());
+  document.documentElement.classList.toggle('memory-universe-beta-enabled', true);
   if($('#chatPhotoInput')) $('#chatPhotoInput').multiple = true;
   const toolbar = document.querySelector('.toolbar');
   const modeSwitch = document.querySelector('.mode-switch');
@@ -7518,10 +7520,6 @@ function isTypingFieldFocused() {
   return Boolean(active && active.matches?.('input,textarea,[contenteditable="true"]'));
 }
 window.addEventListener('resize', () => {
-  if (currentMode === 'universe' && isNativeScrapellaApp()) {
-    showView('home');
-    return;
-  }
   if (currentMode === 'book' && !isTypingFieldFocused()) renderBook();
   if (currentMode === 'connections' && activeScrapbook?.type === 'group' && !isTypingFieldFocused()) renderConnections();
   if (currentMode === 'universe' && !isTypingFieldFocused()) renderMemoryUniverse();
