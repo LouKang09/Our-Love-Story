@@ -7018,9 +7018,17 @@ async function updateNotificationStatus() {
         el.textContent = 'Notifications are turned off for Scrapella in your phone settings.';
         return;
       }
-      el.textContent = enabled
-        ? 'Daily reminder is on. Scrapella uses your phone notification permission.'
-        : 'Daily reminder is off.';
+      if (status?.receive === 'granted' && config.nativePushEnabled) {
+        el.textContent = enabled
+          ? 'Daily reminder is on. Background message notifications are ready.'
+          : 'Phone notifications are allowed. Background message notifications are ready.';
+      } else if (status?.receive === 'granted') {
+        el.textContent = enabled
+          ? 'Phone notifications are allowed. Daily reminder is on, but closed-app message push still needs Firebase connection.'
+          : 'Phone notifications are allowed, but closed-app message push still needs Firebase connection.';
+      } else {
+        el.textContent = enabled ? 'Daily reminder is on.' : 'Daily reminder is off.';
+      }
     } catch {
       el.textContent = enabled ? 'Daily reminder is on.' : 'Daily reminder is off.';
     }
