@@ -23,6 +23,10 @@ const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://scrapella.up.railway.app';
 const PUSH_READY = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '';
+let FIREBASE_SERVICE_ACCOUNT = null;
+try { FIREBASE_SERVICE_ACCOUNT = FIREBASE_SERVICE_ACCOUNT_JSON ? JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON) : null; } catch {}
+const NATIVE_PUSH_READY = Boolean(FIREBASE_SERVICE_ACCOUNT?.project_id && FIREBASE_SERVICE_ACCOUNT?.client_email && FIREBASE_SERVICE_ACCOUNT?.private_key);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 const GUIDE_VERSION = 8;
 const PLATFORM_OWNER_SEED_TAG = slugTag(process.env.PLATFORM_OWNER_TAG || 'loukang09');
@@ -220,6 +224,7 @@ async function readSocial() {
   data.follows = Array.isArray(data.follows) ? data.follows : [];
   data.uploadOwners = data.uploadOwners && typeof data.uploadOwners === 'object' ? data.uploadOwners : {};
   data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
+  data.nativePushTokens = Array.isArray(data.nativePushTokens) ? data.nativePushTokens : [];
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   data.notificationHub = data.notificationHub && typeof data.notificationHub === 'object' ? data.notificationHub : {};
   data.mentions = Array.isArray(data.mentions) ? data.mentions : [];
@@ -258,7 +263,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [], secretContributorProjects: [] });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], nativePushTokens: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [], secretContributorProjects: [] });
   await ensureFile(PRESENCE_FILE, {});
   await loadPresenceStore();
 
@@ -676,8 +681,99 @@ function mentionTags(text) {
   const matches = String(text || '').matchAll(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi);
   return [...new Set([...matches].map(match => slugTag(match[2])).filter(Boolean))].slice(0, 12);
 }
+let firebaseAccessTokenCache = { token:'', expiresAt:0 };
+function base64urlJson(value) {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+async function firebaseAccessToken() {
+  if (!NATIVE_PUSH_READY) return '';
+  if (firebaseAccessTokenCache.token && firebaseAccessTokenCache.expiresAt > Date.now() + 60_000) {
+    return firebaseAccessTokenCache.token;
+  }
+  const now = Math.floor(Date.now()/1000);
+  const tokenUri = FIREBASE_SERVICE_ACCOUNT.token_uri || 'https://oauth2.googleapis.com/token';
+  const unsigned = `${base64urlJson({alg:'RS256',typ:'JWT'})}.${base64urlJson({
+    iss:FIREBASE_SERVICE_ACCOUNT.client_email,
+    scope:'https://www.googleapis.com/auth/firebase.messaging',
+    aud:tokenUri,
+    iat:now,
+    exp:now+3600
+  })}`;
+  const signature = crypto.sign('RSA-SHA256',Buffer.from(unsigned),FIREBASE_SERVICE_ACCOUNT.private_key).toString('base64url');
+  const assertion = `${unsigned}.${signature}`;
+  const response = await fetch(tokenUri,{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({
+      grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion
+    })
+  });
+  if(!response.ok) throw new Error(`Firebase OAuth failed (${response.status})`);
+  const data=await response.json();
+  firebaseAccessTokenCache={
+    token:String(data.access_token||''),
+    expiresAt:Date.now()+Math.max(300,Number(data.expires_in)||3600)*1000
+  };
+  return firebaseAccessTokenCache.token;
+}
+async function sendNativeUserPush(social,{to,title,body,tag='scrapbook-social',url='/?notifications=1'}) {
+  if(!NATIVE_PUSH_READY || !to) return;
+  const items=(social.nativePushTokens||[]).filter(item=>item.tag===to && item.token);
+  if(!items.length) return;
+  let accessToken='';
+  try{accessToken=await firebaseAccessToken();}catch(err){console.warn('Native push auth failed:',err?.message||err);return;}
+  for(const item of [...items]){
+    const endpoint=`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(FIREBASE_SERVICE_ACCOUNT.project_id)}/messages:send`;
+    try{
+      const response=await fetch(endpoint,{
+        method:'POST',
+        headers:{
+          'Authorization':`Bearer ${accessToken}`,
+          'Content-Type':'application/json'
+        },
+        body:JSON.stringify({
+          message:{
+            token:item.token,
+            notification:{
+              title:String(title||'Scrapella').slice(0,120),
+              body:String(body||'Open Scrapella to see what changed.').slice(0,180)
+            },
+            data:{
+              url:String(url||'/?notifications=1'),
+              tag:String(tag||'scrapbook-social')
+            },
+            android:{
+              priority:'high',
+              notification:{
+                channel_id:'messages',
+                sound:'default',
+                default_vibrate_timings:true,
+                visibility:'PRIVATE'
+              }
+            },
+            apns:{
+              payload:{aps:{sound:'default',badge:1}},
+              fcm_options:{}
+            }
+          }
+        })
+      });
+      if(!response.ok){
+        const detail=await response.text().catch(()=> '');
+        if(response.status===404 || response.status===400 || detail.includes('UNREGISTERED')){
+          social.nativePushTokens=(social.nativePushTokens||[]).filter(saved=>saved.token!==item.token);
+        }else{
+          console.warn('Native push failed:',response.status,detail.slice(0,220));
+        }
+      }
+    }catch(err){console.warn('Native push failed:',err?.message||err);}
+  }
+}
 async function sendUserPush(social, { to, title, body, tag = 'scrapbook-social', url = '/?notifications=1' }) {
-  if (!PUSH_READY || !to) return;
+  if (!to) return;
+  await sendNativeUserPush(social,{to,title,body,tag,url});
+  if (!PUSH_READY) return;
   const subscriptions = social.pushSubscriptions.filter(item => item.tag === to);
   if (!subscriptions.length) return;
   const payload = JSON.stringify({
@@ -698,6 +794,7 @@ async function sendUserPush(social, { to, title, body, tag = 'scrapbook-social',
     }
   }
 }
+
 function secretProjectDue(project, now = Date.now()) {
   const when = Date.parse(project?.revealAt || '');
   return Number.isFinite(when) && when <= now;
@@ -1257,7 +1354,8 @@ async function handleApi(req, res, url) {
     subtitle: JOURNAL_SUBTITLE,
     production: PROD,
     pushEnabled: PUSH_READY,
-    pushPublicKey: PUSH_READY ? VAPID_PUBLIC_KEY : ''
+    pushPublicKey: PUSH_READY ? VAPID_PUBLIC_KEY : '',
+    nativePushEnabled: NATIVE_PUSH_READY
   });
 
   if (pathname === '/api/tag-availability' && req.method === 'GET') {
@@ -1568,6 +1666,27 @@ async function handleApi(req, res, url) {
       { profile:profileFor(workingSocial,effectiveUser), tagChanged:effectiveUser !== user },
       effectiveUser !== user ? { 'Set-Cookie':sessionCookie(makeSession(effectiveUser)) } : {}
     );
+  }
+
+  if (pathname === '/api/push/native/register' && req.method === 'POST') {
+    const body = await readBody(req,64*1024);
+    const token = String(body.token || '').trim().slice(0,4096);
+    const platform = ['android','ios'].includes(String(body.platform||'')) ? String(body.platform) : 'android';
+    if (!token) return json(res,400,{ error:'Missing native push token.' });
+    social.nativePushTokens ||= [];
+    social.nativePushTokens = social.nativePushTokens.filter(item => item.token !== token);
+    social.nativePushTokens.push({ tag:user, token, platform, updatedAt:new Date().toISOString() });
+    if (social.nativePushTokens.length > 2000) social.nativePushTokens = social.nativePushTokens.slice(-2000);
+    await writeSocial(social);
+    return json(res,200,{ ok:true, nativePushReady:NATIVE_PUSH_READY });
+  }
+
+  if (pathname === '/api/push/native/unregister' && req.method === 'POST') {
+    const body = await readBody(req,64*1024);
+    const token = String(body.token || '').trim();
+    social.nativePushTokens = (social.nativePushTokens || []).filter(item => !(item.tag===user && (!token || item.token===token)));
+    await writeSocial(social);
+    return json(res,200,{ ok:true });
   }
 
   if (pathname === '/api/push/subscribe' && req.method === 'POST') {
