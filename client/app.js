@@ -4965,6 +4965,10 @@ function renderUniverseLabStage() {
     renderUniverseFreedomWallLab();
     return;
   }
+  if (universeLabMode === 'secret') {
+    renderUniverseSecretLab();
+    return;
+  }
   if (!activeScrapbook) {
     stage.innerHTML = '<div class="universe-empty wide"><span>♡</span><strong>Choose a scrapbook first.</strong><p>The preview tools use the active scrapbook and never change its original memories.</p></div>';
     return;
@@ -6651,6 +6655,15 @@ function maybeOpenReminderComposer() {
   if (params.get('notifications') === '1') {
     history.replaceState({}, '', location.pathname);
     setTimeout(() => loadNotificationHub({ markRead:true }), 250);
+    return;
+  }
+  if (params.get('beta') === 'secret') {
+    history.replaceState({}, '', location.pathname);
+    setTimeout(() => {
+      showView('universe');
+      universeLabSetMode('secret');
+      $('#universeLabStage')?.scrollIntoView({behavior:'smooth',block:'start'});
+    }, 220);
     return;
   }
   if (params.get('newMemory') === '1' && activeScrapbook) {
