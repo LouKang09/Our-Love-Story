@@ -13088,3 +13088,101 @@ html[data-theme="night"] .secret-open-banner{background:#294331;color:#bfe0c6}
 #memoryUniverseView[data-living-theme="school"]{background:linear-gradient(180deg,rgba(113,129,106,.05),transparent 420px)}
 #memoryUniverseView[data-living-theme="family"]{background:linear-gradient(180deg,rgba(139,111,86,.05),transparent 420px)}
 #memoryUniverseView[data-living-theme="faith"]{background:linear-gradient(180deg,rgba(139,121,91,.05),transparent 420px)}
+
+
+/* ===== 2026-09-22 MOBILE UNIVERSE BETA SELECTION + SECRET REVEAL ===== */
+
+/* Mobile beta shows only the approved beta experiences. */
+html.native-app .memory-universe-stats{
+  display:none!important;
+}
+html.native-app .universe-perspectives-panel,
+html.native-app .universe-overlap-note,
+html.native-app .universe-hero-actions{
+  display:none!important;
+}
+html.native-app .universe-labs-panel .universe-panel-head>div>p{
+  margin-bottom:4px;
+}
+html.native-app .universe-labs-panel .universe-panel-head>div>p.eyebrow{
+  font-size:8px;
+}
+html.native-app .universe-labs-panel .universe-panel-head>div>p:not(.eyebrow){
+  font-size:10px;
+  line-height:1.45;
+}
+
+/* Secret Contributors becomes a real reveal interaction on the due date. */
+.secret-open-banner{
+  justify-content:space-between;
+  align-items:center;
+}
+.secret-open-banner>div{
+  display:grid;
+  gap:2px;
+}
+.secret-open-banner button{
+  flex:0 0 auto;
+  min-height:34px;
+  padding:7px 10px;
+  font-size:8px;
+}
+.secret-open-banner.opened{
+  opacity:.82;
+}
+.secret-reveal-content{
+  margin-top:10px;
+}
+.secret-reveal-content.hidden{
+  display:none!important;
+}
+
+/* Living Themes: keep the selected theme coherent across the whole beta view. */
+html.native-app #memoryUniverseView[data-living-theme]{
+  border-radius:18px;
+  padding:2px 0 10px;
+}
+html.native-app #memoryUniverseView[data-living-theme="travel"]{
+  background:linear-gradient(180deg,rgba(111,149,148,.08),transparent 520px);
+}
+html.native-app #memoryUniverseView[data-living-theme="childhood"]{
+  background:linear-gradient(180deg,rgba(154,123,172,.08),transparent 520px);
+}
+html.native-app #memoryUniverseView[data-living-theme="letters"]{
+  background:linear-gradient(180deg,rgba(167,98,120,.08),transparent 520px);
+}
+html.native-app #memoryUniverseView[data-living-theme="school"]{
+  background:linear-gradient(180deg,rgba(113,129,106,.08),transparent 520px);
+}
+html.native-app #memoryUniverseView[data-living-theme="family"]{
+  background:linear-gradient(180deg,rgba(139,111,86,.08),transparent 520px);
+}
+html.native-app #memoryUniverseView[data-living-theme="faith"]{
+  background:linear-gradient(180deg,rgba(139,121,91,.08),transparent 520px);
+}
+html.native-app .theme-lab{
+  grid-template-columns:1fr!important;
+}
+html.native-app .theme-picker{
+  grid-template-columns:1fr 1fr;
+}
+html.native-app .theme-picker>p,
+html.native-app .theme-picker>h4{
+  grid-column:1/-1;
+}
+html.native-app .living-theme-preview{
+  min-height:390px;
+}
+html.native-app .theme-scene-page{
+  width:92%;
+  margin:24px auto 14px;
+  padding:24px;
+}
+html.native-app .theme-behavior-card{
+  width:92%;
+}
+@media(max-width:430px){
+  html.native-app .theme-picker{
+    grid-template-columns:1fr;
+  }
+}
