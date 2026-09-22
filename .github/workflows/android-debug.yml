@@ -50,22 +50,11 @@ jobs:
         env:
           FIREBASE_ANDROID_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_ANDROID_GOOGLE_SERVICES_JSON }}
         run: |
-          # Do not package Capacitor's Firebase-backed PushNotifications plugin
-          # unless this Android build actually has Firebase credentials.
-          # The web app already treats PushNotifications as optional and keeps
-          # LocalNotifications as the foreground/in-app fallback.
           if [ -z "$FIREBASE_ANDROID_GOOGLE_SERVICES_JSON" ]; then
-            node - <<'NODE'
-            const fs = require('fs');
-            const path = 'package.json';
-            const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-            if (pkg.dependencies) delete pkg.dependencies['@capacitor/push-notifications'];
-            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
-            console.log('Android hotfix: native Firebase PushNotifications excluded.');
-            NODE
+            npm pkg delete dependencies.@capacitor/push-notifications
+            echo "Android hotfix: native Firebase PushNotifications excluded."
           fi
           npm install --no-audit --no-fund
-
       - name: Generate Android project
         run: npx cap add android
 
