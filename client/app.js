@@ -6643,6 +6643,31 @@ async function ensureNativeChatNotifications() {
       });
     }
     nativeChatNotificationsReady = permission?.display === 'granted';
+
+    // Some Android WebViews expose the Web Push API. When available, also
+    // subscribe the native shell to the same server push channel used by the web app.
+    // This is optional; LocalNotifications remains the realtime fallback.
+    if (config.pushEnabled && 'serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const registration=await getPushRegistration();
+        let subscription=await registration.pushManager.getSubscription();
+        if(!subscription){
+          subscription=await registration.pushManager.subscribe({
+            userVisibleOnly:true,
+            applicationServerKey:urlBase64ToUint8Array(config.pushPublicKey)
+          });
+        }
+        await api('/api/push/subscribe',{
+          method:'POST',
+          body:JSON.stringify({
+            subscription:subscription.toJSON(),
+            enabled:me?.notifications?.enabled===true,
+            reminderTime:me?.notifications?.reminderTime || '20:00',
+            timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+          })
+        });
+      } catch {}
+    }
   } catch {}
 }
 async function showNativeChatNotification(payload = {}) {
