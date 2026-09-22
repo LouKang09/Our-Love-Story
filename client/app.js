@@ -5391,12 +5391,21 @@ function renderUniverseMemoryBoxLab() {
   $('#memoryBoxForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget),text=String(f.get('text')||'').trim();if(!text&&!pending){showToast('Add a note or a photo first.');return;}universeBoxSessionItems.unshift({id:crypto.randomUUID?.()||String(Date.now()),text,image:pending,createdAt:new Date().toISOString()});renderUniverseMemoryBoxLab();});
 }
 
+function applyUniverseLivingThemePreview() {
+  const view=$('#memoryUniverseView');
+  if(!view)return;
+  const state=loadUniversePreview('livingTheme',{theme:'travel'});
+  const allowed=new Set(['travel','childhood','letters','school','family','faith']);
+  const theme=allowed.has(state?.theme)?state.theme:'travel';
+  view.dataset.livingTheme=theme;
+}
 function renderUniverseThemesLab() {
   const stage=$('#universeLabStage');if(!stage)return;const state=loadUniversePreview('livingTheme',{theme:'travel'});
-  const themes={travel:{name:'Travel Journal',icon:'✈',line:'Passport stamps, route lines, tickets and place chapters.'},childhood:{name:'Childhood Album',icon:'☁',line:'Soft paper, doodles, school labels and playful keepsakes.'},letters:{name:'Love Letters',icon:'♡',line:'Envelope folds, handwritten notes and sealed-letter transitions.'},school:{name:'School Years',icon:'✎',line:'Notebook paper, class years, subjects and graduation milestones.'},family:{name:'Family Archive',icon:'⌂',line:'Generations, heirlooms, family tree and archival captions.'},faith:{name:'Faith Journey',icon:'✝',line:'Liturgical seasons, prayer reflections and spiritual milestones.'}};
+  const themes={travel:{name:'Travel Journal',icon:'✈',line:'Passport stamps, route lines, tickets and place chapters.',action:'Browse by places and journeys'},childhood:{name:'Childhood Album',icon:'☁',line:'Soft paper, doodles, school labels and playful keepsakes.',action:'Browse by school year and age'},letters:{name:'Love Letters',icon:'♡',line:'Envelope folds, handwritten notes and sealed-letter transitions.',action:'Browse letters and relationship milestones'},school:{name:'School Years',icon:'✎',line:'Notebook paper, class years, subjects and graduation milestones.',action:'Browse by school year and graduation'},family:{name:'Family Archive',icon:'⌂',line:'Generations, heirlooms, family tree and archival captions.',action:'Browse people and generations'},faith:{name:'Faith Journey',icon:'✝',line:'Liturgical seasons, prayer reflections and spiritual milestones.',action:'Browse reflections and spiritual milestones'}};
   const selected=themes[state.theme]||themes.travel;
-  stage.innerHTML=`<div class="theme-lab"><aside class="theme-picker"><p class="eyebrow">LIVING SCRAPBOOK THEMES</p><h4>A theme should change how the scrapbook behaves, not only its color.</h4>${Object.entries(themes).map(([key,t])=>`<button class="${key===state.theme?'active':''}" type="button" data-theme-preview="${key}"><span>${t.icon}</span><div><strong>${t.name}</strong><small>${t.line}</small></div></button>`).join('')}</aside><section class="living-theme-preview theme-${escapeHtml(state.theme)}"><div class="theme-scene-head"><span>${selected.icon}</span><small>${escapeHtml(selected.name.toUpperCase())}</small></div><div class="theme-scene-page"><p class="eyebrow">${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</p><h3>${escapeHtml(entries.at(-1)?.title||'A chapter worth keeping')}</h3><p>${escapeHtml(universeExcerpt(entries.at(-1),190))}</p><div class="theme-scene-decoration"></div></div><p class="theme-behavior-copy">${escapeHtml(selected.line)}</p></section></div>`;
-  stage.querySelectorAll('[data-theme-preview]').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('livingTheme',{theme:btn.dataset.themePreview});renderUniverseThemesLab();}));
+  applyUniverseLivingThemePreview();
+  stage.innerHTML=`<div class="theme-lab"><aside class="theme-picker"><p class="eyebrow">LIVING SCRAPBOOK THEMES · BETA</p><h4>A theme should change how the scrapbook behaves, not only its color.</h4>${Object.entries(themes).map(([key,t])=>`<button class="${key===state.theme?'active':''}" type="button" data-theme-preview="${key}"><span>${t.icon}</span><div><strong>${t.name}</strong><small>${t.line}</small></div></button>`).join('')}</aside><section class="living-theme-preview theme-${escapeHtml(state.theme)}"><div class="theme-scene-head"><span>${selected.icon}</span><small>${escapeHtml(selected.name.toUpperCase())}</small></div><div class="theme-scene-page"><p class="eyebrow">${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</p><h3>${escapeHtml(entries.at(-1)?.title||'A chapter worth keeping')}</h3><p>${escapeHtml(universeExcerpt(entries.at(-1),190))}</p><div class="theme-scene-decoration"></div></div><div class="theme-behavior-card"><strong>${escapeHtml(selected.action)}</strong><span>${escapeHtml(selected.line)}</span></div><p class="theme-behavior-copy">The selected theme now changes the whole Memory Universe beta background and atmosphere. Your official scrapbook is untouched.</p></section></div>`;
+  stage.querySelectorAll('[data-theme-preview]').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('livingTheme',{theme:btn.dataset.themePreview});applyUniverseLivingThemePreview();renderUniverseThemesLab();}));
 }
 
 function renderUniversePeopleMemoryLab() {
@@ -5618,6 +5627,7 @@ function renderUniverseArchiveLab() {
 }
 
 function renderMemoryUniverse() {
+  applyUniverseLivingThemePreview();
   const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
   if(!activeScrapbook){
     $('#memoryUniverseStats').innerHTML='';
@@ -6831,6 +6841,10 @@ $('#desktopBookTitleBtn')?.addEventListener('click', async () => {
 $('#mobileNewMemoryBtn')?.addEventListener('click', () => {
   if (!isPhoneUI() || !activeScrapbook || activeScrapbook.canWrite === false) return;
   openEditor();
+});
+$('#mobileUniverseBackBtn')?.addEventListener('click', () => {
+  if (isPhoneUI()) phoneBackButton(() => showView('book'));
+  else showView('book');
 });
 $('#mobileStreamBtn')?.addEventListener('click', () => {
   if (!isPhoneUI() || !activeScrapbook) return;
