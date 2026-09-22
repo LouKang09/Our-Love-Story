@@ -3837,11 +3837,18 @@ async function hydrateProtectedChatAudio(audio) {
     if(isNativeScrapellaApp()){
       // A data URL keeps playback inside the WebView media context instead of
       // handing an authenticated URL/blob to Android's external media stack.
+      let playableBlob=blob;
+      if(!/audio\/(wav|wave|x-wav)/i.test(String(blob.type||''))){
+        try{
+          const converted=await normalizeVoiceRecordingForPlayback(blob);
+          if(converted?.blob?.size)playableBlob=converted.blob;
+        }catch{}
+      }
       const dataUrl=await new Promise((resolve,reject)=>{
         const reader=new FileReader();
         reader.onload=()=>resolve(String(reader.result||''));
         reader.onerror=()=>reject(reader.error||new Error('Could not prepare voice message.'));
-        reader.readAsDataURL(blob);
+        reader.readAsDataURL(playableBlob);
       });
       audio.dataset.chatAudioObjectUrl='';
       audio.dataset.chatAudioHydrated='1';
@@ -4561,6 +4568,7 @@ function startChatAudioVisualizer(stream,mode='tap') {
     const AudioCtx=window.AudioContext||window.webkitAudioContext;
     if(AudioCtx){
       chatAudioContext=new AudioCtx();
+      chatAudioContext.resume?.().catch?.(()=>{});
       const source=chatAudioContext.createMediaStreamSource(stream);
       chatAudioAnalyser=chatAudioContext.createAnalyser();
       chatAudioAnalyser.fftSize=64;
@@ -7134,7 +7142,6 @@ $('#closeBookViewBtn').addEventListener('click', async () => {
 });
 $('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
 $('#universeModeBtn')?.addEventListener('click', async () => {
-  if (isNativeScrapellaApp()) return;
   try {
     if (activeScrapbook) await refreshEntries();
     showView('universe');
