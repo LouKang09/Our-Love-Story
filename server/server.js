@@ -1169,11 +1169,34 @@ async function deleteScrapbookCompletely(social, book, actor) {
   return { deleted:true, scrapbookId:book.id };
 }
 
-async function serveFile(res, file) {
+async function serveFile(res, file, req = null) {
   try {
     const stat = await fsp.stat(file);
     if (!stat.isFile()) return notFound(res);
-    res.writeHead(200, { 'Content-Type': contentType(file), 'Content-Length': stat.size, 'Cache-Control': file.includes(`${path.sep}uploads${path.sep}`) ? 'private, max-age=86400' : 'no-cache' });
+    const headers = {
+      'Content-Type': contentType(file),
+      'Accept-Ranges':'bytes',
+      'Cache-Control': file.includes(`${path.sep}uploads${path.sep}`) ? 'private, max-age=86400' : 'no-cache'
+    };
+    const range = String(req?.headers?.range || '');
+    if (range && /^bytes=\d*-\d*$/.test(range)) {
+      const [startRaw,endRaw] = range.replace('bytes=','').split('-');
+      let start = startRaw ? Number(startRaw) : 0;
+      let end = endRaw ? Number(endRaw) : stat.size - 1;
+      if (!startRaw && endRaw) {
+        const suffix = Math.max(1,Number(endRaw)||0);
+        start = Math.max(0,stat.size - suffix);
+        end = stat.size - 1;
+      }
+      start = Math.max(0,Math.min(stat.size - 1,start));
+      end = Math.max(start,Math.min(stat.size - 1,end));
+      headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+      headers['Content-Length'] = end - start + 1;
+      res.writeHead(206,headers);
+      return fs.createReadStream(file,{start,end}).pipe(res);
+    }
+    headers['Content-Length'] = stat.size;
+    res.writeHead(200, headers);
     fs.createReadStream(file).pipe(res);
   } catch { notFound(res); }
 }
@@ -2750,6 +2773,7 @@ const server = http.createServer(async (req, res) => {
       } else {
         const chatMessage = social.chatMessages?.find(message =>
           message?.image === assetPath ||
+          message?.audio === assetPath ||
           (Array.isArray(message?.images) && message.images.includes(assetPath))
         );
         if (chatMessage) {
@@ -2761,7 +2785,7 @@ const server = http.createServer(async (req, res) => {
           if (!isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
         }
       }
-      return serveFile(res, path.join(UPLOADS, path.basename(pathname)));
+      return serveFile(res, path.join(UPLOADS, path.basename(pathname)), req);
     }
     if (pathname === '/' || pathname === '/index.html') return serveFile(res, path.join(PUBLIC, 'index.html'));
     if (pathname.startsWith('/assets/')) {
