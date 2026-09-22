@@ -65,6 +65,7 @@ let chatPcmProcessor = null;
 let chatPcmSilentGain = null;
 let chatPcmChunks = [];
 let chatPcmSampleRate = 0;
+let nativeChatVoicePlayback = null;
 let reactionViewer = null;
 let viewedPersonData = null;
 let ownerOverrideTargetTag = null;
@@ -3873,6 +3874,83 @@ async function hydrateProtectedChatAudio(audio) {
     return false;
   }
 }
+function stopNativeChatVoiceMessage({ reset = false } = {}) {
+  const state=nativeChatVoicePlayback;
+  nativeChatVoicePlayback=null;
+  if(!state)return;
+  try{state.source?.stop?.();}catch{}
+  if(state.raf)cancelAnimationFrame(state.raf);
+  const player=state.player;
+  if(player){
+    player.classList.remove('playing');
+    const play=player.querySelector('.chat-voice-play span');
+    if(play)play.textContent='▶';
+    if(reset){
+      const bars=[...player.querySelectorAll('.chat-voice-wave i')];
+      bars.forEach(bar=>bar.classList.remove('played'));
+      const duration=player.querySelector('.chat-voice-duration');
+      if(duration)duration.textContent=formatAudioTime(state.buffer?.duration||0);
+    }
+  }
+}
+async function playNativeChatVoiceMessage(player,audio) {
+  if(!isNativeScrapellaApp()||!player||!audio)return false;
+  if(nativeChatVoicePlayback?.player===player){
+    stopNativeChatVoiceMessage();
+    return true;
+  }
+  stopNativeChatVoiceMessage();
+  const sourceUrl=String(audio.dataset.chatAudioSrc||audio.getAttribute('src')||'');
+  if(!sourceUrl)return false;
+  const playButton=player.querySelector('.chat-voice-play');
+  const playIcon=playButton?.querySelector('span');
+  const durationEl=player.querySelector('.chat-voice-duration');
+  const bars=[...player.querySelectorAll('.chat-voice-wave i')];
+  if(playButton)playButton.disabled=true;
+  try{
+    const response=await fetch(sourceUrl,{credentials:'same-origin',cache:'no-store'});
+    if(!response.ok)throw new Error(`Voice fetch failed (${response.status})`);
+    const bytes=await response.arrayBuffer();
+    if(!bytes.byteLength)throw new Error('Voice message is empty.');
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtx)throw new Error('Audio playback is unavailable.');
+    const ctx=new AudioCtx();
+    try{await ctx.resume?.();}catch{}
+    const buffer=await ctx.decodeAudioData(bytes.slice(0));
+    const node=ctx.createBufferSource();
+    node.buffer=buffer;
+    node.connect(ctx.destination);
+    const startedAt=ctx.currentTime;
+    const state={player,audio,ctx,source:node,buffer,startedAt,raf:0,ended:false};
+    nativeChatVoicePlayback=state;
+    player.classList.add('playing');
+    if(playIcon)playIcon.textContent='Ⅱ';
+    if(durationEl)durationEl.textContent='0:00';
+    const paint=()=>{
+      if(nativeChatVoicePlayback!==state)return;
+      const elapsed=Math.max(0,Math.min(buffer.duration,ctx.currentTime-startedAt));
+      const ratio=buffer.duration?elapsed/buffer.duration:0;
+      bars.forEach((bar,index)=>bar.classList.toggle('played',(index+1)/Math.max(1,bars.length)<=ratio));
+      if(durationEl)durationEl.textContent=formatAudioTime(elapsed);
+      state.raf=requestAnimationFrame(paint);
+    };
+    node.onended=()=>{
+      if(nativeChatVoicePlayback!==state)return;
+      state.ended=true;
+      stopNativeChatVoiceMessage({reset:true});
+      try{ctx.close?.();}catch{}
+    };
+    node.start(0);
+    paint();
+    return true;
+  }catch(err){
+    console.warn('Native voice playback failed:',err?.message||err);
+    stopNativeChatVoiceMessage();
+    return false;
+  }finally{
+    if(playButton)playButton.disabled=false;
+  }
+}
 function scrollChatToMessage(messageId) {
   const host=$('#chatMessages');
   if(!host||!messageId)return;
@@ -3912,8 +3990,13 @@ function wireChatVoicePlayers(host) {
     audio.addEventListener('ended',()=>{audio.currentTime=0;paint();});
     play.addEventListener('click',async e=>{
       e.stopPropagation();
+      if(isNativeScrapellaApp()){
+        const ok=await playNativeChatVoiceMessage(player,audio);
+        if(!ok)showToast('Could not play that voice message.');
+        return;
+      }
       if(audio.paused){
-        if(audio.dataset.chatAudioHydrated!=='1' && (isNativeScrapellaApp() || isPhoneUI())) {
+        if(audio.dataset.chatAudioHydrated!=='1' && isPhoneUI()) {
           play.disabled=true;
           await hydrateProtectedChatAudio(audio);
           play.disabled=false;
@@ -3921,8 +4004,6 @@ function wireChatVoicePlayers(host) {
         try {
           await audio.play();
         } catch {
-          // Retry once through an authenticated blob in case the native media
-          // stack rejected the protected URL directly.
           audio.dataset.chatAudioHydrated='';
           const hydrated=await hydrateProtectedChatAudio(audio);
           if(hydrated){
@@ -3939,7 +4020,7 @@ function wireChatVoicePlayers(host) {
       audio.currentTime=Math.max(0,Math.min(audio.duration,((e.clientX-rect.left)/rect.width)*audio.duration));
       paint();
     });
-    if (isNativeScrapellaApp() || isPhoneUI()) {
+    if (!isNativeScrapellaApp() && isPhoneUI()) {
       hydrateProtectedChatAudio(audio).catch(()=>{});
     }
     paint();
