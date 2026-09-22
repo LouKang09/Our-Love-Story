@@ -94,7 +94,7 @@ let profileViewerX = 0;
 let profileViewerY = 0;
 const profileViewerPointers = new Map();
 let profileViewerGesture = null;
-let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.' };
+let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.', nativePushEnabled:false };
 let toastTimer;
 let liveEventSource = null;
 let realtimeEntryTimer = null;
@@ -6657,6 +6657,8 @@ async function saveReminderSettings(enabled, reminderTime) {
   return data.settings;
 }
 let nativeChatNotificationsReady = false;
+let nativePushRegistrationReady = false;
+let nativePushToken = '';
 function nativeNotificationId(value='') {
   const text=String(value||Date.now());
   let hash=0;
@@ -6664,60 +6666,117 @@ function nativeNotificationId(value='') {
   return Math.abs(hash || Date.now()) % 2147483000;
 }
 async function ensureNativeChatNotifications() {
-  if (!isNativeScrapellaApp() || nativeChatNotificationsReady) return;
+  if (!isNativeScrapellaApp()) return;
   const local = nativePlugin('LocalNotifications');
-  if (!local) return;
-  try {
-    let permission = local.checkPermissions ? await permissionTimeout(local.checkPermissions(),4000) : null;
-    if (permission?.display !== 'granted' && local.requestPermissions) {
-      permission = await permissionTimeout(local.requestPermissions(),9000);
-    }
-    if (nativePlatform() === 'android' && local.createChannel) {
-      await local.createChannel({
-        id:'messages',
-        name:'Messages',
-        description:'Scrapella chat messages',
-        importance:5,
-        visibility:1,
-        vibration:true
-      }).catch(()=>{});
-    }
-    if (local.addListener) {
-      await local.addListener('localNotificationActionPerformed', async event => {
-        const chatId=String(event?.notification?.extra?.chatId || '');
-        if (!chatId) return;
-        showView('messages');
-        await loadChats().catch(()=>{});
-        if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
-      });
-    }
-    nativeChatNotificationsReady = permission?.display === 'granted';
+  const push = nativePlugin('PushNotifications');
 
-    // Some Android WebViews expose the Web Push API. When available, also
-    // subscribe the native shell to the same server push channel used by the web app.
-    // This is optional; LocalNotifications remains the realtime fallback.
-    if (config.pushEnabled && 'serviceWorker' in navigator && 'PushManager' in window) {
-      try {
-        const registration=await getPushRegistration();
-        let subscription=await registration.pushManager.getSubscription();
-        if(!subscription){
-          subscription=await registration.pushManager.subscribe({
-            userVisibleOnly:true,
-            applicationServerKey:urlBase64ToUint8Array(config.pushPublicKey)
-          });
-        }
-        await api('/api/push/subscribe',{
-          method:'POST',
-          body:JSON.stringify({
-            subscription:subscription.toJSON(),
-            enabled:me?.notifications?.enabled===true,
-            reminderTime:me?.notifications?.reminderTime || '20:00',
-            timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-          })
+  try {
+    if (local && !nativeChatNotificationsReady) {
+      let permission = local.checkPermissions ? await permissionTimeout(local.checkPermissions(),4000) : null;
+      if (permission?.display !== 'granted' && local.requestPermissions) {
+        permission = await permissionTimeout(local.requestPermissions(),9000);
+      }
+      if (nativePlatform() === 'android' && local.createChannel) {
+        await local.createChannel({
+          id:'messages',
+          name:'Messages',
+          description:'Scrapella chat messages',
+          importance:5,
+          visibility:1,
+          vibration:true,
+          sound:'default'
+        }).catch(()=>{});
+      }
+      if (local.addListener) {
+        await local.addListener('localNotificationActionPerformed', async event => {
+          const chatId=String(event?.notification?.extra?.chatId || '');
+          if (!chatId) return;
+          showView('messages');
+          await loadChats().catch(()=>{});
+          if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
         });
-      } catch {}
+      }
+      nativeChatNotificationsReady = permission?.display === 'granted';
     }
   } catch {}
+
+  // Register the actual OS push token so messages can arrive even when
+  // Scrapella is backgrounded or closed. This uses Capacitor PushNotifications.
+  try {
+    if (push && !nativePushRegistrationReady) {
+      nativePushRegistrationReady = true;
+      if (push.addListener) {
+        await push.addListener('registration', async token => {
+          nativePushToken=String(token?.value || '');
+          if (!nativePushToken) return;
+          try {
+            const result=await api('/api/push/native/register',{
+              method:'POST',
+              body:JSON.stringify({token:nativePushToken,platform:nativePlatform()})
+            });
+            config.nativePushEnabled=result?.nativePushReady===true;
+          } catch {}
+        });
+        await push.addListener('registrationError', error => {
+          console.warn('Native push registration failed:',error?.error || error?.message || error);
+        });
+        await push.addListener('pushNotificationActionPerformed', async event => {
+          const data=event?.notification?.data || {};
+          const url=String(data.url || '');
+          const match=url.match(/[?&]messages=([^&]+)/);
+          const chatId=match ? decodeURIComponent(match[1]) : '';
+          if (chatId) {
+            showView('messages');
+            await loadChats().catch(()=>{});
+            if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
+          } else if (url.includes('beta=secret')) {
+            showView('universe');
+            universeLabSetMode('secret');
+          } else if (url.includes('notifications=1')) {
+            loadNotificationHub({markRead:true}).catch(()=>{});
+          }
+        });
+        await push.addListener('pushNotificationReceived', notification => {
+          // Foreground push events are already visible in-app. LocalNotifications
+          // mirrors them into the system tray when appropriate.
+          const data=notification?.data || {};
+          const match=String(data.url||'').match(/[?&]messages=([^&]+)/);
+          const chatId=match ? decodeURIComponent(match[1]) : '';
+          if (chatId) {
+            showNativeChatNotification({chatId,from:'',messageId:String(notification?.id||Date.now())}).catch(()=>{});
+          }
+        });
+      }
+      let permission=push.checkPermissions ? await permissionTimeout(push.checkPermissions(),4000) : null;
+      if (permission?.receive !== 'granted' && push.requestPermissions) {
+        permission=await permissionTimeout(push.requestPermissions(),9000);
+      }
+      if (permission?.receive === 'granted' && push.register) await push.register();
+    }
+  } catch {}
+
+  // Web Push remains an additional fallback where supported.
+  if (config.pushEnabled && 'serviceWorker' in navigator && 'PushManager' in window) {
+    try {
+      const registration=await getPushRegistration();
+      let subscription=await registration.pushManager.getSubscription();
+      if(!subscription){
+        subscription=await registration.pushManager.subscribe({
+          userVisibleOnly:true,
+          applicationServerKey:urlBase64ToUint8Array(config.pushPublicKey)
+        });
+      }
+      await api('/api/push/subscribe',{
+        method:'POST',
+        body:JSON.stringify({
+          subscription:subscription.toJSON(),
+          enabled:me?.notifications?.enabled===true,
+          reminderTime:me?.notifications?.reminderTime || '20:00',
+          timezone:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+        })
+      });
+    } catch {}
+  }
 }
 async function showNativeChatNotification(payload = {}) {
   if (!isNativeScrapellaApp() || !payload?.chatId || payload.from === me?.tag) return;
