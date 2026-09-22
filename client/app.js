@@ -3878,8 +3878,17 @@ function stopNativeChatVoiceMessage({ reset = false } = {}) {
   const state=nativeChatVoicePlayback;
   nativeChatVoicePlayback=null;
   if(!state)return;
-  try{state.source?.stop?.();}catch{}
   if(state.raf)cancelAnimationFrame(state.raf);
+  if(state.audio){
+    try{state.audio.pause();}catch{}
+    if(reset){
+      try{state.audio.currentTime=0;}catch{}
+    }
+  }
+  const nativeAudio=nativePlugin('NativeAudioPlayer');
+  if(state.native && nativeAudio?.stop) nativeAudio.stop().catch(()=>{});
+  try{state.source?.stop?.();}catch{}
+  try{state.ctx?.close?.();}catch{}
   const player=state.player;
   if(player){
     player.classList.remove('playing');
@@ -3889,9 +3898,41 @@ function stopNativeChatVoiceMessage({ reset = false } = {}) {
       const bars=[...player.querySelectorAll('.chat-voice-wave i')];
       bars.forEach(bar=>bar.classList.remove('played'));
       const duration=player.querySelector('.chat-voice-duration');
-      if(duration)duration.textContent=formatAudioTime(state.buffer?.duration||0);
+      const total=Number(state.duration)||Number(state.buffer?.duration)||Number(state.audio?.duration)||0;
+      if(duration)duration.textContent=formatAudioTime(total);
     }
   }
+}
+async function prepareNativeVoiceBlob(sourceUrl) {
+  const response=await fetch(sourceUrl,{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok)throw new Error(`Voice fetch failed (${response.status})`);
+  let blob=await response.blob();
+  if(!blob.size)throw new Error('Voice message is empty.');
+  if(!/audio\/(wav|wave|x-wav)/i.test(String(blob.type||''))){
+    try{
+      const normalized=await normalizeVoiceRecordingForPlayback(blob);
+      if(normalized?.blob?.size)blob=normalized.blob;
+    }catch{}
+  }
+  return blob;
+}
+async function nativeVoiceFileUrl(blob, messageId='voice') {
+  const filesystem=nativePlugin('Filesystem');
+  if(!filesystem?.writeFile)return '';
+  const type=String(blob?.type||'audio/wav').toLowerCase();
+  const ext=type.includes('ogg')?'ogg':type.includes('mp4')?'m4a':type.includes('webm')?'webm':'wav';
+  const safeId=String(messageId||Date.now()).replace(/[^a-z0-9_-]/gi,'-');
+  const path=`chat-voice-${safeId}.${ext}`;
+  const data=await blobToBase64(blob);
+  const saved=await filesystem.writeFile({path,data,directory:'CACHE',recursive:true});
+  let uri=String(saved?.uri||'');
+  if(!uri&&filesystem.getUri){
+    const located=await filesystem.getUri({path,directory:'CACHE'});
+    uri=String(located?.uri||'');
+  }
+  if(!uri)return '';
+  try{return window.Capacitor?.convertFileSrc?.(uri)||uri;}
+  catch{return uri;}
 }
 async function playNativeChatVoiceMessage(player,audio) {
   if(!isNativeScrapellaApp()||!player||!audio)return false;
@@ -3908,40 +3949,62 @@ async function playNativeChatVoiceMessage(player,audio) {
   const bars=[...player.querySelectorAll('.chat-voice-wave i')];
   if(playButton)playButton.disabled=true;
   try{
-    const response=await fetch(sourceUrl,{credentials:'same-origin',cache:'no-store'});
-    if(!response.ok)throw new Error(`Voice fetch failed (${response.status})`);
-    const bytes=await response.arrayBuffer();
-    if(!bytes.byteLength)throw new Error('Voice message is empty.');
-    const AudioCtx=window.AudioContext||window.webkitAudioContext;
-    if(!AudioCtx)throw new Error('Audio playback is unavailable.');
-    const ctx=new AudioCtx();
-    try{await ctx.resume?.();}catch{}
-    const buffer=await ctx.decodeAudioData(bytes.slice(0));
-    const node=ctx.createBufferSource();
-    node.buffer=buffer;
-    node.connect(ctx.destination);
-    const startedAt=ctx.currentTime;
-    const state={player,audio,ctx,source:node,buffer,startedAt,raf:0,ended:false};
+    const blob=await prepareNativeVoiceBlob(sourceUrl);
+    const nativeAudio=nativePlugin('NativeAudioPlayer');
+
+    if(nativeAudio?.play){
+      const data=await blobToBase64(blob);
+      const result=await nativeAudio.play({
+        data,
+        mime:String(blob.type||'audio/wav'),
+        messageId:String(player.dataset.messageId||Date.now())
+      });
+      const duration=Math.max(.1,Number(result?.durationMs||0)/1000);
+      const startedAt=performance.now();
+      const state={player,audio,native:true,duration,startedAt,raf:0};
+      nativeChatVoicePlayback=state;
+      player.classList.add('playing');
+      if(playIcon)playIcon.textContent='Ⅱ';
+      const paint=()=>{
+        if(nativeChatVoicePlayback!==state)return;
+        const elapsed=Math.min(duration,Math.max(0,(performance.now()-startedAt)/1000));
+        const ratio=duration?elapsed/duration:0;
+        bars.forEach((bar,index)=>bar.classList.toggle('played',(index+1)/Math.max(1,bars.length)<=ratio));
+        if(durationEl)durationEl.textContent=formatAudioTime(elapsed);
+        if(elapsed>=duration){
+          stopNativeChatVoiceMessage({reset:true});
+          return;
+        }
+        state.raf=requestAnimationFrame(paint);
+      };
+      paint();
+      return true;
+    }
+
+    // Fallback for iOS/current installs that do not yet contain the native player:
+    // write the authenticated attachment into the app cache, then let the WebView
+    // play a local file instead of a protected remote URL.
+    const localUrl=await nativeVoiceFileUrl(blob,player.dataset.messageId||Date.now());
+    if(localUrl){
+      audio.src=localUrl;
+      audio.dataset.chatAudioHydrated='1';
+      audio.load();
+    }else{
+      const dataUrl=await new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>resolve(String(reader.result||''));
+        reader.onerror=()=>reject(reader.error||new Error('Could not prepare voice message.'));
+        reader.readAsDataURL(blob);
+      });
+      audio.src=dataUrl;
+      audio.dataset.chatAudioHydrated='1';
+      audio.load();
+    }
+    await audio.play();
+    const state={player,audio,native:false,duration:Number(audio.duration)||0,startedAt:performance.now(),raf:0};
     nativeChatVoicePlayback=state;
     player.classList.add('playing');
     if(playIcon)playIcon.textContent='Ⅱ';
-    if(durationEl)durationEl.textContent='0:00';
-    const paint=()=>{
-      if(nativeChatVoicePlayback!==state)return;
-      const elapsed=Math.max(0,Math.min(buffer.duration,ctx.currentTime-startedAt));
-      const ratio=buffer.duration?elapsed/buffer.duration:0;
-      bars.forEach((bar,index)=>bar.classList.toggle('played',(index+1)/Math.max(1,bars.length)<=ratio));
-      if(durationEl)durationEl.textContent=formatAudioTime(elapsed);
-      state.raf=requestAnimationFrame(paint);
-    };
-    node.onended=()=>{
-      if(nativeChatVoicePlayback!==state)return;
-      state.ended=true;
-      stopNativeChatVoiceMessage({reset:true});
-      try{ctx.close?.();}catch{}
-    };
-    node.start(0);
-    paint();
     return true;
   }catch(err){
     console.warn('Native voice playback failed:',err?.message||err);
