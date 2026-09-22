@@ -192,8 +192,8 @@ jobs:
           gradle_path = Path("android/app/build.gradle")
           gradle = gradle_path.read_text()
 
-          gradle = re.sub(r'versionCode\s+\d+', 'versionCode 232', gradle, count=1)
-          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.2.12"', gradle, count=1)
+          gradle = re.sub(r'versionCode\s+\d+', 'versionCode 233', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.2.13"', gradle, count=1)
 
           if 'scrapella-ci-release.keystore' not in gradle:
               gradle = gradle.replace(
@@ -265,7 +265,7 @@ jobs:
       - name: Upload Scrapella Android release APK
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-android-release-v2.2.12
+          name: scrapella-android-release-v2.2.13
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
