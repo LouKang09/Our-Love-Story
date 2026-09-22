@@ -12996,3 +12996,72 @@ html.native-app .universe-lab-tabs button{
   font-size:8px;
   padding:8px 10px;
 }
+
+
+/* ===== 2026-09-22 SECRET BETA + LIVING THEME POLISH ===== */
+.mobile-universe-back{display:none}
+html.native-app .mobile-universe-back{display:inline-flex!important;width:max-content;margin:2px 2px 0}
+@media(max-width:800px){html.web-memory-preview .mobile-universe-back{display:inline-flex!important;width:max-content;margin:2px 2px 0}}
+
+.secret-beta-layout{display:grid;grid-template-columns:minmax(300px,.72fr) minmax(0,1.28fr);gap:14px}
+.secret-tag-field{position:relative}
+.secret-tag-suggestions{
+  position:absolute;z-index:30;left:0;right:0;top:calc(100% + 5px);
+  overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--paper);
+  box-shadow:0 14px 34px rgba(56,37,42,.16)
+}
+.secret-tag-suggestions button{width:100%;display:flex;align-items:center;gap:8px;padding:8px 9px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer}
+.secret-tag-suggestions button:last-child{border-bottom:0}
+.secret-tag-suggestions button:hover{background:var(--rose-soft)}
+.secret-tag-avatar{width:30px!important;height:30px!important}
+.secret-tag-suggestions span{min-width:0;display:grid;gap:2px}.secret-tag-suggestions strong{color:var(--ink);font-size:9px}.secret-tag-suggestions small{color:var(--muted);font-size:7px}
+.secret-tag-empty{padding:10px;color:var(--muted);font-size:8px}
+.secret-contributor-chips{display:flex;flex-wrap:wrap;gap:5px}
+.secret-contributor-chips button{padding:5px 7px;border:1px solid rgba(141,84,99,.15);border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:7px;font-weight:800}
+.secret-project-list{display:grid;gap:10px}
+.secret-project-card{padding:13px;border:1px solid rgba(136,82,96,.14);border-radius:15px;background:rgba(255,255,255,.5)}
+.secret-project-card>header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px}
+.secret-project-card>header small{color:var(--rose-dark);font-size:7px;font-weight:800;letter-spacing:.06em}
+.secret-project-card>header strong{display:block;margin:4px 0;color:var(--ink);font:700 16px/1.1 Georgia,serif}
+.secret-project-card>header p{margin:0;color:var(--muted);font-size:8px}
+.secret-project-people{display:flex;gap:7px;flex-wrap:wrap;margin:7px 0 10px}
+.secret-project-people span{padding:4px 7px;border-radius:999px;background:rgba(143,87,102,.07);color:var(--muted);font-size:7px}
+.secret-project-card.sealed{display:grid;grid-template-columns:50px 1fr;gap:12px;align-items:center;min-height:110px;background:linear-gradient(145deg,#f2e4e5,#fff9f2)}
+.secret-sealed-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;background:var(--rose-soft);color:var(--rose-dark);font-size:22px}
+.secret-project-card.sealed small{color:var(--rose-dark);font-size:7px;font-weight:800}.secret-project-card.sealed strong{display:block;margin:5px 0;color:var(--ink);font:700 15px/1.15 Georgia,serif}.secret-project-card.sealed p,.secret-project-card.sealed span{margin:0;color:var(--muted);font-size:8px}
+.secret-project-card.revealed{border-color:rgba(89,151,107,.28);box-shadow:0 0 0 3px rgba(89,151,107,.05)}
+.secret-add-contribution{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:7px;align-items:end;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.secret-add-contribution textarea{min-height:64px;padding:9px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);resize:vertical}
+.secret-add-contribution label,.secret-add-contribution button{min-height:38px;font-size:8px}
+.secret-add-contribution .secret-photo-name{grid-column:1/-1;color:var(--muted);font-size:7px}
+.secret-contribution-grid article img{width:100%;max-height:190px;object-fit:cover;border-radius:9px;margin-bottom:7px}
+.secret-contribution-grid time{display:block;margin-top:5px;color:var(--muted);font-size:6px}
+.secret-open-banner{display:flex;gap:8px;align-items:center;margin-top:10px;padding:10px;border-radius:11px;background:#e8f5ea;color:#346742}.secret-open-banner strong{font-size:9px}.secret-open-banner span{font-size:8px}
+
+.theme-behavior-card{display:grid;gap:3px;margin:12px auto 0;width:min(560px,80%);padding:11px 13px;border-radius:12px;background:rgba(255,255,255,.5);color:#584747}
+.theme-behavior-card strong{font-size:10px}.theme-behavior-card span{font-size:8px;line-height:1.4}
+#memoryUniverseView[data-living-theme="travel"]{--universe-accent:#6f9594}
+#memoryUniverseView[data-living-theme="childhood"]{--universe-accent:#9a7bac}
+#memoryUniverseView[data-living-theme="letters"]{--universe-accent:#a76278}
+#memoryUniverseView[data-living-theme="school"]{--universe-accent:#71816a}
+#memoryUniverseView[data-living-theme="family"]{--universe-accent:#8b6f56}
+#memoryUniverseView[data-living-theme="faith"]{--universe-accent:#8b795b}
+#memoryUniverseView[data-living-theme] .universe-hero{border-color:color-mix(in srgb,var(--universe-accent) 28%,transparent)}
+#memoryUniverseView[data-living-theme] .universe-beta{background:color-mix(in srgb,var(--universe-accent) 20%,white)}
+#memoryUniverseView[data-living-theme="travel"] .universe-hero{background:radial-gradient(circle at 80% 15%,rgba(98,146,144,.24),transparent 30%),linear-gradient(135deg,#f7fbf7,#eee6d5)}
+#memoryUniverseView[data-living-theme="childhood"] .universe-hero{background:radial-gradient(circle at 80% 15%,rgba(166,135,193,.22),transparent 30%),linear-gradient(135deg,#fff8ee,#efe7f6)}
+#memoryUniverseView[data-living-theme="letters"] .universe-hero{background:radial-gradient(circle at 80% 15%,rgba(188,100,127,.22),transparent 30%),linear-gradient(135deg,#fff7f4,#f0dddd)}
+#memoryUniverseView[data-living-theme="school"] .universe-hero{background:repeating-linear-gradient(to bottom,#f7f8ee 0,#f7f8ee 28px,#dfe5dc 29px)}
+#memoryUniverseView[data-living-theme="family"] .universe-hero{background:radial-gradient(circle at 80% 15%,rgba(139,111,86,.19),transparent 30%),linear-gradient(135deg,#f8f0e3,#e7d7c3)}
+#memoryUniverseView[data-living-theme="faith"] .universe-hero{background:radial-gradient(circle at 80% 15%,rgba(139,121,91,.18),transparent 30%),linear-gradient(135deg,#faf7ed,#e7e0d2)}
+
+html[data-theme="night"] .secret-project-card,
+html[data-theme="night"] .secret-tag-suggestions{background:#2d2528;border-color:#4d3c42}
+html[data-theme="night"] .secret-project-card.sealed{background:linear-gradient(145deg,#34272c,#2b2326)}
+html[data-theme="night"] .secret-open-banner{background:#294331;color:#bfe0c6}
+
+@media(max-width:850px){
+  .secret-beta-layout{grid-template-columns:1fr}
+  .secret-add-contribution{grid-template-columns:1fr 1fr}
+  .secret-add-contribution textarea{grid-column:1/-1}
+}
