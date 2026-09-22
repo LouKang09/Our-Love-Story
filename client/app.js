@@ -5587,7 +5587,7 @@ function renderUniverseInterviewLab() {
     });
     answers[entry.id]=next;
     saveUniversePreview('interviews',answers);
-    showToast('Memory interview saved in this browser.');
+    showToast('Memory interview saved.');
   });
 }
 
