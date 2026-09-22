@@ -807,10 +807,12 @@ async function prepareMobileBookView() {
   if (!mobileBookContextTag && me?.tag) mobileBookContextTag = me.tag;
   const options = mobileBookOptions();
   const target = options.find(book => book.id === activeScrapbook?.id) || options[0] || null;
-  if (target && target.id !== activeScrapbook?.id) {
+  if (target && (target.id !== activeScrapbook?.id || currentMode === 'universe' || entries.some(entry => entry.scrapbookId && entry.scrapbookId !== target.id))) {
     await loadSession(target.id);
     activeScrapbook = scrapbooks.find(book => book.id === target.id) || target;
     localStorage.setItem('activeScrapbookId', target.id);
+  } else if (target && activeScrapbook?.id === target.id) {
+    await refreshEntries();
   }
   renderScrapbookPicker();
   renderMobileBookShelf();
