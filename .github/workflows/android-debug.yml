@@ -84,8 +84,8 @@ jobs:
                   registerPlugin(MicrophonePermissionPlugin.class);
                   registerPlugin(NativeAudioPlayerPlugin.class);
                   super.onCreate(savedInstanceState);
-                  createMessageNotificationChannel();
-                  hideNavigationBar();
+                  try { createMessageNotificationChannel(); } catch (Exception ignored) {}
+                  try { hideNavigationBar(); } catch (Exception ignored) {}
               }
 
               private void createMessageNotificationChannel() {
@@ -107,7 +107,9 @@ jobs:
               @Override
               public void onWindowFocusChanged(boolean hasFocus) {
                   super.onWindowFocusChanged(hasFocus);
-                  if (hasFocus) hideNavigationBar();
+                  if (hasFocus) {
+                      try { hideNavigationBar(); } catch (Exception ignored) {}
+                  }
               }
 
               private void hideNavigationBar() {
@@ -134,64 +136,108 @@ jobs:
           cat > android/app/src/main/java/com/loukang/scrapella/NativeAudioPlayerPlugin.java <<'JAVA'
           package com.loukang.scrapella;
 
+          import android.media.AudioAttributes;
           import android.media.MediaPlayer;
-          import android.util.Base64;
+          import android.net.Uri;
+          import android.webkit.CookieManager;
           import com.getcapacitor.JSObject;
           import com.getcapacitor.Plugin;
           import com.getcapacitor.PluginCall;
           import com.getcapacitor.PluginMethod;
           import com.getcapacitor.annotation.CapacitorPlugin;
-          import java.io.File;
-          import java.io.FileOutputStream;
+          import java.util.HashMap;
+          import java.util.Map;
 
           @CapacitorPlugin(name = "NativeAudioPlayer")
           public class NativeAudioPlayerPlugin extends Plugin {
               private MediaPlayer player;
-              private File tempFile;
 
-              private void stopInternal() {
-                  try {
-                      if (player != null) {
-                          if (player.isPlaying()) player.stop();
-                          player.release();
-                      }
-                  } catch (Exception ignored) {}
+              private synchronized void stopInternal() {
+                  MediaPlayer current = player;
                   player = null;
-                  try {
-                      if (tempFile != null && tempFile.exists()) tempFile.delete();
-                  } catch (Exception ignored) {}
-                  tempFile = null;
+                  if (current == null) return;
+                  try { current.setOnPreparedListener(null); } catch (Exception ignored) {}
+                  try { current.setOnCompletionListener(null); } catch (Exception ignored) {}
+                  try { current.setOnErrorListener(null); } catch (Exception ignored) {}
+                  try { current.stop(); } catch (Exception ignored) {}
+                  try { current.reset(); } catch (Exception ignored) {}
+                  try { current.release(); } catch (Exception ignored) {}
               }
 
               @PluginMethod
               public void play(PluginCall call) {
-                  String data = call.getString("data", "");
-                  if (data == null || data.isEmpty()) {
-                      call.reject("Missing audio data.");
+                  String url = call.getString("url", "");
+                  if (url == null || url.trim().isEmpty()) {
+                      call.reject("Missing audio URL.");
                       return;
                   }
+
                   try {
                       stopInternal();
-                      byte[] bytes = Base64.decode(data, Base64.DEFAULT);
-                      tempFile = File.createTempFile("scrapella-voice-", ".wav", getContext().getCacheDir());
-                      try (FileOutputStream output = new FileOutputStream(tempFile)) {
-                          output.write(bytes);
-                          output.flush();
-                      }
-                      player = new MediaPlayer();
-                      player.setDataSource(tempFile.getAbsolutePath());
-                      player.setOnCompletionListener(mp -> {
+
+                      MediaPlayer next = new MediaPlayer();
+                      player = next;
+                      final boolean[] settled = { false };
+
+                      next.setAudioAttributes(
+                          new AudioAttributes.Builder()
+                              .setUsage(AudioAttributes.USAGE_MEDIA)
+                              .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                              .build()
+                      );
+
+                      Map<String, String> headers = new HashMap<>();
+                      try {
+                          String cookie = CookieManager.getInstance().getCookie(url);
+                          if (cookie != null && !cookie.trim().isEmpty()) {
+                              headers.put("Cookie", cookie);
+                          }
+                      } catch (Exception ignored) {}
+                      headers.put("User-Agent", "Scrapella-Android");
+
+                      next.setDataSource(getContext(), Uri.parse(url), headers);
+
+                      next.setOnPreparedListener(mp -> {
+                          if (player != mp) {
+                              try { mp.release(); } catch (Exception ignored) {}
+                              return;
+                          }
+                          try {
+                              int durationMs = Math.max(0, mp.getDuration());
+                              mp.start();
+                              JSObject result = new JSObject();
+                              result.put("durationMs", durationMs);
+                              settled[0] = true;
+                              call.resolve(result);
+                          } catch (Exception error) {
+                              stopInternal();
+                              if (!settled[0]) call.reject("Could not start voice message.", error);
+                          }
+                      });
+
+                      next.setOnCompletionListener(mp -> {
+                          if (player != mp) return;
                           JSObject event = new JSObject();
                           event.put("ended", true);
                           notifyListeners("ended", event);
                           stopInternal();
                       });
-                      player.prepare();
-                      int durationMs = player.getDuration();
-                      player.start();
-                      JSObject result = new JSObject();
-                      result.put("durationMs", durationMs);
-                      call.resolve(result);
+
+                      next.setOnErrorListener((mp, what, extra) -> {
+                          if (player == mp) stopInternal();
+                          if (!settled[0]) {
+                              settled[0] = true;
+                              call.reject("Could not play voice message.");
+                          } else {
+                              JSObject event = new JSObject();
+                              event.put("what", what);
+                              event.put("extra", extra);
+                              notifyListeners("error", event);
+                          }
+                          return true;
+                      });
+
+                      next.prepareAsync();
                   } catch (Exception error) {
                       stopInternal();
                       call.reject("Could not play voice message.", error);
@@ -303,8 +349,8 @@ jobs:
           gradle_path = Path("android/app/build.gradle")
           gradle = gradle_path.read_text()
 
-          gradle = re.sub(r'versionCode\s+\d+', 'versionCode 234', gradle, count=1)
-          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.2.15"', gradle, count=1)
+          gradle = re.sub(r'versionCode\s+\d+', 'versionCode 235', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.2.16"', gradle, count=1)
 
           if 'scrapella-ci-release.keystore' not in gradle:
               gradle = gradle.replace(
@@ -376,7 +422,7 @@ jobs:
       - name: Upload Scrapella Android release APK
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-android-release-v2.2.15
+          name: scrapella-android-release-v2.2.16
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30

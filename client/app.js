@@ -3949,16 +3949,11 @@ async function playNativeChatVoiceMessage(player,audio) {
   const bars=[...player.querySelectorAll('.chat-voice-wave i')];
   if(playButton)playButton.disabled=true;
   try{
-    const blob=await prepareNativeVoiceBlob(sourceUrl);
     const nativeAudio=nativePlugin('NativeAudioPlayer');
 
     if(nativeAudio?.play){
-      const data=await blobToBase64(blob);
-      const result=await nativeAudio.play({
-        data,
-        mime:String(blob.type||'audio/wav'),
-        messageId:String(player.dataset.messageId||Date.now())
-      });
+      const absoluteUrl=new URL(sourceUrl,window.location.origin).href;
+      const result=await nativeAudio.play({url:absoluteUrl});
       const duration=Math.max(.1,Number(result?.durationMs||0)/1000);
       const startedAt=performance.now();
       const state={player,audio,native:true,duration,startedAt,raf:0};
@@ -3981,9 +3976,9 @@ async function playNativeChatVoiceMessage(player,audio) {
       return true;
     }
 
-    // Fallback for iOS/current installs that do not yet contain the native player:
-    // write the authenticated attachment into the app cache, then let the WebView
-    // play a local file instead of a protected remote URL.
+    // Fallback for iOS/current installs that do not yet contain the native player.
+    // Android avoids materializing the whole recording in bridge memory.
+    const blob=await prepareNativeVoiceBlob(sourceUrl);
     const localUrl=await nativeVoiceFileUrl(blob,player.dataset.messageId||Date.now());
     if(localUrl){
       audio.src=localUrl;
