@@ -4727,6 +4727,9 @@ async function refreshChatRealtime(payload = {}) {
   realtimeChatTimer = setTimeout(async () => {
     try {
       await loadChats();
+      if (payload.type === 'message' && payload.from !== me?.tag) {
+        showNativeChatNotification(payload).catch(()=>{});
+      }
       if (currentMode === 'messages' && activeChatId && payload.chatId === activeChatId && payload.from !== me?.tag) {
         await loadChatMessages(activeChatId);
       }
@@ -6416,6 +6419,72 @@ async function saveReminderSettings(enabled, reminderTime) {
   if (me) me.notifications = data.settings;
   return data.settings;
 }
+let nativeChatNotificationsReady = false;
+function nativeNotificationId(value='') {
+  const text=String(value||Date.now());
+  let hash=0;
+  for (let i=0;i<text.length;i++) hash=((hash<<5)-hash+text.charCodeAt(i))|0;
+  return Math.abs(hash || Date.now()) % 2147483000;
+}
+async function ensureNativeChatNotifications() {
+  if (!isNativeScrapellaApp() || nativeChatNotificationsReady) return;
+  const local = nativePlugin('LocalNotifications');
+  if (!local) return;
+  try {
+    let permission = local.checkPermissions ? await permissionTimeout(local.checkPermissions(),4000) : null;
+    if (permission?.display !== 'granted' && local.requestPermissions) {
+      permission = await permissionTimeout(local.requestPermissions(),9000);
+    }
+    if (nativePlatform() === 'android' && local.createChannel) {
+      await local.createChannel({
+        id:'messages',
+        name:'Messages',
+        description:'Scrapella chat messages',
+        importance:5,
+        visibility:1,
+        vibration:true
+      }).catch(()=>{});
+    }
+    if (local.addListener) {
+      await local.addListener('localNotificationActionPerformed', async event => {
+        const chatId=String(event?.notification?.extra?.chatId || '');
+        if (!chatId) return;
+        showView('messages');
+        await loadChats().catch(()=>{});
+        if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
+      });
+    }
+    nativeChatNotificationsReady = permission?.display === 'granted';
+  } catch {}
+}
+async function showNativeChatNotification(payload = {}) {
+  if (!isNativeScrapellaApp() || !payload?.chatId || payload.from === me?.tag) return;
+  if (document.visibilityState === 'visible' && currentMode === 'messages' && activeChatId === payload.chatId) return;
+  const local = nativePlugin('LocalNotifications');
+  if (!local) return;
+  await ensureNativeChatNotifications();
+  try {
+    const chat=chats.find(item=>item.id===payload.chatId);
+    if (chat?.muted || chat?.restricted) return;
+    const sender=chat?.type === 'private'
+      ? (chat.otherProfile?.displayName || chat.name || 'New message')
+      : (chat?.name || 'Group message');
+    const title=chat?.type === 'group' ? `${sender} · new message` : `${sender} sent you a message`;
+    const body=String(chat?.lastMessage?.text || chat?.lastMessageText || '').trim()
+      || (chat?.lastMessage?.audio ? '🎙 Voice message' : chat?.lastMessage?.image || chat?.lastMessage?.images?.length ? '📷 Photo' : 'Open Scrapella to read it.');
+    await local.schedule({
+      notifications:[{
+        id:nativeNotificationId(payload.messageId || payload.chatId + Date.now()),
+        title:String(title).slice(0,90),
+        body:String(body).slice(0,180),
+        channelId:nativePlatform()==='android' ? 'messages' : undefined,
+        schedule:{at:new Date(Date.now()+180)},
+        extra:{chatId:payload.chatId}
+      }]
+    });
+  } catch {}
+}
+
 async function updateNotificationStatus() {
   const el = $('#notificationStatus');
   if (!el) return;
@@ -6573,6 +6642,7 @@ async function enterApp() {
   initializePhoneHistory();
   connectLiveEvents();
   startPresenceHeartbeat();
+  ensureNativeChatNotifications().catch(()=>{});
   if (guideState.required) setTimeout(() => startGuide(true), 180);
   else maybeOpenReminderComposer();
 }
