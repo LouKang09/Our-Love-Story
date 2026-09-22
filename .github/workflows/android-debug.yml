@@ -52,6 +52,17 @@ jobs:
       - name: Generate Android project
         run: npx cap add android
 
+      - name: Configure Firebase Android push when credentials are available
+        env:
+          FIREBASE_ANDROID_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$FIREBASE_ANDROID_GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$FIREBASE_ANDROID_GOOGLE_SERVICES_JSON" > android/app/google-services.json
+            echo "Firebase Android push configuration installed."
+          else
+            echo "FIREBASE_ANDROID_GOOGLE_SERVICES_JSON is not configured; realtime/local notification fallback will still build."
+          fi
+
       - name: Keep navigation inside Scrapella and hide Android navigation bar
         run: |
           cat > android/app/src/main/java/com/loukang/scrapella/MainActivity.java <<'JAVA'
