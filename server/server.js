@@ -230,6 +230,7 @@ async function readSocial() {
   data.chatPreferences = data.chatPreferences && typeof data.chatPreferences === 'object' ? data.chatPreferences : {};
   data.blockedUsers = data.blockedUsers && typeof data.blockedUsers === 'object' ? data.blockedUsers : {};
   data.freedomWall = Array.isArray(data.freedomWall) ? data.freedomWall : [];
+  data.secretContributorProjects = Array.isArray(data.secretContributorProjects) ? data.secretContributorProjects : [];
   for (const book of data.scrapbooks) {
     if (book?.type !== 'group') continue;
     const members = Array.isArray(book.members) ? book.members.filter(Boolean) : [];
@@ -257,7 +258,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [] });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [], secretContributorProjects: [] });
   await ensureFile(PRESENCE_FILE, {});
   await loadPresenceStore();
 
@@ -697,6 +698,54 @@ async function sendUserPush(social, { to, title, body, tag = 'scrapbook-social',
     }
   }
 }
+function secretProjectDue(project, now = Date.now()) {
+  const when = Date.parse(project?.revealAt || '');
+  return Number.isFinite(when) && when <= now;
+}
+function secretProjectParticipants(project) {
+  return [...new Set([project?.owner, ...(project?.contributors || [])].filter(Boolean))];
+}
+function canContributeSecretProject(project, user) {
+  return Boolean(project && user && secretProjectParticipants(project).includes(user));
+}
+function canSeeSecretProject(project, user) {
+  if (!project || !user) return false;
+  if (canContributeSecretProject(project,user)) return true;
+  return project.recipient === user;
+}
+function decorateSecretProject(social, project, user) {
+  const due = secretProjectDue(project);
+  const contributor = canContributeSecretProject(project,user);
+  const recipient = project.recipient === user;
+  const sealedForRecipient = recipient && !due && !contributor;
+  const profiles = {};
+  for (const tag of new Set([project.owner, project.recipient, ...(project.contributors || []), ...(project.contributions || []).map(item=>item.author)].filter(Boolean))) {
+    profiles[tag] = publicProfileFor(social,tag);
+  }
+  return {
+    id:project.id,
+    owner:project.owner,
+    recipient:project.recipient,
+    contributors:contributor ? (project.contributors || []) : [],
+    title:sealedForRecipient ? 'A secret Scrapella memory is waiting for you' : project.title,
+    revealAt:project.revealAt,
+    revealDate:project.revealDate,
+    createdAt:project.createdAt,
+    role:contributor ? (project.owner===user?'owner':'contributor') : 'recipient',
+    due,
+    sealed:sealedForRecipient,
+    canContribute:contributor && !due,
+    profiles:sealedForRecipient ? { [project.recipient]:profiles[project.recipient] } : profiles,
+    contributions:sealedForRecipient ? [] : (project.contributions || []).map(item => ({
+      id:item.id,
+      author:item.author,
+      text:item.text || '',
+      image:item.image || '',
+      createdAt:item.createdAt
+    }))
+  };
+}
+
 async function sendMentionPush(social, { to, from, kind, excerpt = '', chatId = null }) {
   const actor = publicProfileFor(social, from);
   const name = actor.displayName || displayTag(from);
