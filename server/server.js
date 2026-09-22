@@ -680,8 +680,8 @@ function canViewBook(social, book, viewer) {
 }
 const MEMORY_UNIVERSE_STATE_TYPES = new Set([
   'layers','trails','interviews','voicePortraits','voiceMemories','letters','collaborative',
-  'prompts','anniversaries','rituals','memoryBox','livingTheme','peopleMemory','versions',
-  'vault','family','inherited','unfinished','faith','capsules','heirlooms','museum','archive'
+  'prompts','promptDrafts','anniversaries','rituals','memoryBox','livingTheme','peopleMemory','versions',
+  'vault','family','inherited','unfinished','faith','faithJournal','capsules','heirlooms','museum','archive'
 ]);
 function memoryUniverseBooksForViewer(social, target, viewer, { ownerOverride = false } = {}) {
   const following = isFollowing(social, viewer, target);
@@ -1500,7 +1500,7 @@ async function handleApi(req, res, url) {
       })),
       entries:visibleEntries,
       profiles,
-      state:canSeeExtended ? (social.memoryUniverseState?.[target] || {}) : {}
+      state:isSelf ? (social.memoryUniverseState?.[target] || {}) : {}
     });
   }
 
