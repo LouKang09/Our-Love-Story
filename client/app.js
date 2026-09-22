@@ -5834,9 +5834,22 @@ function wireSecretTagSearch(input,host,onSelect){
   if(!input||!host)return;
   let timer=null,seq=0;
   const close=()=>{host.classList.add('hidden');host.innerHTML='';};
+  const cleanValue=()=>String(input.value||'').trim().replace(/^@/,'').toLowerCase();
+  const selectExact=async()=>{
+    const q=cleanValue();
+    if(!q)return false;
+    try{
+      const data=await api(`/api/people?q=${encodeURIComponent(q)}`);
+      const exact=(data.people||[]).find(person=>String(person.tag||'').toLowerCase()===q && person.tag!==me?.tag);
+      if(!exact)return false;
+      onSelect(exact.tag,exact);
+      close();
+      return true;
+    }catch{return false;}
+  };
   input.addEventListener('input',()=>{
     clearTimeout(timer);
-    const q=String(input.value||'').trim().replace(/^@/,'').toLowerCase();
+    const q=cleanValue();
     if(!q){close();return;}
     const current=++seq;
     timer=setTimeout(async()=>{
@@ -5847,16 +5860,25 @@ function wireSecretTagSearch(input,host,onSelect){
         if(!people.length){host.innerHTML='<div class="secret-tag-empty">No matching @tag.</div>';host.classList.remove('hidden');return;}
         host.innerHTML=people.map(person=>`<button type="button" data-secret-tag="${escapeHtml(person.tag)}">${avatarHtml(person,'secret-tag-avatar')}<span><strong>${escapeHtml(person.displayName||person.tag)}</strong><small>@${escapeHtml(person.tag)}</small></span></button>`).join('');
         host.classList.remove('hidden');
-        host.querySelectorAll('[data-secret-tag]').forEach(btn=>btn.addEventListener('click',()=>{
-          onSelect(btn.dataset.secretTag);
+        host.querySelectorAll('[data-secret-tag]').forEach(btn=>btn.addEventListener('pointerdown',e=>{
+          e.preventDefault();
+          const person=people.find(item=>item.tag===btn.dataset.secretTag);
+          onSelect(btn.dataset.secretTag,person||null);
           close();
         }));
       }catch{close();}
-    },220);
+    },180);
   });
-  input.addEventListener('blur',()=>setTimeout(close,180));
+  input.addEventListener('keydown',async e=>{
+    if(!['Enter',',','Tab'].includes(e.key))return;
+    const q=cleanValue();
+    if(!q)return;
+    if(e.key!=='Tab')e.preventDefault();
+    const selected=await selectExact();
+    if(!selected&&e.key!=='Tab')showToast(`We could not find @${q}.`);
+  });
+  input.addEventListener('blur',()=>setTimeout(close,220));
 }
-
 async function renderUniverseSecretLab(){
   const stage=$('#universeLabStage');if(!stage)return;
   stage.innerHTML='<div class="universe-empty wide"><span>✉</span><strong>Opening Secret Contributors…</strong><p>Loading shared beta surprises.</p></div>';
