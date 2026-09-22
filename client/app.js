@@ -572,7 +572,7 @@ async function restorePhoneHistoryState(state) {
   const token = ++phoneHistoryRestoreToken;
   restoringPhoneHistory = true;
   try {
-    const mode = ['home','cover','book','stream','connections','messages','person'].includes(state?.mode) ? state.mode : 'home';
+    const mode = ['home','cover','book','stream','universe','connections','messages','person'].includes(state?.mode) ? state.mode : 'home';
     const targetBookId = state?.bookId || null;
     if (targetBookId && activeScrapbook?.id !== targetBookId) {
       await loadSession(targetBookId);
@@ -583,6 +583,13 @@ async function restorePhoneHistoryState(state) {
     if (mode === 'person' && state?.personTag) {
       clearOpenPhoneChatState();
       await openPersonProfile(state.personTag,{ preserveReturn:true });
+      return;
+    }
+
+    if (mode === 'universe') {
+      clearOpenPhoneChatState();
+      await loadMemoryUniverse(state?.contextTag || me.tag,{override:false});
+      showView('universe');
       return;
     }
 
@@ -624,6 +631,77 @@ function phoneBackButton(fallback) {
   }
   fallback?.();
 }
+
+let phonePullStartY=null;
+let phonePullDistance=0;
+let phonePullRefreshing=false;
+function phoneAtScrollTop(){
+  const docTop=Number(document.scrollingElement?.scrollTop||0);
+  const appTop=Number(journalApp?.scrollTop||0);
+  return Math.max(docTop,appTop)<=1;
+}
+function phonePullIndicator(){
+  let el=document.querySelector('.scrapella-pull-refresh');
+  if(!el){
+    el=document.createElement('div');
+    el.className='scrapella-pull-refresh';
+    el.innerHTML='<span>↻</span><b>Pull to refresh</b>';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+async function refreshNativePhoneContext(){
+  if(phonePullRefreshing || !me?.tag)return;
+  phonePullRefreshing=true;
+  const indicator=phonePullIndicator();
+  indicator.classList.add('refreshing','visible');
+  indicator.querySelector('b').textContent='Refreshing…';
+  const mode=currentMode;
+  try{
+    ownerOverrideTargetTag=null;
+    viewedPersonData=null;
+    mobileBookContextTag=me.tag;
+    universeTargetTag=me.tag;
+    universeOwnerOverride=false;
+    await loadSession(null);
+    if(mode==='universe'){
+      await loadMemoryUniverse(me.tag,{override:false});
+      showView('universe');
+    }else if(mode==='person'){
+      await openPersonProfile(me.tag,{preserveReturn:true});
+    }else if(mode==='book' || mode==='stream' || mode==='cover'){
+      await prepareMobileBookView();
+    }else{
+      showView(mode==='connections'?'connections':'home');
+    }
+    indicator.querySelector('b').textContent='Updated';
+  }catch(err){
+    indicator.querySelector('b').textContent='Could not refresh';
+    showToast(err?.message || 'Could not refresh Scrapella.');
+  }finally{
+    setTimeout(()=>{indicator.classList.remove('visible','refreshing');phonePullRefreshing=false;},520);
+  }
+}
+journalApp?.addEventListener('touchstart',e=>{
+  if(!isNativeScrapellaApp()||!isPhoneUI()||phonePullRefreshing||!phoneAtScrollTop()||e.touches.length!==1){phonePullStartY=null;return;}
+  phonePullStartY=e.touches[0].clientY;phonePullDistance=0;
+},{passive:true});
+journalApp?.addEventListener('touchmove',e=>{
+  if(phonePullStartY===null||e.touches.length!==1)return;
+  const delta=Math.max(0,e.touches[0].clientY-phonePullStartY);
+  phonePullDistance=Math.min(120,delta);
+  const indicator=phonePullIndicator();
+  indicator.classList.toggle('visible',phonePullDistance>12);
+  indicator.style.setProperty('--pull',String(Math.min(1,phonePullDistance/82)));
+  indicator.querySelector('b').textContent=phonePullDistance>=82?'Release to refresh':'Pull to refresh';
+},{passive:true});
+journalApp?.addEventListener('touchend',()=>{
+  if(phonePullStartY===null)return;
+  const shouldRefresh=phonePullDistance>=82 && phoneAtScrollTop();
+  phonePullStartY=null;phonePullDistance=0;
+  if(shouldRefresh)refreshNativePhoneContext();
+  else phonePullIndicator().classList.remove('visible');
+},{passive:true});
 
 function compactPhoneCount(value) {
   const count = Math.max(0, Number(value) || 0);
@@ -697,11 +775,12 @@ function renderMobileBookShelf() {
     context.innerHTML = `
       <div class="mobile-book-context-copy">
         <p class="eyebrow">${other ? 'VIEWING PROFILE' : 'YOUR SCRAPBOOK CIRCLE'}</p>
-        <div class="mobile-book-context-person">
+        <button class="mobile-book-context-person mobile-book-profile-link" type="button" data-profile-tag="${escapeHtml(profile.tag || me?.tag || '')}">
           ${avatarHtml(profile,'mobile-book-context-avatar')}
-          <span><strong>${escapeHtml(other ? (profile.displayName || profile.tag) : 'My scrapbooks')}</strong><small>${other ? '@' + escapeHtml(profile.tag || '') : 'Personal, Lovers, and Groups you belong to'}</small></span>
-        </div>
+          <span><strong>${escapeHtml(other ? (profile.displayName || profile.tag) : (profile.displayName || 'My profile'))}</strong><small>${other ? '@' + escapeHtml(profile.tag || '') : '@' + escapeHtml(me?.tag || '') + ' · tap to view account'}</small></span>
+        </button>
       </div>`;
+    wireProfileLinks(context);
   }
   const canWrite = Boolean(activeScrapbook && activeScrapbook.canWrite !== false);
   const canDeleteBook = Boolean(activeScrapbook && !other && (activeScrapbook.isOwner === true || (activeScrapbook.type === 'group' && activeScrapbook.isGroupAdmin === true)));
@@ -2916,6 +2995,16 @@ function closeProfileImageViewer() {
   profileViewerPointers.clear();
   profileViewerGesture = null;
 }
+journalApp?.addEventListener('click',e=>{
+  const img=e.target?.closest?.('img');
+  if(!img || img.closest('#profileImageViewer') || img.classList.contains('brand-header-logo'))return;
+  if(img.matches('.avatar,.person-profile-avatar,.mobile-book-context-avatar,.home-profile-avatar,.person-list-avatar,.notification-avatar,.chat-list-avatar,.chat-stack-avatar,.universe-person-avatar,.universe-detail-avatar,.memory-replay-avatar,.people-memory-avatar'))return;
+  const src=img.currentSrc || img.src;
+  if(!src)return;
+  e.preventDefault();
+  e.stopPropagation();
+  openProfileImageViewer({avatar:src,displayName:img.alt || 'Photo'});
+},true);
 function profileViewerGeometry() {
   const pts = [...profileViewerPointers.values()];
   if (pts.length < 2) return null;
@@ -3009,8 +3098,8 @@ function renderPersonProfile() {
   $('#personFollowingCount').textContent = compactPhoneCount(data.followingCount || 0);
 
   $('#personProfileActions').innerHTML = data.isSelf
-    ? '<button id="personEditOwnProfile" class="ghost" type="button">Edit my profile</button>'
-    : `<button class="primary person-message-btn" type="button">Message</button><button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>${data.overrideAvailable ? `<button id="personOverrideBtn" class="primary owner-override-btn ${data.overrideActive ? 'active' : ''}" type="button">${data.overrideActive ? 'Override active' : 'Override'}</button>` : ''}`;
+    ? '<button id="personMemoryUniverseBtn" class="primary" type="button">Memory Universe</button><button id="personEditOwnProfile" class="ghost" type="button">Edit my profile</button>'
+    : `<button id="personMemoryUniverseBtn" class="ghost" type="button">Memory Universe</button><button class="primary person-message-btn" type="button">Message</button><button class="${data.isFollowing ? 'ghost' : 'primary'} person-follow-toggle" type="button">${data.isFollowing ? 'Following' : 'Follow'}</button>${data.overrideAvailable ? `<button id="personOverrideBtn" class="primary owner-override-btn ${data.overrideActive ? 'active' : ''}" type="button">${data.overrideActive ? 'Override active' : 'Override'}</button>` : ''}`;
 
   const personalBooks = Array.isArray(data.personalScrapbooks)
     ? data.personalScrapbooks
@@ -3034,6 +3123,7 @@ function renderPersonProfile() {
 
   wireProfileLinks($('#personProfileIdentity'));
   $('#personAvatarZoomBtn')?.addEventListener('click', () => openProfileImageViewer(p));
+  $('#personMemoryUniverseBtn')?.addEventListener('click',()=>openMemoryUniverse(p.tag));
   $('#personEditOwnProfile')?.addEventListener('click', () => $('#profileBtn').click());
   $('#personProfileActions .person-message-btn')?.addEventListener('click', () => startPrivateChat(p.tag));
   $('#personOverrideBtn')?.addEventListener('click', async e => {
@@ -3310,7 +3400,7 @@ $('#homeSearchInput').addEventListener('input', e => {
 async function openHomeScrapbook(id, mode = 'book') {
   try {
     await loadSession(id);
-    const book = scrapbooks.find(b => b.id === id && b.type === 'personal');
+    const book = scrapbooks.find(b => b.id === id);
     if (!book) {
       showToast('That scrapbook is no longer shared with you.');
       showView('home');
@@ -5082,6 +5172,13 @@ async function refreshChatRealtime(payload = {}) {
 }
 
 let universeSelectedEntryId = null;
+let universeTargetTag = null;
+let universeContextProfile = null;
+let universeBooks = [];
+let universeCanSeeExtended = true;
+let universeOwnerOverride = false;
+let universeOfficialState = {};
+let universeStateSaveTimer = null;
 let universeReplayTimer = null;
 let universeReplayOverlay = null;
 function universeEntryImage(entry) {
@@ -5106,15 +5203,16 @@ function universeDateLabel(value, options = {month:'short',day:'numeric',year:'n
   const d = new Date(String(value || '') + 'T12:00:00');
   return Number.isNaN(d.getTime()) ? String(value || '') : new Intl.DateTimeFormat(undefined,options).format(d);
 }
-function openUniverseMemory(entryId) {
-  if (!entryId) return;
-  showView('stream');
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    const target = document.querySelector(`.timeline-item[data-entry-id="${CSS.escape(entryId)}"]`);
-    target?.scrollIntoView({behavior:'smooth',block:'center'});
-    target?.classList.add('universe-memory-focus');
-    setTimeout(()=>target?.classList.remove('universe-memory-focus'),1800);
-  }));
+async function openUniverseMemory(entryId) {
+  const entry=entries.find(item=>item.id===entryId);
+  if(!entry)return;
+  try{
+    if(entry.scrapbookId && activeScrapbook?.id!==entry.scrapbookId) await loadSession(entry.scrapbookId);
+    showView('stream');
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      document.querySelector(`#timeline [data-entry-id="${CSS.escape(entryId)}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
+    }));
+  }catch(err){showToast(err?.message || 'Could not open that memory.');}
 }
 function renderMemoryUniverseDetail(entry) {
   const host = $('#memoryUniverseDetail');
@@ -5171,7 +5269,7 @@ function renderMemoryConstellation(ordered) {
     if(p)lines.push(`<line class="constellation-line person-line" x1="${(p.x*10).toFixed(1)}" y1="${(p.y*6.5).toFixed(1)}" x2="${(point.x*10).toFixed(1)}" y2="${(point.y*6.5).toFixed(1)}" />`);
   });
   linesHost.innerHTML=lines.join('');
-  const center=`<div class="constellation-book-node" style="left:50%;top:50%"><span>♡</span><strong>${escapeHtml(activeScrapbook?.name || 'This scrapbook')}</strong><small>${ordered.length} memories</small></div>`;
+  const center=`<div class="constellation-book-node" style="left:50%;top:50%"><span>♡</span><strong>${escapeHtml(universeContextProfile?.displayName ? universeContextProfile.displayName + '’s universe' : 'Memory Universe')}</strong><small>${ordered.length} memories</small></div>`;
   const personNodes=people.map(person=>{
     const p=personPositions.get(person.tag);
     return `<button class="constellation-person-node" type="button" data-universe-person="${escapeHtml(person.tag||'')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(person,'universe-person-avatar')}<small>${escapeHtml(person.displayName||person.tag)}</small></button>`;
@@ -5252,21 +5350,87 @@ let universeFreedomWallCache = { posts:[], profiles:{} };
 const UNIVERSE_INTERVIEW_PROMPTS = ["What happened right before this moment?","What happened immediately after it?","Who was there that the photo does not show?","What sound do you remember from this day?","What detail would future you probably forget?","What were you worried about at the time?","What made you laugh that day?","What did this place feel like in person?","If you could return to this moment for five minutes, what would you notice first?","What would you tell the version of yourself in this memory?","Why did this ordinary moment become important?","Was there something you wanted to say but did not?","Who took the photo, and what were they doing?","What song, smell, food, or weather belongs to this memory?","How do you feel about this memory now compared with then?","What do you hope someone else remembers about this day?"];
 
 function universePreviewStorageKey(type) {
-  return `scrapella-universe-preview-v1:${me?.tag || 'guest'}:${activeScrapbook?.id || 'none'}:${type}`;
+  const target = universeTargetTag || activeScrapbook?.owner || me?.tag || 'guest';
+  return `scrapella-memory-universe-v2:${target}:${type}`;
 }
 
-function loadUniversePreview(type, fallback) {
+function cloneUniverseValue(value, fallback) {
   try {
-    const raw = localStorage.getItem(universePreviewStorageKey(type));
-    if (!raw) return typeof structuredClone === 'function' ? structuredClone(fallback) : JSON.parse(JSON.stringify(fallback));
-    return JSON.parse(raw);
+    const source = value === undefined ? fallback : value;
+    return typeof structuredClone === 'function' ? structuredClone(source) : JSON.parse(JSON.stringify(source));
   } catch {
     return Array.isArray(fallback) ? [] : {};
   }
 }
 
+function loadUniversePreview(type, fallback) {
+  if (Object.prototype.hasOwnProperty.call(universeOfficialState || {},type)) {
+    return cloneUniverseValue(universeOfficialState[type],fallback);
+  }
+  try {
+    const raw = localStorage.getItem(universePreviewStorageKey(type));
+    if (raw) return JSON.parse(raw);
+    const legacy = localStorage.getItem(`scrapella-universe-preview-v1:${me?.tag || 'guest'}:${activeScrapbook?.id || 'none'}:${type}`);
+    if (legacy) {
+      const value=JSON.parse(legacy);
+      if ((universeTargetTag || me?.tag) === me?.tag) {
+        universeOfficialState[type]=cloneUniverseValue(value,fallback);
+        queueUniverseStateSave(type,value);
+      }
+      return value;
+    }
+  } catch {}
+  return cloneUniverseValue(undefined,fallback);
+}
+
+function queueUniverseStateSave(type,value) {
+  if (!me?.tag || (universeTargetTag || me.tag) !== me.tag) return;
+  universeOfficialState[type]=cloneUniverseValue(value,null);
+  clearTimeout(universeStateSaveTimer);
+  universeStateSaveTimer=setTimeout(()=>{
+    api('/api/memory-universe/state',{
+      method:'PUT',
+      body:JSON.stringify({type,value:universeOfficialState[type]})
+    }).catch(err=>console.warn('Memory Universe save failed:',err?.message||err));
+  },180);
+}
+
 function saveUniversePreview(type, value) {
+  universeOfficialState[type]=cloneUniverseValue(value,null);
   try { localStorage.setItem(universePreviewStorageKey(type), JSON.stringify(value)); } catch {}
+  queueUniverseStateSave(type,value);
+}
+
+async function loadMemoryUniverse(tag = me?.tag, { override = universeOwnerOverride } = {}) {
+  const clean=String(tag || me?.tag || '').replace(/^@/,'').toLowerCase();
+  if(!clean)return false;
+  const self=clean===me?.tag;
+  const query=new URLSearchParams({tag:clean});
+  if(self && override)query.set('override','1');
+  const data=await api(`/api/memory-universe?${query.toString()}`);
+  universeTargetTag=data.profile?.tag || clean;
+  universeContextProfile=data.profile || {tag:clean,displayName:clean};
+  universeBooks=Array.isArray(data.books)?data.books:[];
+  universeCanSeeExtended=data.canSeeExtended===true;
+  universeOwnerOverride=data.ownerOverrideActive===true;
+  universeOfficialState=data.state && typeof data.state==='object' ? data.state : {};
+  entries=Array.isArray(data.entries)?data.entries:[];
+  authorProfiles=data.profiles && typeof data.profiles==='object' ? data.profiles : {};
+  if(!entries.some(entry=>entry.id===universeSelectedEntryId)) universeSelectedEntryId=entries.at(-1)?.id || null;
+  if(isPhoneUI()) mobileBookContextTag=universeTargetTag;
+  return true;
+}
+
+async function openMemoryUniverse(tag = me?.tag, options = {}) {
+  try {
+    await loadMemoryUniverse(tag,options);
+    showView('universe');
+    return true;
+  } catch(err) {
+    if(err?.status===401)location.reload();
+    else showToast(err?.message || 'Could not open Memory Universe.');
+    return false;
+  }
 }
 
 function universeSelectedEntry() {
@@ -5285,18 +5449,23 @@ function universeLabSetMode(mode) {
   renderUniverseLabStage();
 }
 
-const NATIVE_UNIVERSE_BETA_MODES = ['voiceMemory','letters','prompts','anniversaries','box','themes','peopleMemory','vault','family','inherited','secret','faith','wall','capsules','museum'];
+function applyUniverseReadOnlyState() {
+  const stage=$('#universeLabStage');
+  if(!stage || (universeTargetTag || me?.tag)===me?.tag)return;
+  stage.classList.add('universe-readonly');
+  stage.querySelectorAll('input,textarea,select,button[type="submit"],.remove-preview-item,.remove-letter-preview,.remove-trail-preview,.remove-heirloom-preview').forEach(el=>el.disabled=true);
+  stage.querySelectorAll('input[type="file"],.lab-drop-photo').forEach(el=>{ el.disabled=true; el.classList?.add('disabled'); });
+}
 function renderUniverseLabs() {
   const stage = $('#universeLabStage');
   if (!stage) return;
-  if (isNativeScrapellaApp() && !NATIVE_UNIVERSE_BETA_MODES.includes(universeLabMode)) universeLabMode='voiceMemory';
   document.querySelectorAll('[data-universe-lab]').forEach(btn => {
-    const nativeAllowed = !isNativeScrapellaApp() || NATIVE_UNIVERSE_BETA_MODES.includes(btn.dataset.universeLab || '');
-    btn.hidden = !nativeAllowed;
-    btn.onclick = nativeAllowed ? (() => universeLabSetMode(btn.dataset.universeLab || 'voiceMemory')) : null;
-    btn.classList.toggle('active',nativeAllowed && btn.dataset.universeLab===universeLabMode);
+    btn.hidden = false;
+    btn.onclick = () => universeLabSetMode(btn.dataset.universeLab || 'layers');
+    btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode);
   });
   renderUniverseLabStage();
+  requestAnimationFrame(applyUniverseReadOnlyState);
 }
 
 function renderUniverseLabStage() {
@@ -5310,13 +5479,13 @@ function renderUniverseLabStage() {
     renderUniverseSecretLab();
     return;
   }
-  if (!activeScrapbook) {
-    stage.innerHTML = '<div class="universe-empty wide"><span>♡</span><strong>Choose a scrapbook first.</strong><p>The preview tools use the active scrapbook and never change its original memories.</p></div>';
+  if (!universeTargetTag && !me?.tag) {
+    stage.innerHTML = '<div class="universe-empty wide"><span>♡</span><strong>Open a Memory Universe first.</strong></div>';
     return;
   }
   const entryOptionalModes = new Set(['archive','rituals','box','themes','family','faith']);
   if (!entries.length && !entryOptionalModes.has(universeLabMode)) {
-    stage.innerHTML = '<div class="universe-empty wide"><span>✧</span><strong>Add a memory to try this preview.</strong><p>Once this scrapbook has a page, Scrapella Labs can begin experimenting with it.</p></div>';
+    stage.innerHTML = '<div class="universe-empty wide"><span>✧</span><strong>Add a memory to use this feature.</strong><p>Once your Memory Universe has a page, these tools can begin connecting it.</p></div>';
     return;
   }
   if (universeLabMode === 'layers') renderUniverseLayersLab();
@@ -5354,7 +5523,7 @@ function renderUniverseLayersLab() {
   const layers = Array.isArray(allLayers[entry.id]) ? allLayers[entry.id] : [];
   stage.innerHTML = `<div class="lab-split">
     <section class="lab-workbench">
-      <div class="lab-title-row"><div><p class="eyebrow">MEMORY LAYERS</p><h4>Let a memory grow without rewriting the past.</h4></div><span class="lab-preview-pill">Browser preview</span></div>
+      <div class="lab-title-row"><div><p class="eyebrow">MEMORY LAYERS</p><h4>Let a memory grow without rewriting the past.</h4></div><span class="lab-preview-pill">Saved feature</span></div>
       <label class="lab-field">Memory<select id="layersMemorySelect">${universeMemorySelectOptions(entry.id)}</select></label>
       <article class="memory-layer-original">
         <small>ORIGINAL · ${escapeHtml(universeDateLabel(entry.date))}</small>
@@ -5369,7 +5538,7 @@ function renderUniverseLayersLab() {
       <p>Your original page stays exactly as it was. This adds a new layer beside it.</p>
       <textarea id="memoryLayerText" rows="6" maxlength="1200" placeholder="Looking back now, I realize…"></textarea>
       <button id="addMemoryLayerBtn" class="primary" type="button">Add reflection layer</button>
-      <small>This preview saves only in this browser.</small>
+      <small>Saved to your Memory Universe.</small>
     </aside>
   </div>`;
   $('#layersMemorySelect')?.addEventListener('change',e=>{universeSelectedEntryId=e.target.value;renderUniverseLayersLab();});
@@ -5379,7 +5548,7 @@ function renderUniverseLayersLab() {
     allLayers[entry.id]=layers.concat({id:crypto.randomUUID?.()||String(Date.now()),text,createdAt:new Date().toISOString()});
     saveUniversePreview('layers',allLayers);
     renderUniverseLayersLab();
-    showToast('Reflection layer added to the web preview.');
+    showToast('Reflection layer added to the Memory Universe.');
   });
 }
 
@@ -5404,7 +5573,7 @@ function renderUniverseInterviewLab() {
     <form id="memoryInterviewForm" class="interview-prompt-list">
       ${promptSet.map((prompt,index)=>`<label><span>${index+1}</span><strong>${escapeHtml(prompt)}</strong><textarea rows="3" maxlength="700" data-interview-prompt="${escapeHtml(prompt)}" placeholder="Your answer…">${escapeHtml(entryAnswers[prompt]||'')}</textarea></label>`).join('')}
       <button class="primary" type="submit">Save interview notes</button>
-      <small>Preview notes stay on this browser and do not edit the original page.</small>
+      <small>Preview notes stay on your Memory Universe and do not edit the original page.</small>
     </form>
   </div>`;
   $('#interviewMemorySelect')?.addEventListener('change',e=>{universeSelectedEntryId=e.target.value;renderUniverseInterviewLab();});
@@ -5439,7 +5608,7 @@ function renderUniverseCapsulesLab() {
       <label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(selected?.id||'')}</select></label>
       <label class="lab-field">Unlock on<input name="unlockDate" type="date" min="${today}" value="${defaultDate}" required /></label>
       <label class="lab-field">A note for that day<textarea name="note" rows="4" maxlength="700" placeholder="When this opens, remember…"></textarea></label>
-      <button class="primary" type="submit">Seal preview capsule</button>
+      <button class="primary" type="submit">Seal capsule</button>
       <small>This preview does not hide or lock the original memory.</small>
     </form>
     <section class="lab-workbench">
@@ -5448,7 +5617,7 @@ function renderUniverseCapsulesLab() {
         const entry=entries.find(e=>e.id===capsule.entryId);
         const unlocked=String(capsule.unlockDate||'')<=today;
         const days=Math.max(0,Math.ceil((new Date(capsule.unlockDate+'T12:00:00')-new Date())/86400000));
-        return `<article class="capsule-card ${unlocked?'unlocked':'locked'}"><div class="capsule-lock">${unlocked?'♡':'⌛'}</div><div><small>${unlocked?'READY TO OPEN':`${days} days to go`}</small><strong>${escapeHtml(entry?.title||'Memory')}</strong><p>${escapeHtml(capsule.note||'No note added.')}</p><span>Unlocks ${escapeHtml(universeDateLabel(capsule.unlockDate))}</span></div><button type="button" class="icon-btn remove-preview-item" data-preview-id="${escapeHtml(capsule.id)}" aria-label="Remove preview capsule">×</button></article>`;
+        return `<article class="capsule-card ${unlocked?'unlocked':'locked'}"><div class="capsule-lock">${unlocked?'♡':'⌛'}</div><div><small>${unlocked?'READY TO OPEN':`${days} days to go`}</small><strong>${escapeHtml(entry?.title||'Memory')}</strong><p>${escapeHtml(capsule.note||'No note added.')}</p><span>Unlocks ${escapeHtml(universeDateLabel(capsule.unlockDate))}</span></div><button type="button" class="icon-btn remove-preview-item" data-preview-id="${escapeHtml(capsule.id)}" aria-label="Remove capsule">×</button></article>`;
       }).join('')||'<div class="lab-soft-empty">No capsules yet. Seal one from the form beside this shelf.</div>'}</div>
     </section>
   </div>`;
@@ -5458,7 +5627,7 @@ function renderUniverseCapsulesLab() {
     const item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(form.get('entryId')||''),unlockDate:String(form.get('unlockDate')||''),note:String(form.get('note')||'').trim(),createdAt:new Date().toISOString()};
     saveUniversePreview('capsules',capsules.concat(item));
     renderUniverseCapsulesLab();
-    showToast('Future capsule sealed in the preview.');
+    showToast('Future capsule sealed in Memory Universe.');
   });
   stage.querySelectorAll('.remove-preview-item').forEach(btn=>btn.addEventListener('click',()=>{
     saveUniversePreview('capsules',capsules.filter(item=>item.id!==btn.dataset.previewId));
@@ -5497,7 +5666,7 @@ function renderUniverseHeirloomsLab() {
     const item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(form.get('entryId')||''),recipient:String(form.get('recipient')||'').trim(),note:String(form.get('note')||'').trim(),createdAt:new Date().toISOString()};
     saveUniversePreview('heirlooms',heirlooms.concat(item));
     renderUniverseHeirloomsLab();
-    showToast('Heirloom marked in the preview.');
+    showToast('Heirloom marked in Memory Universe.');
   });
   stage.querySelectorAll('.remove-heirloom-preview').forEach(btn=>btn.addEventListener('click',()=>{
     saveUniversePreview('heirlooms',heirlooms.filter(item=>item.id!==btn.dataset.previewId));
@@ -5509,7 +5678,7 @@ function renderUniverseVoiceLab() {
   const stage=$('#universeLabStage');
   if(!stage)return;
   const people=[...new Set(entries.map(e=>e.author).filter(Boolean))].map(tag=>authorProfiles?.[tag]||{tag,displayName:tag,avatar:''});
-  const clips=universeVoiceClips.filter(clip=>clip.bookId===activeScrapbook?.id);
+  const clips=loadUniversePreview('voicePortraits',[]);
   stage.innerHTML=`<div class="lab-split">
     <section class="voice-portrait-stage">
       <div class="voice-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -5519,50 +5688,53 @@ function renderUniverseVoiceLab() {
       <div class="lab-title-row"><div><p class="eyebrow">VOICE PORTRAITS</p><h4>Record a tiny piece of someone’s voice.</h4></div><span class="lab-preview-pill">Up to 30 sec</span></div>
       <label class="lab-field">Person<select id="voicePortraitPerson">${people.map(p=>`<option value="${escapeHtml(p.tag)}">${escapeHtml(p.displayName||p.tag)} · @${escapeHtml(p.tag)}</option>`).join('')}</select></label>
       <div class="voice-record-controls"><button id="voicePortraitRecordBtn" class="primary" type="button">● Start recording</button><button id="voicePortraitStopBtn" class="ghost" type="button" disabled>■ Stop</button><span id="voicePortraitStatus">Ready</span></div>
-      <p class="helper">Preview recordings stay only until this browser tab closes. Nothing is uploaded.</p>
-      <div class="voice-clip-list">${clips.map(clip=>{
-        const person=authorProfiles?.[clip.tag]||{tag:clip.tag,displayName:clip.tag};
-        return `<article><div><strong>${escapeHtml(person.displayName||person.tag||'Voice')}</strong><small>${Math.max(1,Math.round(clip.duration/1000))} sec · this session</small></div><audio controls src="${escapeHtml(clip.url)}"></audio></article>`;
-      }).join('')||'<div class="lab-soft-empty">No voice portraits recorded in this session.</div>'}</div>
+      <p class="helper">Voice Portraits are saved to your Memory Universe.</p>
+      <div class="voice-clip-list">${clips.map(clip=>{const person=authorProfiles?.[clip.tag]||{tag:clip.tag,displayName:clip.tag};return `<article><div><strong>${escapeHtml(person.displayName||person.tag||'Voice')}</strong><small>${Math.max(1,Math.round(clip.duration/1000))} sec · saved</small></div><audio controls src="${escapeHtml(clip.url)}"></audio></article>`;}).join('')||'<div class="lab-soft-empty">No Voice Portraits saved yet.</div>'}</div>
     </section>
   </div>`;
   $('#voicePortraitRecordBtn')?.addEventListener('click',()=>startUniverseVoiceRecording(String($('#voicePortraitPerson')?.value||'')));
   $('#voicePortraitStopBtn')?.addEventListener('click',()=>stopUniverseVoiceRecording());
 }
-
 async function startUniverseVoiceRecording(tag) {
   if(universeVoiceRecorder?.state==='recording')return;
   const status=$('#voicePortraitStatus'),start=$('#voicePortraitRecordBtn'),stop=$('#voicePortraitStopBtn');
   try{
-    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){showToast('Voice recording is not supported in this browser.');return;}
+    if((universeTargetTag || me?.tag)!==me?.tag){showToast('This Memory Universe is read-only for you.');return;}
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){showToast('Voice recording is not supported on this device.');return;}
+    if(isNativeScrapellaApp()){
+      const permission=await checkMicrophonePermission({request:true});
+      if(permission==='denied'){showToast('Microphone access is blocked in your phone settings.');return;}
+    }
     universeVoiceStream=await navigator.mediaDevices.getUserMedia({audio:true});
-    universeVoiceChunks=[];
-    universeVoiceStartedAt=Date.now();
-    universeVoiceRecorder=new MediaRecorder(universeVoiceStream);
+    universeVoiceChunks=[]; universeVoiceStartedAt=Date.now();
+    const preferred=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'].find(type=>MediaRecorder.isTypeSupported?.(type));
+    universeVoiceRecorder=new MediaRecorder(universeVoiceStream,preferred?{mimeType:preferred}:undefined);
     universeVoiceRecorder.ondataavailable=e=>{if(e.data?.size)universeVoiceChunks.push(e.data);};
-    universeVoiceRecorder.onstop=()=>{
-      const blob=new Blob(universeVoiceChunks,{type:universeVoiceRecorder?.mimeType||'audio/webm'});
-      const url=URL.createObjectURL(blob);
-      universeVoiceClips.push({id:crypto.randomUUID?.()||String(Date.now()),bookId:activeScrapbook?.id||'',tag,url,duration:Date.now()-universeVoiceStartedAt});
-      universeVoiceStream?.getTracks?.().forEach(track=>track.stop());
-      universeVoiceStream=null;
-      universeVoiceRecorder=null;
-      clearTimeout(universeVoiceTimer);
+    universeVoiceRecorder.onstop=async()=>{
+      const duration=Date.now()-universeVoiceStartedAt;
+      const type=universeVoiceRecorder?.mimeType||universeVoiceChunks[0]?.type||'audio/webm';
+      const raw=new Blob(universeVoiceChunks,{type});
+      universeVoiceStream?.getTracks?.().forEach(track=>track.stop()); universeVoiceStream=null; universeVoiceRecorder=null; clearTimeout(universeVoiceTimer);
+      if(status)status.textContent='Saving…';
+      try{
+        const normalized=await normalizeVoiceRecordingForPlayback(raw);
+        const file=new File([normalized.blob],`voice-portrait-${Date.now()}.${normalized.ext}`,{type:normalized.type,lastModified:Date.now()});
+        const uploaded=await uploadAttachment(file);
+        const clips=loadUniversePreview('voicePortraits',[]);
+        clips.unshift({id:crypto.randomUUID?.()||String(Date.now()),tag,url:uploaded.src,duration,createdAt:new Date().toISOString()});
+        saveUniversePreview('voicePortraits',clips.slice(0,80));
+        showToast('Voice Portrait saved.');
+      }catch(err){showToast(err?.message || 'Could not save Voice Portrait.');}
       renderUniverseVoiceLab();
     };
-    universeVoiceRecorder.start(250);
-    if(status)status.textContent='Recording…';
-    if(start)start.disabled=true;
-    if(stop)stop.disabled=false;
+    universeVoiceRecorder.start(250); if(status)status.textContent='Recording…';if(start)start.disabled=true;if(stop)stop.disabled=false;
     universeVoiceTimer=setTimeout(stopUniverseVoiceRecording,30000);
   }catch(err){
-    universeVoiceStream?.getTracks?.().forEach(track=>track.stop());
-    universeVoiceStream=null;
+    universeVoiceStream?.getTracks?.().forEach(track=>track.stop()); universeVoiceStream=null;
     if(status)status.textContent='Microphone unavailable';
     showToast(err?.name==='NotAllowedError'?'Microphone permission was not allowed.':'Could not start voice recording.');
   }
 }
-
 function stopUniverseVoiceRecording() {
   clearTimeout(universeVoiceTimer);
   if(universeVoiceRecorder?.state==='recording')universeVoiceRecorder.stop();
@@ -5583,7 +5755,7 @@ function renderUniverseMuseumLab() {
       <div class="museum-gallery">${visual.map((entry,index)=>`<button class="museum-frame museum-frame-${(index%4)+1}" type="button" data-museum-entry="${escapeHtml(entry.id)}"><span><img src="${escapeHtml(universeEntryImage(entry))}" alt="" loading="lazy" /></span><small>${escapeHtml(entry.title||'Untitled memory')}</small><em>${escapeHtml(universeDateLabel(entry.date,{month:'short',year:'numeric'}))}</em></button>`).join('')}</div>
     </div>
     <div class="museum-floor"></div>
-    <p class="museum-caption">Preview concept: tap a frame to step back into that memory.</p>
+    <p class="museum-caption">tap a frame to step back into that memory.</p>
   </section>`;
   stage.querySelectorAll('[data-museum-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.museumEntry)));
 }
@@ -5599,7 +5771,7 @@ function downloadUniverseArchive(format='json') {
   if(!activeScrapbook)return;
   const safeName=String(activeScrapbook.name||'scrapbook').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'scrapbook';
   if(format==='json'){
-    const archive={format:'Scrapella Portable Archive Preview',version:1,exportedAt:new Date().toISOString(),scrapbook:activeScrapbook,profiles:authorProfiles,entries};
+    const archive={format:'Scrapella Portable Archive',version:1,exportedAt:new Date().toISOString(),scrapbook:activeScrapbook,profiles:authorProfiles,entries};
     downloadUniverseFile(`${safeName}-scrapella-archive.json`,new Blob([JSON.stringify(archive,null,2)],{type:'application/json'}));
     return;
   }
@@ -5607,7 +5779,7 @@ function downloadUniverseArchive(format='json') {
     const image=universeEntryImage(entry);
     return `<article>${image?`<img src="${escapeHtml(image)}" alt="">`:''}<small>${escapeHtml(universeDateLabel(entry.date))}</small><h2>${escapeHtml(entry.title||'Untitled memory')}</h2><p>${escapeHtml(universeExcerpt(entry,1000))}</p></article>`;
   }).join('');
-  const doc=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(activeScrapbook.name||'Scrapella Archive')}</title><style>body{max-width:900px;margin:50px auto;padding:0 24px;font-family:Georgia,serif;color:#352729;background:#fffaf1}header{border-bottom:1px solid #d9c7c2;padding-bottom:24px;margin-bottom:30px}article{padding:26px 0;border-bottom:1px solid #e4d6d1}img{max-width:100%;max-height:520px;object-fit:contain;border-radius:12px}small{color:#8a6d71}p{line-height:1.65;white-space:pre-wrap}</style></head><body><header><small>SCRAPELLA PORTABLE KEEPSAKE PREVIEW</small><h1>${escapeHtml(activeScrapbook.name||'Scrapbook')}</h1><p>Exported ${escapeHtml(new Date().toLocaleString())}</p></header>${cards}</body></html>`;
+  const doc=`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(activeScrapbook.name||'Scrapella Archive')}</title><style>body{max-width:900px;margin:50px auto;padding:0 24px;font-family:Georgia,serif;color:#352729;background:#fffaf1}header{border-bottom:1px solid #d9c7c2;padding-bottom:24px;margin-bottom:30px}article{padding:26px 0;border-bottom:1px solid #e4d6d1}img{max-width:100%;max-height:520px;object-fit:contain;border-radius:12px}small{color:#8a6d71}p{line-height:1.65;white-space:pre-wrap}</style></head><body><header><small>SCRAPELLA PORTABLE KEEPSAKE</small><h1>${escapeHtml(activeScrapbook.name||'Scrapbook')}</h1><p>Exported ${escapeHtml(new Date().toLocaleString())}</p></header>${cards}</body></html>`;
   downloadUniverseFile(`${safeName}-keepsake.html`,new Blob([doc],{type:'text/html'}));
 }
 
@@ -5635,7 +5807,7 @@ function renderUniverseTrailsLab() {
     const ids=form.getAll('entryId').map(String);
     if(ids.length<2){showToast('Choose at least two memories for a trail.');return;}
     const item={id:crypto.randomUUID?.()||String(Date.now()),name:String(form.get('name')||'').trim(),ids,createdAt:new Date().toISOString()};
-    saveUniversePreview('trails',trails.concat(item)); renderUniverseTrailsLab(); showToast('Memory trail created in preview.');
+    saveUniversePreview('trails',trails.concat(item)); renderUniverseTrailsLab(); showToast('Memory trail created in feature.');
   });
   stage.querySelectorAll('[data-trail-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.trailEntry)));
   stage.querySelectorAll('.remove-trail-preview').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('trails',trails.filter(t=>t.id!==btn.dataset.previewId));renderUniverseTrailsLab();}));
@@ -5643,28 +5815,30 @@ function renderUniverseTrailsLab() {
 
 function renderUniverseVoiceMemoryLab() {
   const stage=$('#universeLabStage'); const entry=universeSelectedEntry(); if(!stage||!entry)return;
-  const clips=universeMemoryVoiceClips.filter(c=>c.entryId===entry.id);
+  const clips=loadUniversePreview('voiceMemories',[]).filter(c=>c.entryId===entry.id);
+  const ordered=[...entries].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   stage.innerHTML=`<div class="lab-split">
     <section class="lab-workbench">
-      <div class="lab-title-row"><div><p class="eyebrow">VOICE MEMORIES</p><h4>Let a memory keep the sound of your voice.</h4></div><span class="lab-preview-pill">Session preview</span></div>
-      <label class="lab-field">Memory<select id="voiceMemorySelect">${universeMemorySelectOptions(entry.id)}</select></label>
+      <div class="lab-title-row"><div><p class="eyebrow">VOICE MEMORIES</p><h4>Let a memory keep the sound of your voice.</h4></div><span class="lab-preview-pill">Saved</span></div>
+      <div class="lab-field"><span>Memory</span><div class="lab-memory-picker"><button id="voiceMemoryPickerBtn" class="lab-memory-picker-button" type="button"><span>${escapeHtml(universeDateLabel(entry.date,{month:'short',day:'numeric',year:'numeric'}))} · ${escapeHtml(entry.title||'Untitled memory')}</span><b>⌄</b></button><div id="voiceMemoryPickerMenu" class="lab-memory-picker-menu hidden">${ordered.map(item=>`<button type="button" data-voice-memory-entry="${escapeHtml(item.id)}" class="${item.id===entry.id?'active':''}"><small>${escapeHtml(universeDateLabel(item.date,{month:'short',day:'numeric',year:'numeric'}))}</small><strong>${escapeHtml(item.title||'Untitled memory')}</strong></button>`).join('')}</div></div></div>
       <div class="voice-memory-card">${universeEntryImage(entry)?`<img src="${escapeHtml(universeEntryImage(entry))}" alt="" />`:'<span>♪</span>'}<div><small>${escapeHtml(universeDateLabel(entry.date))}</small><strong>${escapeHtml(entry.title||'Untitled memory')}</strong><p>${escapeHtml(universeExcerpt(entry,220))}</p></div></div>
     </section>
-    <aside class="lab-compose-card"><span class="lab-icon">♫</span><h4>Tell what the page cannot.</h4><p>Record up to 45 seconds explaining what you remember, what you felt, or what happened outside the frame.</p><div class="voice-record-controls"><button id="voiceMemoryRecordBtn" class="primary" type="button">● Record</button><button id="voiceMemoryStopBtn" class="ghost" type="button" disabled>■ Stop</button><span id="voiceMemoryStatus">Ready</span></div><div class="voice-clip-list">${clips.map(c=>`<article><div><strong>${escapeHtml(entry.title||'Memory')}</strong><small>${Math.max(1,Math.round(c.duration/1000))} sec · this session</small></div><audio controls src="${escapeHtml(c.url)}"></audio></article>`).join('')||'<div class="lab-soft-empty">No voice memory yet.</div>'}</div><small>Preview recordings disappear when this browser tab closes.</small></aside>
+    <aside class="lab-compose-card"><span class="lab-icon">♫</span><h4>Tell what the page cannot.</h4><p>Record up to 45 seconds explaining what you remember, what you felt, or what happened outside the frame.</p><div class="voice-record-controls"><button id="voiceMemoryRecordBtn" class="primary" type="button">● Record</button><button id="voiceMemoryStopBtn" class="ghost" type="button" disabled>■ Stop</button><span id="voiceMemoryStatus">Ready</span></div><div class="voice-clip-list">${clips.map(c=>`<article><div><strong>${escapeHtml(entry.title||'Memory')}</strong><small>${Math.max(1,Math.round(c.duration/1000))} sec · saved</small></div><audio controls src="${escapeHtml(c.url)}"></audio></article>`).join('')||'<div class="lab-soft-empty">No voice memory yet.</div>'}</div><small>Voice Memories are saved to your Memory Universe.</small></aside>
   </div>`;
-  $('#voiceMemorySelect')?.addEventListener('change',e=>{universeSelectedEntryId=e.target.value;renderUniverseVoiceMemoryLab();});
+  $('#voiceMemoryPickerBtn')?.addEventListener('click',e=>{e.stopPropagation();$('#voiceMemoryPickerMenu')?.classList.toggle('hidden');});
+  $('#voiceMemoryPickerMenu')?.querySelectorAll('[data-voice-memory-entry]').forEach(btn=>btn.addEventListener('click',()=>{
+    universeSelectedEntryId=btn.dataset.voiceMemoryEntry;
+    renderUniverseVoiceMemoryLab();
+  }));
   $('#voiceMemoryRecordBtn')?.addEventListener('click',()=>startUniverseMemoryVoiceRecording(entry.id));
   $('#voiceMemoryStopBtn')?.addEventListener('click',stopUniverseMemoryVoiceRecording);
 }
-
 async function startUniverseMemoryVoiceRecording(entryId) {
   if(universeMemoryVoiceRecorder?.state==='recording')return;
   const start=$('#voiceMemoryRecordBtn'),stop=$('#voiceMemoryStopBtn'),status=$('#voiceMemoryStatus');
   try{
-    if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined'){
-      showToast('Voice recording is not supported on this device.');
-      return;
-    }
+    if((universeTargetTag || me?.tag)!==me?.tag){showToast('This Memory Universe is read-only for you.');return;}
+    if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined'){showToast('Voice recording is not supported on this device.');return;}
     if(isNativeScrapellaApp()){
       const permission=await checkMicrophonePermission({request:true});
       if(permission==='denied'){
@@ -5679,18 +5853,27 @@ async function startUniverseMemoryVoiceRecording(entryId) {
     const preferred=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'].find(type=>MediaRecorder.isTypeSupported?.(type));
     universeMemoryVoiceRecorder=new MediaRecorder(universeMemoryVoiceStream,preferred?{mimeType:preferred}:undefined);
     universeMemoryVoiceRecorder.ondataavailable=e=>{if(e.data?.size)universeMemoryVoiceChunks.push(e.data);};
-    universeMemoryVoiceRecorder.onstop=()=>{
+    universeMemoryVoiceRecorder.onstop=async()=>{
+      const duration=Date.now()-universeMemoryVoiceStartedAt;
       const type=universeMemoryVoiceRecorder?.mimeType || universeMemoryVoiceChunks[0]?.type || 'audio/webm';
-      const blob=new Blob(universeMemoryVoiceChunks,{type});
-      universeMemoryVoiceClips.push({id:crypto.randomUUID?.()||String(Date.now()),entryId,url:URL.createObjectURL(blob),duration:Date.now()-universeMemoryVoiceStartedAt,type});
+      const raw=new Blob(universeMemoryVoiceChunks,{type});
       universeMemoryVoiceStream?.getTracks?.().forEach(t=>t.stop()); universeMemoryVoiceStream=null; universeMemoryVoiceRecorder=null;
+      if(status)status.textContent='Saving…';
+      try{
+        const normalized=await normalizeVoiceRecordingForPlayback(raw);
+        const file=new File([normalized.blob],`voice-memory-${Date.now()}.${normalized.ext}`,{type:normalized.type,lastModified:Date.now()});
+        const uploaded=await uploadAttachment(file);
+        const clips=loadUniversePreview('voiceMemories',[]);
+        clips.unshift({id:crypto.randomUUID?.()||String(Date.now()),entryId,url:uploaded.src,duration,type:normalized.type,createdAt:new Date().toISOString()});
+        saveUniversePreview('voiceMemories',clips.slice(0,80));
+        showToast('Voice Memory saved.');
+      }catch(err){showToast(err?.message || 'Could not save Voice Memory.');}
       renderUniverseVoiceMemoryLab();
     };
     universeMemoryVoiceRecorder.start(250); if(start)start.disabled=true;if(stop)stop.disabled=false;if(status)status.textContent='Recording…';
     setTimeout(()=>{if(universeMemoryVoiceRecorder?.state==='recording')stopUniverseMemoryVoiceRecording();},45000);
   }catch(err){showToast(err?.name==='NotAllowedError'?'Microphone permission was not allowed.':'Could not start recording.');}
 }
-
 function stopUniverseMemoryVoiceRecording(){if(universeMemoryVoiceRecorder?.state==='recording')universeMemoryVoiceRecorder.stop();}
 
 function renderUniverseLettersLab() {
@@ -5698,10 +5881,10 @@ function renderUniverseLettersLab() {
   const letters=loadUniversePreview('letters',[]);
   const future=new Date();future.setFullYear(future.getFullYear()+1);
   stage.innerHTML=`<div class="lab-split">
-    <form id="letterToForm" class="lab-compose-card lab-letter-paper"><p class="eyebrow">LETTER TO…</p><h4>Write something that belongs to another time.</h4><label class="lab-field">To<input name="to" maxlength="60" placeholder="Future me · Mom · My child · Sarah…" required /></label><label class="lab-field">Open on<input name="openDate" type="date" value="${future.toISOString().slice(0,10)}" required /></label><label class="lab-field">Letter<textarea name="body" rows="10" maxlength="2400" placeholder="Dear future me…" required></textarea></label><button class="primary" type="submit">Seal preview letter</button><small>Preview letters remain in this browser and do not notify anyone.</small></form>
+    <form id="letterToForm" class="lab-compose-card lab-letter-paper"><p class="eyebrow">LETTER TO…</p><h4>Write something that belongs to another time.</h4><label class="lab-field">To<input name="to" maxlength="60" placeholder="Future me · Mom · My child · Sarah…" required /></label><label class="lab-field">Open on<input name="openDate" type="date" value="${future.toISOString().slice(0,10)}" required /></label><label class="lab-field">Letter<textarea name="body" rows="10" maxlength="2400" placeholder="Dear future me…" required></textarea></label><button class="primary" type="submit">Seal letter</button><small>Letters remain in this browser and do not notify anyone.</small></form>
     <section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">SEALED LETTERS</p><h4>Words waiting for the right day.</h4></div><span class="lab-preview-pill">${letters.length} letters</span></div><div class="letter-preview-list">${letters.map(l=>`<article><div class="letter-stamp">✉</div><div><small>TO ${escapeHtml(l.to)} · OPENS ${escapeHtml(universeDateLabel(l.openDate))}</small><p>${escapeHtml(String(l.body||'').slice(0,180))}${String(l.body||'').length>180?'…':''}</p></div><button class="icon-btn remove-letter-preview" type="button" data-preview-id="${escapeHtml(l.id)}">×</button></article>`).join('')||'<div class="lab-soft-empty">No sealed letters yet.</div>'}</div></section>
   </div>`;
-  $('#letterToForm')?.addEventListener('submit',e=>{e.preventDefault();const form=new FormData(e.currentTarget);const item={id:crypto.randomUUID?.()||String(Date.now()),to:String(form.get('to')||'').trim(),openDate:String(form.get('openDate')||''),body:String(form.get('body')||'').trim(),createdAt:new Date().toISOString()};saveUniversePreview('letters',letters.concat(item));renderUniverseLettersLab();showToast('Letter sealed in preview.');});
+  $('#letterToForm')?.addEventListener('submit',e=>{e.preventDefault();const form=new FormData(e.currentTarget);const item={id:crypto.randomUUID?.()||String(Date.now()),to:String(form.get('to')||'').trim(),openDate:String(form.get('openDate')||''),body:String(form.get('body')||'').trim(),createdAt:new Date().toISOString()};saveUniversePreview('letters',letters.concat(item));renderUniverseLettersLab();showToast('Letter sealed in feature.');});
   stage.querySelectorAll('.remove-letter-preview').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('letters',letters.filter(l=>l.id!==btn.dataset.previewId));renderUniverseLettersLab();}));
 }
 
@@ -5711,7 +5894,7 @@ function renderUniverseCollaborativeLab() {
   const people=[...new Set([...(activeScrapbook?.members||[]),...entries.map(e=>e.author)])].filter(Boolean);
   stage.innerHTML=`<div class="lab-split"><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">COLLABORATIVE PAGE</p><h4>One page, remembered by more than one person.</h4></div><span class="lab-preview-pill">${contribs.length+1} perspectives</span></div><label class="lab-field">Memory<select id="collabMemorySelect">${universeMemorySelectOptions(entry.id)}</select></label><article class="collab-original"><strong>${escapeHtml(entry.title||'Untitled memory')}</strong><p>${escapeHtml(universeExcerpt(entry,240))}</p><small>Original by ${escapeHtml(universeAuthor(entry).displayName||entry.author)}</small></article><div class="collab-contributions">${contribs.map(c=>`<article><div>${avatarHtml(authorProfiles?.[c.tag]||{tag:c.tag,displayName:c.tag},'collab-avatar')}</div><div><strong>${escapeHtml(authorProfiles?.[c.tag]?.displayName||c.tag)}</strong><p>${escapeHtml(c.text)}</p></div></article>`).join('')||'<div class="lab-soft-empty">No additional perspectives yet.</div>'}</div></section><form id="collabPreviewForm" class="lab-compose-card"><span class="lab-icon">＋</span><h4>Add another viewpoint.</h4><label class="lab-field">Contributor<select name="tag">${people.map(tag=>`<option value="${escapeHtml(tag)}">${escapeHtml(authorProfiles?.[tag]?.displayName||tag)} · @${escapeHtml(tag)}</option>`).join('')}</select></label><label class="lab-field">Their side of the story<textarea name="text" rows="7" maxlength="1000" required placeholder="I remember this day differently because…"></textarea></label><button class="primary" type="submit">Add preview contribution</button><small>This simulates collaboration only; no invitations are sent.</small></form></div>`;
   $('#collabMemorySelect')?.addEventListener('change',e=>{universeSelectedEntryId=e.target.value;renderUniverseCollaborativeLab();});
-  $('#collabPreviewForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget),item={tag:String(f.get('tag')||me?.tag||''),text:String(f.get('text')||'').trim(),createdAt:new Date().toISOString()};all[entry.id]=contribs.concat(item);saveUniversePreview('collaborative',all);renderUniverseCollaborativeLab();showToast('Perspective added to preview.');});
+  $('#collabPreviewForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget),item={tag:String(f.get('tag')||me?.tag||''),text:String(f.get('text')||'').trim(),createdAt:new Date().toISOString()};all[entry.id]=contribs.concat(item);saveUniversePreview('collaborative',all);renderUniverseCollaborativeLab();showToast('Perspective added to feature.');});
 }
 
 function renderUniversePromptsLab() {
@@ -5719,7 +5902,7 @@ function renderUniversePromptsLab() {
   const prompts=["What is a tiny detail from today you never want to forget?","Who made today feel different?","What ordinary object tells today’s story?","What did you hear that belongs to this memory?","What are you grateful happened exactly this way?","If this day had a title, what would it be?","What would future you misunderstand about today?","What did you learn about someone you love?","What moment today deserves more than a camera-roll photo?","What did you almost forget to notice?"];
   const day=Math.floor(Date.now()/86400000),prompt=prompts[day%prompts.length],saved=loadUniversePreview('promptDrafts',{}),key=new Date().toISOString().slice(0,10);
   stage.innerHTML=`<div class="prompt-lab"><section class="prompt-card"><small>TODAY’S MEMORY PROMPT</small><blockquote>“${escapeHtml(prompt)}”</blockquote><p>No streak pressure. No audience. Just something worth remembering.</p></section><form id="memoryPromptForm" class="lab-compose-card"><h4>Write from the prompt.</h4><textarea name="text" rows="9" maxlength="1800" placeholder="Start with whatever comes to mind…">${escapeHtml(saved[key]?.text||'')}</textarea><label class="lab-field">Working title<input name="title" maxlength="80" value="${escapeHtml(saved[key]?.title||'')}" placeholder="A small thing I want to keep" /></label><button class="primary" type="submit">Save prompt draft</button><small>Draft stays only in this browser. It does not become an official memory yet.</small></form></div>`;
-  $('#memoryPromptForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);saved[key]={prompt,title:String(f.get('title')||'').trim(),text:String(f.get('text')||'').trim(),savedAt:new Date().toISOString()};saveUniversePreview('promptDrafts',saved);showToast('Prompt draft saved in preview.');});
+  $('#memoryPromptForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);saved[key]={prompt,title:String(f.get('title')||'').trim(),text:String(f.get('text')||'').trim(),savedAt:new Date().toISOString()};saveUniversePreview('promptDrafts',saved);showToast('Prompt draft saved in feature.');});
 }
 
 function renderUniverseAnniversaryLab() {
@@ -5745,12 +5928,26 @@ function renderUniverseRitualsLab() {
 
 function renderUniverseMemoryBoxLab() {
   const stage=$('#universeLabStage');if(!stage)return;
-  stage.innerHTML=`<div class="lab-split"><form id="memoryBoxForm" class="lab-compose-card"><span class="lab-icon">□</span><p class="eyebrow">MEMORY BOX</p><h4>Save first. Design later.</h4><textarea name="text" rows="6" maxlength="1000" placeholder="A quick thought, quote, tiny story, or something you don't want to lose…"></textarea><label class="lab-drop-photo">＋ Add one photo<input id="memoryBoxPhoto" type="file" accept="image/*" hidden /></label><div id="memoryBoxPhotoPreview" class="memory-box-photo-preview hidden"></div><button class="primary" type="submit">Drop into Memory Box</button><small>Preview items are temporary and do not become scrapbook pages.</small></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">UNSORTED KEEPSAKES</p><h4>Things waiting to find their page.</h4></div><span class="lab-preview-pill">${universeBoxSessionItems.length} waiting</span></div><div class="memory-box-grid">${universeBoxSessionItems.map(item=>`<article>${item.image?`<img src="${escapeHtml(item.image)}" alt="" />`:'<span>✧</span>'}<div><small>${new Intl.DateTimeFormat(undefined,{hour:'numeric',minute:'2-digit'}).format(new Date(item.createdAt))}</small><p>${escapeHtml(item.text||'Photo saved for later.')}</p></div></article>`).join('')||'<div class="lab-soft-empty">Your Memory Box is empty.</div>'}</div></section></div>`;
-  let pending='';
-  $('#memoryBoxPhoto')?.addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;if(pending)URL.revokeObjectURL(pending);pending=URL.createObjectURL(file);const p=$('#memoryBoxPhotoPreview');p.innerHTML=`<img src="${pending}" alt="Preview" />`;p.classList.remove('hidden');});
-  $('#memoryBoxForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget),text=String(f.get('text')||'').trim();if(!text&&!pending){showToast('Add a note or a photo first.');return;}universeBoxSessionItems.unshift({id:crypto.randomUUID?.()||String(Date.now()),text,image:pending,createdAt:new Date().toISOString()});renderUniverseMemoryBoxLab();});
+  const items=loadUniversePreview('memoryBox',[]);
+  stage.innerHTML=`<div class="lab-split"><form id="memoryBoxForm" class="lab-compose-card"><span class="lab-icon">□</span><p class="eyebrow">MEMORY BOX</p><h4>Save first. Design later.</h4><textarea name="text" rows="6" maxlength="1000" placeholder="A quick thought, quote, tiny story, or something you don't want to lose…"></textarea><label class="lab-drop-photo">＋ Add one photo<input id="memoryBoxPhoto" type="file" accept="image/*" hidden /></label><div id="memoryBoxPhotoPreview" class="memory-box-photo-preview hidden"></div><button class="primary" type="submit">Drop into Memory Box</button><small>Items stay in your Memory Universe until you remove them.</small></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">UNSORTED KEEPSAKES</p><h4>Things waiting to find their page.</h4></div><span class="lab-preview-pill">${items.length} waiting</span></div><div class="memory-box-grid">${items.map(item=>`<article>${item.image?`<img src="${escapeHtml(item.image)}" alt="" />`:'<span>✧</span>'}<div><small>${new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(item.createdAt))}</small><p>${escapeHtml(item.text||'Photo saved for later.')}</p></div></article>`).join('')||'<div class="lab-soft-empty">Your Memory Box is empty.</div>'}</div></section></div>`;
+  let pendingFile=null,pendingUrl='';
+  $('#memoryBoxPhoto')?.addEventListener('change',e=>{pendingFile=e.target.files?.[0]||null;if(!pendingFile)return;if(pendingUrl)URL.revokeObjectURL(pendingUrl);pendingUrl=URL.createObjectURL(pendingFile);const p=$('#memoryBoxPhotoPreview');p.innerHTML=`<img src="${pendingUrl}" alt="Selected photo" />`;p.classList.remove('hidden');});
+  $('#memoryBoxForm')?.addEventListener('submit',async e=>{
+    e.preventDefault();
+    if((universeTargetTag || me?.tag)!==me?.tag){showToast('This Memory Universe is read-only for you.');return;}
+    const f=new FormData(e.currentTarget),text=String(f.get('text')||'').trim();
+    if(!text&&!pendingFile){showToast('Add a note or a photo first.');return;}
+    const submit=e.currentTarget.querySelector('button[type="submit"]');if(submit)submit.disabled=true;
+    try{
+      let image='';
+      if(pendingFile) image=(await uploadImage(pendingFile)).src;
+      saveUniversePreview('memoryBox',[{id:crypto.randomUUID?.()||String(Date.now()),text,image,createdAt:new Date().toISOString()},...items].slice(0,120));
+      if(pendingUrl)URL.revokeObjectURL(pendingUrl);
+      renderUniverseMemoryBoxLab();
+      showToast('Added to Memory Box.');
+    }catch(err){showToast(err?.message || 'Could not save Memory Box item.');if(submit)submit.disabled=false;}
+  });
 }
-
 function applyUniverseLivingThemePreview() {
   const view=$('#memoryUniverseView');
   if(!view)return;
@@ -5764,7 +5961,7 @@ function renderUniverseThemesLab() {
   const themes={travel:{name:'Travel Journal',icon:'✈',line:'Passport stamps, route lines, tickets and place chapters.',action:'Browse by places and journeys'},childhood:{name:'Childhood Album',icon:'☁',line:'Soft paper, doodles, school labels and playful keepsakes.',action:'Browse by school year and age'},letters:{name:'Love Letters',icon:'♡',line:'Envelope folds, handwritten notes and sealed-letter transitions.',action:'Browse letters and relationship milestones'},school:{name:'School Years',icon:'✎',line:'Notebook paper, class years, subjects and graduation milestones.',action:'Browse by school year and graduation'},family:{name:'Family Archive',icon:'⌂',line:'Generations, heirlooms, family tree and archival captions.',action:'Browse people and generations'},faith:{name:'Faith Journey',icon:'✝',line:'Liturgical seasons, prayer reflections and spiritual milestones.',action:'Browse reflections and spiritual milestones'}};
   const selected=themes[state.theme]||themes.travel;
   applyUniverseLivingThemePreview();
-  stage.innerHTML=`<div class="theme-lab"><aside class="theme-picker"><p class="eyebrow">LIVING SCRAPBOOK THEMES · BETA</p><h4>A theme should change how the scrapbook behaves, not only its color.</h4>${Object.entries(themes).map(([key,t])=>`<button class="${key===state.theme?'active':''}" type="button" data-theme-preview="${key}"><span>${t.icon}</span><div><strong>${t.name}</strong><small>${t.line}</small></div></button>`).join('')}</aside><section class="living-theme-preview theme-${escapeHtml(state.theme)}"><div class="theme-scene-head"><span>${selected.icon}</span><small>${escapeHtml(selected.name.toUpperCase())}</small></div><div class="theme-scene-page"><p class="eyebrow">${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</p><h3>${escapeHtml(entries.at(-1)?.title||'A chapter worth keeping')}</h3><p>${escapeHtml(universeExcerpt(entries.at(-1),190))}</p><div class="theme-scene-decoration"></div></div><div class="theme-behavior-card"><strong>${escapeHtml(selected.action)}</strong><span>${escapeHtml(selected.line)}</span></div><p class="theme-behavior-copy">The selected theme now changes the whole Memory Universe beta background and atmosphere. Your official scrapbook is untouched.</p></section></div>`;
+  stage.innerHTML=`<div class="theme-lab"><aside class="theme-picker"><p class="eyebrow">LIVING SCRAPBOOK THEMES</p><h4>A theme should change how the scrapbook behaves, not only its color.</h4>${Object.entries(themes).map(([key,t])=>`<button class="${key===state.theme?'active':''}" type="button" data-theme-preview="${key}"><span>${t.icon}</span><div><strong>${t.name}</strong><small>${t.line}</small></div></button>`).join('')}</aside><section class="living-theme-preview theme-${escapeHtml(state.theme)}"><div class="theme-scene-head"><span>${selected.icon}</span><small>${escapeHtml(selected.name.toUpperCase())}</small></div><div class="theme-scene-page"><p class="eyebrow">${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</p><h3>${escapeHtml(entries.at(-1)?.title||'A chapter worth keeping')}</h3><p>${escapeHtml(universeExcerpt(entries.at(-1),190))}</p><div class="theme-scene-decoration"></div></div><div class="theme-behavior-card"><strong>${escapeHtml(selected.action)}</strong><span>${escapeHtml(selected.line)}</span></div><p class="theme-behavior-copy">The selected theme now changes the whole Memory Universe background and atmosphere. Your scrapbook pages stay untouched.</p></section></div>`;
   stage.querySelectorAll('[data-theme-preview]').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('livingTheme',{theme:btn.dataset.themePreview});applyUniverseLivingThemePreview();renderUniverseThemesLab();}));
 }
 
@@ -5790,8 +5987,8 @@ function renderUniverseVersionsLab() {
 function renderUniverseVaultLab() {
   const stage=$('#universeLabStage');if(!stage)return;
   const vault=loadUniversePreview('vault',[]);
-  stage.innerHTML=`<div class="lab-split"><form id="vaultPreviewForm" class="lab-compose-card vault-compose"><span class="lab-icon">▣</span><p class="eyebrow">TRUE PERSONAL VAULT · CONCEPT</p><h4>A second lock for your most private memories.</h4><label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(universeSelectedEntry()?.id||'')}</select></label><label class="lab-field">Protection idea<select name="mode"><option>PIN + device unlock</option><option>Biometric only</option><option>PIN + recovery phrase</option></select></label><button class="primary" type="submit">Add to vault preview</button><div class="vault-warning"><strong>Preview only — not secure yet.</strong><span>This does not protect or hide the real scrapbook page. Production Vault would require server-side encryption and separate access controls.</span></div></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">VAULT SHELF</p><h4>Memories behind another door.</h4></div><span class="lab-preview-pill">${vault.length} locked</span></div><div class="vault-grid">${vault.map(item=>{const e=entries.find(x=>x.id===item.entryId);return `<article><span>▣</span><div><small>${escapeHtml(item.mode)}</small><strong>${escapeHtml(e?.title||'Memory')}</strong><p>${escapeHtml(universeDateLabel(e?.date))}</p></div><button class="icon-btn remove-vault-preview" type="button" data-preview-id="${escapeHtml(item.id)}">×</button></article>`;}).join('')||'<div class="lab-soft-empty">Nothing is in the preview vault yet.</div>'}</div></section></div>`;
-  $('#vaultPreviewForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);const item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(f.get('entryId')||''),mode:String(f.get('mode')||'PIN + device unlock')};if(vault.some(v=>v.entryId===item.entryId)){showToast('That memory is already in the preview vault.');return;}saveUniversePreview('vault',vault.concat(item));renderUniverseVaultLab();});
+  stage.innerHTML=`<div class="lab-split"><form id="vaultPreviewForm" class="lab-compose-card vault-compose"><span class="lab-icon">▣</span><p class="eyebrow">TRUE PERSONAL VAULT · CONCEPT</p><h4>A second lock for your most private memories.</h4><label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(universeSelectedEntry()?.id||'')}</select></label><label class="lab-field">Protection idea<select name="mode"><option>PIN + device unlock</option><option>Biometric only</option><option>PIN + recovery phrase</option></select></label><button class="primary" type="submit">Add to vault preview</button><div class="vault-warning"><strong>Preview only — not secure yet.</strong><span>This does not protect or hide the real scrapbook page. Production Vault would require server-side encryption and separate access controls.</span></div></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">VAULT SHELF</p><h4>Memories behind another door.</h4></div><span class="lab-preview-pill">${vault.length} locked</span></div><div class="vault-grid">${vault.map(item=>{const e=entries.find(x=>x.id===item.entryId);return `<article><span>▣</span><div><small>${escapeHtml(item.mode)}</small><strong>${escapeHtml(e?.title||'Memory')}</strong><p>${escapeHtml(universeDateLabel(e?.date))}</p></div><button class="icon-btn remove-vault-preview" type="button" data-preview-id="${escapeHtml(item.id)}">×</button></article>`;}).join('')||'<div class="lab-soft-empty">Nothing is in Memory Universe vault yet.</div>'}</div></section></div>`;
+  $('#vaultPreviewForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);const item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(f.get('entryId')||''),mode:String(f.get('mode')||'PIN + device unlock')};if(vault.some(v=>v.entryId===item.entryId)){showToast('That memory is already in Memory Universe vault.');return;}saveUniversePreview('vault',vault.concat(item));renderUniverseVaultLab();});
   stage.querySelectorAll('.remove-vault-preview').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('vault',vault.filter(v=>v.id!==btn.dataset.previewId));renderUniverseVaultLab();}));
 }
 
@@ -5815,10 +6012,10 @@ async function renderUniverseQrLab() {
   $('#qrMemorySelect')?.addEventListener('change',e=>{universeSelectedEntryId=e.target.value;renderUniverseQrLab();});
   try{
     const value=memoryShareUrl(entry.id);
-    const data=await api(`/api/preview/qr?value=${encodeURIComponent(value)}`);
+    const data=await api(`/api/memory-universe/qr?value=${encodeURIComponent(value)}`);
     const host=$('#qrKeepsakeImage');if(host)host.innerHTML=`<img src="${escapeHtml(data.dataUrl)}" alt="QR code for this Scrapella memory" />`;
     const btn=$('#downloadQrBtn');if(btn){btn.disabled=false;btn.onclick=()=>{const a=document.createElement('a');a.href=data.dataUrl;a.download='scrapella-memory-qr.png';a.click();};}
-  }catch(err){const host=$('#qrKeepsakeImage');if(host)host.textContent='Could not generate QR preview.';}
+  }catch(err){const host=$('#qrKeepsakeImage');if(host)host.textContent='Could not generate QR feature.';}
 }
 
 function secretProjectPerson(project,tag){
@@ -5878,7 +6075,7 @@ async function renderUniverseSecretLab(){
   const stage=$('#universeLabStage');if(!stage)return;
   stage.innerHTML='<div class="universe-empty wide"><span>✉</span><strong>Opening Secret Contributors…</strong><p>Loading shared beta surprises.</p></div>';
   let projects=[];
-  try{projects=(await api('/api/preview/secret-contributors')).projects||[];}
+  try{projects=(await api('/api/memory-universe/secret-contributors')).projects||[];}
   catch(err){stage.innerHTML=`<div class="lab-soft-empty">Could not load Secret Contributors: ${escapeHtml(err.message||'Unknown error')}</div>`;return;}
   const future=new Date();future.setDate(future.getDate()+7);
   stage.innerHTML=`<div class="secret-beta-layout">
@@ -5929,7 +6126,7 @@ async function renderUniverseSecretLab(){
     try{
       const f=new FormData(e.currentTarget),revealDate=String(f.get('revealDate')||'');
       const localReveal=new Date(revealDate+'T00:00:00');
-      await api('/api/preview/secret-contributors',{method:'POST',body:JSON.stringify({
+      await api('/api/memory-universe/secret-contributors',{method:'POST',body:JSON.stringify({
         title:String(f.get('title')||'').trim(),
         recipient:String(f.get('recipient')||'').trim(),
         revealDate,
@@ -5956,7 +6153,7 @@ async function renderUniverseSecretLab(){
       try{
         const f=new FormData(form),file=fileInput?.files?.[0]||null;let image='';
         if(file){const up=await uploadImage(file);image=up.src||'';}
-        await api(`/api/preview/secret-contributors/${encodeURIComponent(form.dataset.secretContribute)}/contributions`,{method:'POST',body:JSON.stringify({text:String(f.get('text')||'').trim(),image})});
+        await api(`/api/memory-universe/secret-contributors/${encodeURIComponent(form.dataset.secretContribute)}/contributions`,{method:'POST',body:JSON.stringify({text:String(f.get('text')||'').trim(),image})});
         showToast('Secret contribution added.');
         await renderUniverseSecretLab();
       }catch(err){showToast(err.message||'Could not add the contribution.');btn.disabled=false;}
@@ -5964,7 +6161,7 @@ async function renderUniverseSecretLab(){
   });
   stage.querySelectorAll('[data-secret-delete]').forEach(btn=>btn.addEventListener('click',async()=>{
     if(!confirm('Remove this beta surprise?'))return;
-    try{await api(`/api/preview/secret-contributors/${encodeURIComponent(btn.dataset.secretDelete)}`,{method:'DELETE'});await renderUniverseSecretLab();}
+    try{await api(`/api/memory-universe/secret-contributors/${encodeURIComponent(btn.dataset.secretDelete)}`,{method:'DELETE'});await renderUniverseSecretLab();}
     catch(err){showToast(err.message||'Could not remove the surprise.');}
   }));
 }
@@ -5979,7 +6176,7 @@ function renderUniverseFaithLab() {
   const stage=$('#universeLabStage');if(!stage)return;
   const all=loadUniversePreview('faithJournal',{}),today=new Date().toISOString().slice(0,10),item=all[today]||{};
   stage.innerHTML=`<div class="faith-journal"><header class="faith-journal-head"><span>✝</span><div><p class="eyebrow">CATHOLIC DAILY READING REFLECTION · PREVIEW</p><h4>${escapeHtml(new Intl.DateTimeFormat(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'}).format(new Date()))}</h4><p>A quiet place for Scripture references, reflection, prayer, and one thing to carry into the day.</p></div></header><form id="faithJournalForm" class="faith-journal-page"><div class="faith-reading-grid"><label>First Reading<input name="reading1" maxlength="80" value="${escapeHtml(item.reading1||'')}" placeholder="e.g. Isaiah 55:10–11" /></label><label>Psalm<input name="psalm" maxlength="80" value="${escapeHtml(item.psalm||'')}" placeholder="e.g. Psalm 34" /></label><label>Second Reading <small>(if applicable)</small><input name="reading2" maxlength="80" value="${escapeHtml(item.reading2||'')}" placeholder="Reference" /></label><label>Gospel<input name="gospel" maxlength="80" value="${escapeHtml(item.gospel||'')}" placeholder="e.g. Matthew 6:7–15" /></label></div><label><span>Word or phrase that stayed with me</span><input name="word" maxlength="180" value="${escapeHtml(item.word||'')}" placeholder="A phrase from today’s readings…" /></label><label><span>Reflection</span><textarea name="reflection" rows="7" maxlength="2400" placeholder="What is God inviting me to notice today?">${escapeHtml(item.reflection||'')}</textarea></label><div class="faith-two"><label><span>Prayer</span><textarea name="prayer" rows="4" maxlength="1000" placeholder="Lord…">${escapeHtml(item.prayer||'')}</textarea></label><label><span>One action today</span><textarea name="action" rows="4" maxlength="700" placeholder="Today I will…">${escapeHtml(item.action||'')}</textarea></label></div><button class="primary" type="submit">Save today’s reflection preview</button><small class="helper">For this preview, you enter the Catholic reading references yourself. A future official version can integrate a trusted liturgical-reading source while respecting source/licensing requirements.</small></form></div>`;
-  $('#faithJournalForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);all[today]={reading1:String(f.get('reading1')||'').trim(),psalm:String(f.get('psalm')||'').trim(),reading2:String(f.get('reading2')||'').trim(),gospel:String(f.get('gospel')||'').trim(),word:String(f.get('word')||'').trim(),reflection:String(f.get('reflection')||'').trim(),prayer:String(f.get('prayer')||'').trim(),action:String(f.get('action')||'').trim(),savedAt:new Date().toISOString()};saveUniversePreview('faithJournal',all);showToast('Today’s Catholic reflection saved in preview.');});
+  $('#faithJournalForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);all[today]={reading1:String(f.get('reading1')||'').trim(),psalm:String(f.get('psalm')||'').trim(),reading2:String(f.get('reading2')||'').trim(),gospel:String(f.get('gospel')||'').trim(),word:String(f.get('word')||'').trim(),reflection:String(f.get('reflection')||'').trim(),prayer:String(f.get('prayer')||'').trim(),action:String(f.get('action')||'').trim(),savedAt:new Date().toISOString()};saveUniversePreview('faithJournal',all);showToast('Today’s Catholic reflection saved in feature.');});
 }
 
 async function renderUniverseFreedomWallLab() {
@@ -5987,15 +6184,15 @@ async function renderUniverseFreedomWallLab() {
   stage.innerHTML=`<div class="freedom-wall-lab"><header class="freedom-wall-head"><div><p class="eyebrow">SCRAPELLA FREEDOM WALL · COMMUNITY PREVIEW</p><h4>A giant wall for small thoughts.</h4><p>Every signed-in Scrapella user can leave one photo with text, or text alone. Names are clickable. Posts are timestamped. This preview is shared across users.</p></div><span class="lab-preview-pill">Global preview wall</span></header><form id="freedomWallForm" class="freedom-wall-compose"><div class="freedom-wall-me">${avatarHtml(me||{},'freedom-wall-avatar')}</div><textarea name="text" rows="3" maxlength="900" placeholder="Leave something on the wall…"></textarea><label class="ghost freedom-wall-photo">▣ Photo<input id="freedomWallPhotoInput" type="file" accept="image/*" hidden /></label><div id="freedomWallPhotoPreview" class="freedom-wall-photo-preview hidden"></div><button class="primary" type="submit">Post to preview wall</button></form><div id="freedomWallCanvas" class="freedom-wall-canvas"><div class="lab-soft-empty">Loading the wall…</div></div></div>`;
   let pendingFile=null;
   $('#freedomWallPhotoInput')?.addEventListener('change',e=>{pendingFile=e.target.files?.[0]||null;const host=$('#freedomWallPhotoPreview');if(!pendingFile){host.classList.add('hidden');host.innerHTML='';return;}const url=URL.createObjectURL(pendingFile);host.innerHTML=`<img src="${url}" alt="Selected wall photo" /><button type="button" aria-label="Remove photo">×</button>`;host.classList.remove('hidden');host.querySelector('button').onclick=()=>{pendingFile=null;host.classList.add('hidden');host.innerHTML='';};});
-  $('#freedomWallForm')?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button[type="submit"]'),text=String(new FormData(e.currentTarget).get('text')||'').trim();if(!text&&!pendingFile){showToast('Write something or add a photo.');return;}btn.disabled=true;try{let image='';if(pendingFile){const up=await uploadImage(pendingFile);image=up.src||'';}await api('/api/preview/freedom-wall',{method:'POST',body:JSON.stringify({text,image})});showToast('Posted to the Freedom Wall preview.');await renderUniverseFreedomWallLab();}catch(err){showToast(err.message||'Could not post to the wall.');btn.disabled=false;}});
+  $('#freedomWallForm')?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.currentTarget.querySelector('button[type="submit"]'),text=String(new FormData(e.currentTarget).get('text')||'').trim();if(!text&&!pendingFile){showToast('Write something or add a photo.');return;}btn.disabled=true;try{let image='';if(pendingFile){const up=await uploadImage(pendingFile);image=up.src||'';}await api('/api/memory-universe/freedom-wall',{method:'POST',body:JSON.stringify({text,image})});showToast('Posted to the Freedom Wall feature.');await renderUniverseFreedomWallLab();}catch(err){showToast(err.message||'Could not post to the wall.');btn.disabled=false;}});
   try{
-    universeFreedomWallCache=await api('/api/preview/freedom-wall');
+    universeFreedomWallCache=await api('/api/memory-universe/freedom-wall');
     const posts=universeFreedomWallCache.posts||[],profiles=universeFreedomWallCache.profiles||{};
     const canvas=$('#freedomWallCanvas');
     canvas.innerHTML=posts.slice().reverse().map((post,index)=>{const p=profiles[post.author]||{tag:post.author,displayName:post.author};const tilt=((String(post.id).charCodeAt(0)||0)%7)-3;return `<article class="freedom-note freedom-note-${index%5}" style="--wall-tilt:${tilt}deg"><header><button type="button" data-wall-profile="${escapeHtml(post.author)}">${avatarHtml(p,'freedom-note-avatar')}<span><strong>${escapeHtml(p.displayName||p.tag)}</strong><small>@${escapeHtml(p.tag||post.author)}</small></span></button>${post.author===me?.tag||me?.isPlatformOwner?`<button class="freedom-note-delete" type="button" data-wall-delete="${escapeHtml(post.id)}">×</button>`:''}</header>${post.image?`<img class="freedom-note-photo" src="${escapeHtml(post.image)}" alt="" loading="lazy" />`:''}${post.text?`<p>${mentionTextHtml(post.text)}</p>`:''}<time>${escapeHtml(new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(post.createdAt)))}</time></article>`;}).join('')||'<div class="lab-soft-empty">The wall is empty. Be the first to leave something.</div>';
     canvas.querySelectorAll('[data-wall-profile]').forEach(btn=>btn.addEventListener('click',()=>openPersonProfile(btn.dataset.wallProfile)));
     wireProfileLinks(canvas);
-    canvas.querySelectorAll('[data-wall-delete]').forEach(btn=>btn.addEventListener('click',async()=>{try{await api(`/api/preview/freedom-wall/${encodeURIComponent(btn.dataset.wallDelete)}`,{method:'DELETE'});await renderUniverseFreedomWallLab();}catch(err){showToast(err.message);}}));
+    canvas.querySelectorAll('[data-wall-delete]').forEach(btn=>btn.addEventListener('click',async()=>{try{await api(`/api/memory-universe/freedom-wall/${encodeURIComponent(btn.dataset.wallDelete)}`,{method:'DELETE'});await renderUniverseFreedomWallLab();}catch(err){showToast(err.message);}}));
   }catch(err){const canvas=$('#freedomWallCanvas');if(canvas)canvas.innerHTML=`<div class="lab-soft-empty">Could not load the preview wall: ${escapeHtml(err.message||'Unknown error')}</div>`;}
 }
 
@@ -6021,14 +6218,35 @@ function renderUniverseArchiveLab() {
 function renderMemoryUniverse() {
   applyUniverseLivingThemePreview();
   const ordered=[...entries].sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt)));
-  if(!activeScrapbook){
+  const profile=universeContextProfile || me || {};
+  const self=(profile.tag || universeTargetTag)===me?.tag;
+  const display=profile.displayName || profile.tag || 'Your';
+  const title=$('#memoryUniverseHeroTitle');
+  if(title)title.textContent=self ? 'Your memories are more than a feed.' : `${display}’s Memory Universe`;
+  const audience=$('#memoryUniverseAudience');
+  if(audience){
+    audience.textContent=universeCanSeeExtended
+      ? (self
+          ? (universeOwnerOverride ? 'Owner override is on: Followers Only, Partner Only, Only You, Groups, and your bound Partner memories are included.' : 'Standard owner view: Followers Only memories plus Groups and your bound Partner context. Use owner override to include Partner Only and Only You memories.')
+          : 'You follow this person, so Memory Echoes and all Memory Universe features are available alongside the memories shared with you.')
+      : 'Only Memory Constellation is visible here. It includes Followers Only memories you can access, shared Groups, and bound Partner context when applicable.';
+  }
+  const overrideBtn=$('#memoryUniverseOwnerOverrideBtn');
+  if(overrideBtn){
+    overrideBtn.classList.toggle('hidden',!self);
+    overrideBtn.textContent=universeOwnerOverride ? 'Owner override: showing all' : 'Owner override: show Partner + Only You';
+    overrideBtn.classList.toggle('active',universeOwnerOverride);
+  }
+  document.querySelectorAll('#memoryUniverseView .universe-extended-section').forEach(el=>el.classList.toggle('hidden',!universeCanSeeExtended));
+
+  if(!ordered.length){
     $('#memoryUniverseStats').innerHTML='';
-    $('#memoryConstellationNodes').innerHTML='<div class="universe-empty constellation-empty"><span>♡</span><strong>Choose a scrapbook first.</strong><p>Memory Universe is built from the active scrapbook.</p></div>';
+    $('#memoryConstellationNodes').innerHTML='<div class="universe-empty constellation-empty"><span>♡</span><strong>No visible memories yet.</strong><p>Memories will appear here when their privacy and shared-book access allow it.</p></div>';
     $('#memoryConstellationLines').innerHTML='';
     $('#memoryEchoesGrid').innerHTML='';
     $('#memoryPerspectivesGrid').innerHTML='';
     renderMemoryUniverseDetail(null);
-    renderUniverseLabs();
+    if(universeCanSeeExtended)renderUniverseLabs();
     return;
   }
   const people=new Set(ordered.map(e=>e.author).filter(Boolean)).size;
@@ -6036,9 +6254,15 @@ function renderMemoryUniverse() {
   const years=[...new Set(ordered.map(e=>String(e.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))];
   $('#memoryUniverseStats').innerHTML=`<div><strong>${ordered.length}</strong><span>memories</span></div><div><strong>${people}</strong><span>${people===1?'voice':'voices'}</span></div><div><strong>${visuals}</strong><span>visual moments</span></div><div><strong>${escapeHtml(years.length>1?`${years[0]}–${years[years.length-1]}`:(years[0]||'Now'))}</strong><span>chapter span</span></div>`;
   renderMemoryConstellation(ordered);
-  renderMemoryEchoes(ordered);
-  renderMemoryPerspectives(ordered);
-  renderUniverseLabs();
+  if(universeCanSeeExtended){
+    renderMemoryEchoes(ordered);
+    renderMemoryPerspectives(ordered);
+    renderUniverseLabs();
+  }else{
+    $('#memoryEchoesGrid').innerHTML='';
+    $('#memoryPerspectivesGrid').innerHTML='';
+    $('#universeLabStage').innerHTML='';
+  }
 }
 function closeMemoryReplay() {
   clearTimeout(universeReplayTimer);
@@ -7009,7 +7233,7 @@ async function ensureNativeChatNotifications() {
             showView('messages');
             await loadChats().catch(()=>{});
             if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
-          } else if (url.includes('beta=secret')) {
+          } else if ((url.includes('universe=secret') || url.includes('beta=secret'))) {
             showView('universe');
             universeLabSetMode('secret');
           } else if (url.includes('notifications=1')) {
@@ -7310,13 +7534,11 @@ $('#closeBookViewBtn').addEventListener('click', async () => {
   await refreshAndShow('cover');
 });
 $('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
-$('#universeModeBtn')?.addEventListener('click', async () => {
-  try {
-    if (activeScrapbook) await refreshEntries();
-    showView('universe');
-  } catch (err) {
-    showToast(err?.message || 'Could not open Memory Universe.');
-  }
+$('#universeModeBtn')?.addEventListener('click', () => openMemoryUniverse(me?.tag));
+$('#memoryUniverseOwnerOverrideBtn')?.addEventListener('click',async()=>{
+  if((universeTargetTag || me?.tag)!==me?.tag)return;
+  universeOwnerOverride=!universeOwnerOverride;
+  await openMemoryUniverse(me.tag,{override:universeOwnerOverride});
 });
 $('#memoryReplayBtn')?.addEventListener('click',()=>startMemoryReplay());
 $('#memorySurpriseBtn')?.addEventListener('click',()=>{ if(!entries.length){ showToast('Add a memory first.'); return; } const entry=entries[Math.floor(Math.random()*entries.length)]; renderMemoryUniverseDetail(entry); $('#memoryUniverseDetail')?.scrollIntoView({behavior:'smooth',block:'nearest'}); });
@@ -7342,21 +7564,9 @@ $('#mobileNewMemoryBtn')?.addEventListener('click', () => {
   if (!isPhoneUI() || !activeScrapbook || activeScrapbook.canWrite === false) return;
   openEditor();
 });
-$('#mobileUniverseBackBtn')?.addEventListener('click', () => {
-  if (isPhoneUI()) phoneBackButton(() => showView('book'));
-  else showView('book');
-});
 $('#mobileStreamBtn')?.addEventListener('click', () => {
   if (!isPhoneUI() || !activeScrapbook) return;
   showView('stream');
-});
-$('#mobileUniverseBtn')?.addEventListener('click', async () => {
-  try {
-    if (activeScrapbook) await refreshEntries();
-    showView('universe');
-  } catch (err) {
-    showToast(err?.message || 'Could not open Memory Universe.');
-  }
 });
 $('#mobileDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
 $('#emptyDeleteScrapbookBtn')?.addEventListener('click', deleteActiveScrapbook);
@@ -7386,15 +7596,17 @@ $('#scrapbookPicker').addEventListener('change', async e => {
 });
 $('#mobileBookBackBtn')?.addEventListener('click', async () => {
   if (!isPhoneUI() || !me?.tag) return;
-  mobileBookContextTag = me.tag;
-  viewedPersonData = viewedPersonData?.isSelf ? viewedPersonData : null;
-  const options = mobileBookOptions();
-  const target = options.find(book => book.id === activeScrapbook?.id) || options[0] || null;
-  if (target && target.id !== activeScrapbook?.id) await loadSession(target.id);
-  renderScrapbookPicker();
-  renderMobileBookShelf();
-  setBookCoverOpen(Boolean(activeScrapbook));
-  showView('book');
+  if (phoneHistoryReady && history.state?.journalPhone) {
+    phoneBackButton();
+    return;
+  }
+  const contextTag=mobileBookContextTag || me.tag;
+  if(contextTag!==me.tag){
+    await openPersonProfile(contextTag,{preserveReturn:true});
+    return;
+  }
+  mobileBookContextTag=me.tag;
+  await prepareMobileBookView();
 });
 function updateScrapbookDialogForType() {
   const type = $('#scrapbookType').value;

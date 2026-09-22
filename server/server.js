@@ -236,6 +236,7 @@ async function readSocial() {
   data.blockedUsers = data.blockedUsers && typeof data.blockedUsers === 'object' ? data.blockedUsers : {};
   data.freedomWall = Array.isArray(data.freedomWall) ? data.freedomWall : [];
   data.secretContributorProjects = Array.isArray(data.secretContributorProjects) ? data.secretContributorProjects : [];
+  data.memoryUniverseState = data.memoryUniverseState && typeof data.memoryUniverseState === 'object' ? data.memoryUniverseState : {};
   for (const book of data.scrapbooks) {
     if (book?.type !== 'group') continue;
     const members = Array.isArray(book.members) ? book.members.filter(Boolean) : [];
@@ -263,7 +264,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], nativePushTokens: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [], secretContributorProjects: [] });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], nativePushTokens: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [], secretContributorProjects: [], memoryUniverseState: {} });
   await ensureFile(PRESENCE_FILE, {});
   await loadPresenceStore();
 
@@ -676,6 +677,26 @@ function canViewBook(social, book, viewer) {
   if (privacy === 'followers') return isFollowing(social, viewer, book.owner);
   if (privacy === 'partner') return isActivePartner(social, viewer, book.owner);
   return false;
+}
+const MEMORY_UNIVERSE_STATE_TYPES = new Set([
+  'layers','trails','interviews','voicePortraits','voiceMemories','letters','collaborative',
+  'prompts','anniversaries','rituals','memoryBox','livingTheme','peopleMemory','versions',
+  'vault','family','inherited','unfinished','faith','capsules','heirlooms','museum','archive'
+]);
+function memoryUniverseBooksForViewer(social, target, viewer, { ownerOverride = false } = {}) {
+  const following = isFollowing(social, viewer, target);
+  const partner = isActivePartner(social, viewer, target);
+  return social.scrapbooks.filter(book => {
+    if (book.type === 'personal') {
+      if (book.owner !== target) return false;
+      const privacy = personalPrivacy(book);
+      if (viewer === target) return ownerOverride || privacy === 'followers';
+      if (privacy === 'followers') return following;
+      if (privacy === 'partner') return partner;
+      return false;
+    }
+    return Array.isArray(book.members) && book.members.includes(target) && book.members.includes(viewer);
+  });
 }
 function mentionTags(text) {
   const matches = String(text || '').matchAll(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi);
@@ -1434,6 +1455,69 @@ async function handleApi(req, res, url) {
     return json(res, 200, { presence:presenceSnapshot(user) });
   }
 
+  if (pathname === '/api/memory-universe' && req.method === 'GET') {
+    const target = slugTag(url.searchParams.get('tag') || user);
+    if (!target || !(await accountExists(target))) return json(res, 404, { error:'That Memory Universe no longer exists.' });
+    const isSelf = target === user;
+    const ownerOverrideActive = isSelf && url.searchParams.get('override') === '1';
+    const books = memoryUniverseBooksForViewer(social,target,user,{ ownerOverride:ownerOverrideActive });
+    const bookIds = new Set(books.map(book => book.id));
+    const canSeeExtended = isSelf || isFollowing(social,user,target);
+    const allEntries = await readEntries();
+    const visibleEntries = allEntries
+      .filter(entry => bookIds.has(entry.scrapbookId))
+      .map(entry => {
+        const book = books.find(item => item.id === entry.scrapbookId);
+        const base = canSeeExtended ? entry : { ...entry, comments:[] };
+        return {
+          ...base,
+          universeBook:{
+            id:book?.id || entry.scrapbookId,
+            name:book?.name || 'Scrapbook',
+            type:book?.type || '',
+            privacy:book?.type === 'personal' ? personalPrivacy(book) : null
+          }
+        };
+      });
+    const profileTags = new Set([target]);
+    for (const entry of visibleEntries) {
+      if (entry.author) profileTags.add(entry.author);
+      if (canSeeExtended) for (const comment of (entry.comments || [])) if (comment.author) profileTags.add(comment.author);
+    }
+    for (const book of books) for (const tag of (book.members || [])) profileTags.add(tag);
+    const profiles = Object.fromEntries([...profileTags].map(tag => [tag,publicProfileFor(social,tag)]));
+    return json(res,200,{
+      profile:publicProfileFor(social,target),
+      isSelf,
+      isFollowing:isSelf || isFollowing(social,user,target),
+      isPartner:!isSelf && isActivePartner(social,user,target),
+      canSeeExtended,
+      ownerOverrideAvailable:isSelf,
+      ownerOverrideActive,
+      books:books.map(book => ({
+        ...decorateBook(social,book,user),
+        universeAccess:book.type === 'personal' ? personalPrivacy(book) : (book.type === 'group' ? 'group-member' : 'partner')
+      })),
+      entries:visibleEntries,
+      profiles,
+      state:canSeeExtended ? (social.memoryUniverseState?.[target] || {}) : {}
+    });
+  }
+
+  if (pathname === '/api/memory-universe/state' && req.method === 'PUT') {
+    const body = await readBody(req, 256 * 1024);
+    const type = String(body.type || '');
+    if (!MEMORY_UNIVERSE_STATE_TYPES.has(type)) return json(res,400,{ error:'Unsupported Memory Universe feature.' });
+    const serialized = JSON.stringify(body.value ?? null);
+    if (Buffer.byteLength(serialized,'utf8') > 180 * 1024) return json(res,413,{ error:'That Memory Universe item is too large.' });
+    social.memoryUniverseState ||= {};
+    social.memoryUniverseState[user] ||= {};
+    social.memoryUniverseState[user][type] = body.value ?? null;
+    await writeSocial(social);
+    emitLiveEvent(user,'universe',{type:'state',feature:type});
+    return json(res,200,{ ok:true });
+  }
+
   if (pathname === '/api/me' && req.method === 'GET') {
     social.notificationHub ||= {};
     if (!social.notificationHub[user]) {
@@ -1766,7 +1850,7 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (pathname === '/api/preview/secret-contributors' && req.method === 'GET') {
+  if (['/api/preview/secret-contributors','/api/memory-universe/secret-contributors'].includes(pathname) && req.method === 'GET') {
     const projects = (social.secretContributorProjects || [])
       .filter(project => canSeeSecretProject(project,user))
       .sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
@@ -1811,7 +1895,7 @@ async function handleApi(req, res, url) {
         title:`${actor.displayName || displayTag(user)} invited you to a secret Scrapella surprise`,
         body:'Open Memory Universe → Secret Contributors to add something.',
         tag:`secret-contributor-${project.id}`,
-        url:'/?beta=secret'
+        url:'/?universe=secret'
       });
       emitLiveEvent(tag,'notification',{type:'secret_contributor_invite',from:user,projectId:project.id});
       emitLiveEvent(tag,'secret',{type:'secret_invite',projectId:project.id,from:user});
@@ -1820,7 +1904,7 @@ async function handleApi(req, res, url) {
     return json(res,201,{ project:decorateSecretProject(social,project,user) });
   }
 
-  const secretContributionMatch = pathname.match(/^\/api\/preview\/secret-contributors\/([a-f0-9-]+)\/contributions$/i);
+  const secretContributionMatch = pathname.match(/^\\/api\\/(?:preview|memory-universe)\\/secret-contributors\/([a-f0-9-]+)\/contributions$/i);
   if (secretContributionMatch && req.method === 'POST') {
     const project = (social.secretContributorProjects || []).find(item => item.id === secretContributionMatch[1]);
     if (!project) return notFound(res);
@@ -1848,7 +1932,7 @@ async function handleApi(req, res, url) {
     return json(res,201,{ project:decorateSecretProject(social,project,user) });
   }
 
-  const secretProjectDeleteMatch = pathname.match(/^\/api\/preview\/secret-contributors\/([a-f0-9-]+)$/i);
+  const secretProjectDeleteMatch = pathname.match(/^\\/api\\/(?:preview|memory-universe)\\/secret-contributors\/([a-f0-9-]+)$/i);
   if (secretProjectDeleteMatch && req.method === 'DELETE') {
     const project = (social.secretContributorProjects || []).find(item => item.id === secretProjectDeleteMatch[1]);
     if (!project) return notFound(res);
@@ -1858,7 +1942,7 @@ async function handleApi(req, res, url) {
     return json(res,200,{ ok:true });
   }
 
-  if (pathname === '/api/preview/freedom-wall' && req.method === 'GET') {
+  if (['/api/preview/freedom-wall','/api/memory-universe/freedom-wall'].includes(pathname) && req.method === 'GET') {
     const posts = [...social.freedomWall]
       .sort((a,b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
       .slice(-250);
@@ -1869,7 +1953,7 @@ async function handleApi(req, res, url) {
     return json(res, 200, { posts, profiles });
   }
 
-  if (pathname === '/api/preview/qr' && req.method === 'GET') {
+  if (['/api/preview/qr','/api/memory-universe/qr'].includes(pathname) && req.method === 'GET') {
     const value = String(url.searchParams.get('value') || '').slice(0, 1200);
     if (!value) return json(res,400,{ error:'Missing QR value.' });
     try {
@@ -1900,7 +1984,7 @@ async function handleApi(req, res, url) {
     return json(res, 201, { post, profile:publicProfileFor(social,user) });
   }
 
-  const freedomWallDeleteMatch = pathname.match(/^\/api\/preview\/freedom-wall\/([a-f0-9-]+)$/i);
+  const freedomWallDeleteMatch = pathname.match(/^\\/api\\/(?:preview|memory-universe)\\/freedom-wall\/([a-f0-9-]+)$/i);
   if (freedomWallDeleteMatch && req.method === 'DELETE') {
     const index = social.freedomWall.findIndex(post => post.id === freedomWallDeleteMatch[1]);
     if (index < 0) return notFound(res);

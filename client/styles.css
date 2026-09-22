@@ -13305,3 +13305,106 @@ html.native-app #memoryUniverseView[data-living-theme="faith"] .universe-hero:be
   color:var(--living-accent);
   opacity:.08;
 }
+
+
+/* ===== 2026-09-23 MEMORY UNIVERSE OFFICIAL RELEASE ===== */
+#memoryUniverseView{display:grid}
+#memoryUniverseView.hidden{display:none!important}
+.mobile-universe-back{display:none!important}
+.universe-owner-override{
+  width:max-content;
+  margin-top:14px;
+  background:rgba(255,255,255,.72)
+}
+.universe-owner-override.active{background:var(--rose-dark);color:#fff}
+.universe-readonly form,.universe-readonly .lab-compose-card{opacity:.92}
+.universe-readonly .lab-drop-photo.disabled{pointer-events:none;opacity:.55}
+
+.lab-memory-picker{position:relative;text-transform:none;letter-spacing:0}
+.lab-memory-picker-button{
+  width:100%;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.74);
+  color:var(--ink);text-align:left;font:600 11px/1.35 ui-sans-serif,system-ui,sans-serif
+}
+.lab-memory-picker-button b{font-size:14px;color:var(--rose-dark)}
+.lab-memory-picker-menu{
+  position:absolute;z-index:80;left:0;right:0;top:calc(100% + 6px);
+  max-height:260px;overflow:auto;padding:6px;border:1px solid var(--line);border-radius:13px;
+  background:var(--paper);box-shadow:0 18px 42px rgba(42,28,32,.22)
+}
+.lab-memory-picker-menu button{
+  width:100%;display:grid;gap:3px;padding:10px;border:0;border-radius:9px;background:transparent;color:var(--ink);text-align:left
+}
+.lab-memory-picker-menu button:hover,.lab-memory-picker-menu button.active{background:var(--rose-soft)}
+.lab-memory-picker-menu small{color:var(--muted);font-size:8px}.lab-memory-picker-menu strong{font-size:10px}
+
+.scrapella-pull-refresh{
+  --pull:0;
+  position:fixed;z-index:220;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);
+  transform:translate(-50%,calc(-22px + 18px * var(--pull))) scale(calc(.86 + .14 * var(--pull)));
+  display:flex;align-items:center;gap:7px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;
+  background:var(--paper);color:var(--ink);box-shadow:0 10px 28px rgba(0,0,0,.18);
+  opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease
+}
+.scrapella-pull-refresh.visible{opacity:1}
+.scrapella-pull-refresh.refreshing span{animation:scrapellaPullSpin .8s linear infinite}
+.scrapella-pull-refresh span{color:var(--rose-dark);font-size:15px}.scrapella-pull-refresh b{font:800 9px/1 ui-sans-serif,system-ui,sans-serif}
+@keyframes scrapellaPullSpin{to{transform:rotate(360deg)}}
+
+.mobile-book-profile-link{
+  width:100%;border:0;padding:0;background:transparent;color:inherit;text-align:left;cursor:pointer
+}
+#journalApp img:not(.brand-header-logo){-webkit-user-drag:none}
+.saved-canvas img,.entry-body img,.stream-card img,.universe-panel img,.memory-box-grid img,.secret-contribution-grid img,.freedom-wall-grid img,.life-museum img{cursor:zoom-in}
+
+html[data-theme="night"] .memory-universe-view{color:var(--ink)}
+html[data-theme="night"] .universe-hero{
+  border-color:rgba(242,224,218,.12);
+  background:
+    radial-gradient(circle at 82% 18%,rgba(196,123,137,.15),transparent 31%),
+    radial-gradient(circle at 14% 88%,rgba(120,83,94,.15),transparent 35%),
+    linear-gradient(135deg,#30272a,#241d1f);
+  box-shadow:0 18px 48px rgba(0,0,0,.22)
+}
+html[data-theme="night"] .universe-panel,
+html[data-theme="night"] .memory-universe-stats>div,
+html[data-theme="night"] .memory-universe-detail,
+html[data-theme="night"] .lab-workbench,
+html[data-theme="night"] .lab-compose-card,
+html[data-theme="night"] .interview-prompt-list,
+html[data-theme="night"] .memory-layer-original{
+  color:var(--ink);
+  border-color:var(--line);
+  background:#2d2527
+}
+html[data-theme="night"] .memory-constellation{
+  border-color:var(--line);
+  background:
+    radial-gradient(circle at 50% 50%,rgba(196,123,137,.12),transparent 24%),
+    radial-gradient(circle at 20% 20%,rgba(255,255,255,.035),transparent 24%),
+    linear-gradient(#2b2325,#211b1d)
+}
+html[data-theme="night"] .constellation-book-node{background:rgba(53,43,46,.96);border-color:var(--line)}
+html[data-theme="night"] .universe-detail-card,
+html[data-theme="night"] .memory-echo-card,
+html[data-theme="night"] .perspective-card,
+html[data-theme="night"] .lab-memory-picker-menu,
+html[data-theme="night"] .lab-memory-picker-button{background:#2d2527;color:var(--ink);border-color:var(--line)}
+html[data-theme="night"] .lab-field select,
+html[data-theme="night"] .lab-field input,
+html[data-theme="night"] .lab-field textarea,
+html[data-theme="night"] .lab-compose-card textarea{background:#211b1d;color:var(--ink)}
+html[data-theme="night"] .universe-owner-override{background:#3a3033;color:var(--ink)}
+
+@media(max-width:800px){
+  .memory-universe-view{width:100%;margin:0;padding:10px 12px 86px;gap:12px}
+  .universe-hero{min-height:0;padding:20px 17px;border-radius:19px}
+  .universe-panel{padding:15px 13px;border-radius:18px}
+  .universe-panel-head{gap:10px;margin-bottom:13px}
+  .universe-panel-head h3{font-size:20px}
+  .universe-hero h2{font-size:29px}
+  .constellation-layout{gap:10px}
+  html.native-app .mode-switch{grid-template-columns:repeat(4,minmax(0,1fr))}
+  html.native-app #streamModeBtn{display:none!important}
+  html.native-app #universeModeBtn{display:inline-flex!important;align-items:center;justify-content:center}
+}

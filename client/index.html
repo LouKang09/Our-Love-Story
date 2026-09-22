@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260922-mobilebeta15" />
+  <link rel="stylesheet" href="/styles.css?v=20260923-memoryuniverse-official" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -125,7 +125,7 @@
             <button id="homeModeBtn">Home</button>
             <button id="bookModeBtn">Book</button>
             <button id="streamModeBtn">Memory Stream</button>
-            <button id="universeModeBtn" class="web-memory-universe-only" type="button">Memory Universe <span class="universe-beta">Beta</span></button>
+            <button id="universeModeBtn" type="button">Memory Universe</button>
             <button id="connectionsModeBtn">People</button>
             <button id="messagesModeBtn" class="messages-mode-btn">Messages <span id="messagesBadge" class="messages-badge hidden">0</span></button>
           </div>
@@ -237,8 +237,7 @@
           <div class="mobile-book-actions">
             <button id="mobileNewMemoryBtn" class="primary" type="button">＋ New memory</button>
             <button id="mobileStreamBtn" class="ghost" type="button">Memory stream</button>
-            <button id="mobileUniverseBtn" class="ghost web-memory-universe-only" type="button">Memory Universe <span class="universe-beta">Beta</span></button>
-            <button id="mobileLeaveScrapbookBtn" class="ghost mobile-leave-scrapbook hidden" type="button">Leave group</button>
+                <button id="mobileLeaveScrapbookBtn" class="ghost mobile-leave-scrapbook hidden" type="button">Leave group</button>
             <button id="mobileDeleteScrapbookBtn" class="danger mobile-delete-scrapbook hidden" type="button">Delete scrapbook</button>
           </div>
         </section>
@@ -267,21 +266,21 @@
         <div id="timeline" class="timeline"></div>
       </section>
 
-      <section id="memoryUniverseView" class="memory-universe-view web-memory-universe-only hidden" aria-label="Memory Universe">
-        <button id="mobileUniverseBackBtn" class="ghost mobile-universe-back" type="button">← Back to book</button>
+      <section id="memoryUniverseView" class="memory-universe-view hidden" aria-label="Memory Universe">
         <div class="universe-hero">
           <div>
-            <p class="eyebrow">SCRAPELLA LABS · WEB PREVIEW</p>
-            <h2>Your memories are more than a feed.</h2>
-            <p>Explore how moments, people, and years connect inside this scrapbook. Nothing here changes your original pages.</p>
+            <p class="eyebrow">MEMORY UNIVERSE</p>
+            <h2 id="memoryUniverseHeroTitle">Your memories are more than a feed.</h2>
+            <p id="memoryUniverseAudience">Explore how moments, people, and years connect across the scrapbooks you are allowed to see.</p>
+            <button id="memoryUniverseOwnerOverrideBtn" class="ghost universe-owner-override hidden" type="button">Show all my memories</button>
           </div>
-          <div class="universe-hero-actions">
+          <div class="universe-hero-actions universe-extended-section">
             <button id="memoryReplayBtn" class="primary" type="button">▶ Life Replay</button>
             <button id="memorySurpriseBtn" class="ghost" type="button">✦ Surprise me</button>
           </div>
         </div>
 
-        <div id="memoryUniverseStats" class="memory-universe-stats"></div>
+        <div id="memoryUniverseStats" class="memory-universe-stats universe-extended-section"></div>
 
         <section class="universe-panel constellation-panel">
           <div class="universe-panel-head">
@@ -303,31 +302,31 @@
           </div>
         </section>
 
-        <section class="universe-panel">
+        <section class="universe-panel universe-extended-section">
           <div class="universe-panel-head">
             <div><p class="eyebrow">MEMORY ECHOES</p><h3>Then &amp; now.</h3><p>Scrapella looks for moments that echo across different years so your past can sit beside your present.</p></div>
           </div>
           <div id="memoryEchoesGrid" class="memory-echoes-grid"></div>
         </section>
 
-        <section class="universe-panel universe-perspectives-panel">
+        <section class="universe-panel universe-perspectives-panel universe-extended-section">
           <div class="universe-panel-head">
             <div><p class="eyebrow">SAME MOMENT, DIFFERENT MEMORY</p><h3>One date can hold more than one point of view.</h3><p>When several people remember the same day, Scrapella places their perspectives together instead of turning them into separate posts.</p></div>
           </div>
           <div id="memoryPerspectivesGrid" class="memory-perspectives-grid"></div>
         </section>
 
-        <section class="universe-panel universe-labs-panel">
+        <section class="universe-panel universe-labs-panel universe-extended-section">
           <div class="universe-panel-head">
             <div>
-              <p class="eyebrow">SCRAPELLA LABS · MORE PREVIEWS</p>
+              <p class="eyebrow">SCRAPELLA FEATURES</p>
               <h3>What if your scrapbook could grow with your life?</h3>
-              <p>These are working web previews of the next ideas. They do not alter your original scrapbook pages. Experimental notes, capsules, heirlooms, and interviews stay in this browser for now.</p>
+              <p>These features are part of Memory Universe on both web and the Scrapella app. Your original scrapbook pages remain unchanged.</p>
             </div>
-            <span class="universe-hint">Try them before we make them permanent.</span>
+            <span class="universe-hint">Built into your Memory Universe.</span>
           </div>
 
-          <div class="universe-lab-tabs" role="tablist" aria-label="Scrapella Labs previews">
+          <div class="universe-lab-tabs" role="tablist" aria-label="Memory Universe features">
             <button class="active" type="button" data-universe-lab="layers">Memory Layers</button>
             <button type="button" data-universe-lab="trails">Memory Trails</button>
             <button type="button" data-universe-lab="interview">Memory Interview</button>
@@ -355,7 +354,7 @@
             <button type="button" data-universe-lab="museum">Life Museum</button>
             <button type="button" data-universe-lab="archive">Archive</button>
           </div>
-          <p class="universe-overlap-note">Already represented elsewhere in this preview: <strong>Memory Echoes</strong> is the Then &amp; Now section above. Anniversary Resurfacing builds on that same idea, while Memory Versions expands Memory Layers.</p>
+          <p class="universe-overlap-note">Also connected inside Memory Universe: <strong>Memory Echoes</strong> is the Then &amp; Now section above. Anniversary Resurfacing builds on that same idea, while Memory Versions expands Memory Layers.</p>
 
           <div id="universeLabStage" class="universe-lab-stage" aria-live="polite"></div>
         </section>
@@ -756,6 +755,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260922-mobilebeta16" defer></script>
+  <script src="/app.js?v=20260923-memoryuniverse-official" defer></script>
 </body>
 </html>
