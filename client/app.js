@@ -110,6 +110,7 @@ let presenceUiTimer = null;
 
 const PHONE_UI_QUERY = '(max-width: 800px)';
 let mobileBookContextTag = null;
+let mobileBookShelfOnly = false;
 let mobileBookBackToSelfAfterProfile = false;
 let mobileHomeSearchTimer = null;
 let mobileHomeSearchSeq = 0;
@@ -657,24 +658,41 @@ async function refreshNativePhoneContext(){
   const indicator=phonePullIndicator();
   indicator.classList.add('refreshing','visible');
   indicator.querySelector('b').textContent='Refreshing…';
+
   const mode=currentMode;
+  const bookId=activeScrapbook?.id || null;
+  const contextTag=mobileBookContextTag || me.tag;
+  const personTag=mode==='person' ? (viewedPersonData?.profile?.tag || contextTag) : null;
+  const personList=personListMode;
+  const ownerOverrideTag=ownerOverrideTargetTag;
+  const universeTag=universeTargetTag || contextTag || me.tag;
+  const universeOverride=universeOwnerOverride;
+  const shelfOnly=mobileBookShelfOnly;
+
   try{
-    ownerOverrideTargetTag=null;
-    viewedPersonData=null;
-    mobileBookContextTag=me.tag;
-    universeTargetTag=me.tag;
-    universeOwnerOverride=false;
-    await loadSession(null);
+    await loadSession(bookId);
+    mobileBookContextTag=contextTag;
+    mobileBookShelfOnly=shelfOnly;
+    ownerOverrideTargetTag=ownerOverrideTag;
+
     if(mode==='universe'){
-      await loadMemoryUniverse(me.tag,{override:false});
+      await loadMemoryUniverse(universeTag,{override:universeOverride});
+      mobileBookContextTag=contextTag;
       showView('universe');
-    }else if(mode==='person'){
-      await openPersonProfile(me.tag,{preserveReturn:true});
+    }else if(mode==='person' && personTag){
+      await openPersonProfile(personTag,{preserveReturn:true,list:personList});
+      mobileBookContextTag=contextTag;
     }else if(mode==='book' || mode==='stream' || mode==='cover'){
-      await prepareMobileBookView();
+      renderScrapbookPicker();
+      renderMobileBookShelf();
+      setBookCoverOpen(mode!=='cover' && !shelfOnly);
+      showView(mode);
+    }else if(mode==='connections'){
+      showView('connections');
     }else{
-      showView(mode==='connections'?'connections':'home');
+      showView('home');
     }
+
     indicator.querySelector('b').textContent='Updated';
   }catch(err){
     indicator.querySelector('b').textContent='Could not refresh';
@@ -770,7 +788,10 @@ function renderMobileBookShelf() {
   if (!mobileBookContextTag && me?.tag) mobileBookContextTag = me.tag;
   const profile = mobileContextProfile() || me || {};
   const other = Boolean(profile.tag && me?.tag && profile.tag !== me.tag);
-  $('#mobileBookBackBtn')?.classList.toggle('hidden', !other);
+  const backBtn=$('#mobileBookBackBtn');
+  backBtn?.classList.toggle('hidden', !other);
+  if(backBtn && other) backBtn.textContent=mobileBookShelfOnly ? '← My books' : `← ${profile.displayName || '@'+profile.tag}’s books`;
+  $('#bookView')?.classList.toggle('mobile-books-only', Boolean(other && mobileBookShelfOnly));
   const context = $('#mobileBookContext');
   if (context) {
     context.innerHTML = `
@@ -3418,7 +3439,10 @@ async function openHomeScrapbook(id, mode = 'book') {
       return;
     }
     activeScrapbook = book;
-    if (isPhoneUI()) mobileBookContextTag = book.owner || me?.tag || null;
+    if (isPhoneUI()) {
+      mobileBookContextTag = book.owner || me?.tag || null;
+      mobileBookShelfOnly = false;
+    }
     spreadIndex = 0;
     localStorage.setItem('activeScrapbookId', book.id);
     renderScrapbookPicker();
@@ -7544,7 +7568,14 @@ $('#closeBookViewBtn').addEventListener('click', async () => {
   await refreshAndShow('cover');
 });
 $('#streamModeBtn').addEventListener('click', () => refreshAndShow('stream'));
-$('#universeModeBtn')?.addEventListener('click', () => openMemoryUniverse(me?.tag));
+$('#universeModeBtn')?.addEventListener('click', () => {
+  const target=currentMode==='person'
+    ? (viewedPersonData?.profile?.tag || me?.tag)
+    : ((currentMode==='book' || currentMode==='stream') && mobileBookContextTag && mobileBookContextTag!==me?.tag
+        ? mobileBookContextTag
+        : me?.tag);
+  openMemoryUniverse(target);
+});
 $('#memoryUniverseOwnerOverrideBtn')?.addEventListener('click',async()=>{
   if((universeTargetTag || me?.tag)!==me?.tag)return;
   universeOwnerOverride=!universeOwnerOverride;
@@ -7587,6 +7618,7 @@ $('#cancelEditorBtn').addEventListener('click', closeEditor);
 
 $('#scrapbookPicker').addEventListener('change', async e => {
   const selectedId = e.target.value || null;
+  mobileBookShelfOnly = false;
   setBookCoverOpen(false);
   spreadIndex = 0;
   try {
@@ -7607,17 +7639,28 @@ $('#scrapbookPicker').addEventListener('change', async e => {
 $('#mobileBookBackBtn')?.addEventListener('click', async () => {
   if (!isPhoneUI() || !me?.tag) return;
   const contextTag=mobileBookContextTag || me.tag;
-  if(contextTag!==me.tag){
-    mobileBookBackToSelfAfterProfile=true;
-    if (phoneHistoryReady && history.state?.journalPhone) {
-      phoneBackButton(() => openPersonProfile(contextTag,{preserveReturn:true}));
-    } else {
-      await openPersonProfile(contextTag,{preserveReturn:true});
-    }
+
+  if(contextTag!==me.tag && !mobileBookShelfOnly){
+    mobileBookBackToSelfAfterProfile=false;
+    mobileBookShelfOnly=true;
+    setBookCoverOpen(false);
+    renderScrapbookPicker();
+    renderMobileBookShelf();
+    showView('book');
     return;
   }
-  mobileBookBackToSelfAfterProfile=false;
-  mobileBookContextTag=me.tag;
+
+  if(contextTag!==me.tag){
+    mobileBookBackToSelfAfterProfile=false;
+    mobileBookContextTag=me.tag;
+    mobileBookShelfOnly=false;
+    viewedPersonData=viewedPersonData?.isSelf ? viewedPersonData : null;
+    await loadSession(null);
+    await prepareMobileBookView();
+    return;
+  }
+
+  mobileBookShelfOnly=false;
   await prepareMobileBookView();
 });
 function updateScrapbookDialogForType() {
@@ -8184,7 +8227,6 @@ function setPhoneMessageButtonVisual(phone) {
 }
 function syncResponsiveChrome() {
   const phone = isPhoneUI();
-  document.documentElement.classList.toggle('web-memory-preview', !isNativeScrapellaApp());
   document.documentElement.classList.toggle('memory-universe-official', true);
   if($('#chatPhotoInput')) $('#chatPhotoInput').multiple = true;
   const toolbar = document.querySelector('.toolbar');
