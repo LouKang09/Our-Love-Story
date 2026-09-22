@@ -13186,3 +13186,122 @@ html.native-app .theme-behavior-card{
     grid-template-columns:1fr;
   }
 }
+
+
+/* ===== 2026-09-22 NATIVE LIVING THEME FULL-EXPERIENCE FIX ===== */
+
+/* The Living Theme beta now changes the atmosphere of the whole native
+   Memory Universe, not only the small theme preview card. */
+html.native-app #memoryUniverseView[data-living-theme]{
+  --living-surface:#fffaf3;
+  --living-surface-2:#f7ece9;
+  --living-line:rgba(137,86,99,.14);
+  --living-accent:#a76477;
+  --living-muted:#806b70;
+}
+html.native-app #memoryUniverseView[data-living-theme="travel"]{
+  --living-surface:#f2f7f5;
+  --living-surface-2:#e2efeb;
+  --living-line:rgba(74,119,116,.18);
+  --living-accent:#537f7c;
+  --living-muted:#637c79;
+  background:
+    radial-gradient(circle at 86% 4%,rgba(77,139,134,.12),transparent 28%),
+    linear-gradient(180deg,#edf6f3 0,transparent 610px)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme="childhood"]{
+  --living-surface:#fff8f0;
+  --living-surface-2:#f3e9f8;
+  --living-line:rgba(145,112,162,.18);
+  --living-accent:#9c72ad;
+  --living-muted:#7d6c84;
+  background:
+    radial-gradient(circle at 12% 4%,rgba(160,124,180,.12),transparent 30%),
+    linear-gradient(180deg,#f8effb 0,transparent 610px)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme="letters"]{
+  --living-surface:#fff7f7;
+  --living-surface-2:#f5dfe5;
+  --living-line:rgba(164,89,112,.18);
+  --living-accent:#a85872;
+  --living-muted:#866773;
+  background:
+    radial-gradient(circle at 82% 5%,rgba(182,93,119,.12),transparent 28%),
+    linear-gradient(180deg,#f9e8ed 0,transparent 610px)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme="school"]{
+  --living-surface:#fbfcf6;
+  --living-surface-2:#e6ebdd;
+  --living-line:rgba(105,125,92,.18);
+  --living-accent:#718161;
+  --living-muted:#697363;
+  background:
+    linear-gradient(rgba(111,132,95,.055) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(111,132,95,.04) 1px,transparent 1px),
+    linear-gradient(180deg,#eff4e7 0,transparent 610px)!important;
+  background-size:28px 28px,28px 28px,auto!important;
+}
+html.native-app #memoryUniverseView[data-living-theme="family"]{
+  --living-surface:#fbf6ed;
+  --living-surface-2:#eadcc9;
+  --living-line:rgba(139,104,75,.2);
+  --living-accent:#92704e;
+  --living-muted:#786958;
+  background:
+    radial-gradient(circle at 18% 2%,rgba(145,105,73,.12),transparent 28%),
+    linear-gradient(180deg,#efe2d1 0,transparent 610px)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme="faith"]{
+  --living-surface:#fbf9f1;
+  --living-surface-2:#ece5d4;
+  --living-line:rgba(135,112,75,.19);
+  --living-accent:#8f7957;
+  --living-muted:#786f60;
+  background:
+    radial-gradient(circle at 50% -4%,rgba(215,190,134,.17),transparent 32%),
+    linear-gradient(180deg,#f1ecdf 0,transparent 610px)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme] .universe-hero,
+html.native-app #memoryUniverseView[data-living-theme] .universe-panel,
+html.native-app #memoryUniverseView[data-living-theme] .memory-universe-stats>div{
+  background:linear-gradient(145deg,var(--living-surface),var(--living-surface-2))!important;
+  border-color:var(--living-line)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme] .memory-constellation,
+html.native-app #memoryUniverseView[data-living-theme] .memory-universe-detail{
+  background:var(--living-surface)!important;
+  border-color:var(--living-line)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme] .eyebrow,
+html.native-app #memoryUniverseView[data-living-theme] .universe-hint,
+html.native-app #memoryUniverseView[data-living-theme] .lab-preview-pill{
+  color:var(--living-accent)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme] .constellation-book-node{
+  background:var(--living-surface)!important;
+  border-color:var(--living-line)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme] .constellation-line.memory-line{
+  stroke:var(--living-line)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme] .constellation-line.person-line{
+  stroke:var(--living-accent)!important;
+  opacity:.35;
+}
+html.native-app #memoryUniverseView[data-living-theme="letters"] .universe-panel{
+  border-radius:22px 22px 10px 10px;
+}
+html.native-app #memoryUniverseView[data-living-theme="school"] .universe-panel{
+  background:
+    repeating-linear-gradient(to bottom,transparent 0,transparent 29px,rgba(99,121,89,.055) 30px),
+    var(--living-surface)!important;
+}
+html.native-app #memoryUniverseView[data-living-theme="faith"] .universe-hero:before{
+  content:"✝";
+  position:absolute;
+  right:20px;
+  top:12px;
+  font:700 48px/1 Georgia,serif;
+  color:var(--living-accent);
+  opacity:.08;
+}
