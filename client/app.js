@@ -4489,6 +4489,47 @@ function startChatAudioVisualizer(stream,mode='tap') {
     }
   }catch{}
 }
+async function normalizeVoiceRecordingForPlayback(blob) {
+  if (!blob?.size) return { blob, type:blob?.type || 'audio/webm', ext:'webm' };
+  try {
+    const AudioCtx=window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) throw new Error('No audio decoder');
+    const ctx=new AudioCtx();
+    const decoded=await ctx.decodeAudioData((await blob.arrayBuffer()).slice(0));
+    const targetRate=16000;
+    const frames=Math.max(1,Math.round(decoded.duration*targetRate));
+    const mono=new Float32Array(frames);
+    const channels=Math.max(1,decoded.numberOfChannels);
+    for(let i=0;i<frames;i++){
+      const sourcePos=(i/Math.max(1,frames-1))*Math.max(0,decoded.length-1);
+      const left=Math.floor(sourcePos),right=Math.min(decoded.length-1,left+1),frac=sourcePos-left;
+      let sample=0;
+      for(let ch=0;ch<channels;ch++){
+        const data=decoded.getChannelData(ch);
+        sample += (data[left]||0)*(1-frac)+(data[right]||0)*frac;
+      }
+      mono[i]=Math.max(-1,Math.min(1,sample/channels));
+    }
+    try{await ctx.close();}catch{}
+    const buffer=new ArrayBuffer(44+mono.length*2);
+    const view=new DataView(buffer);
+    const write=(offset,value)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i));};
+    write(0,'RIFF'); view.setUint32(4,36+mono.length*2,true); write(8,'WAVE');
+    write(12,'fmt '); view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
+    view.setUint32(24,targetRate,true); view.setUint32(28,targetRate*2,true); view.setUint16(32,2,true); view.setUint16(34,16,true);
+    write(36,'data'); view.setUint32(40,mono.length*2,true);
+    let offset=44;
+    for(let i=0;i<mono.length;i++,offset+=2){
+      const value=mono[i]<0?mono[i]*0x8000:mono[i]*0x7fff;
+      view.setInt16(offset,Math.round(value),true);
+    }
+    return {blob:new Blob([buffer],{type:'audio/wav'}),type:'audio/wav',ext:'wav'};
+  } catch {
+    const type=blob.type || 'audio/webm';
+    const ext=type.includes('ogg')?'ogg':type.includes('mp4')?'m4a':type.includes('wav')?'wav':'webm';
+    return {blob,type,ext};
+  }
+}
 async function sendChatVoiceFile(file) {
   if(!activeChatId||!file)return;
   const replyId=pendingChatReply?.id || '';
@@ -4555,8 +4596,12 @@ async function startChatAudioRecording(mode='tap') {
         showToast('Voice message is too large. Please record a shorter clip.');
         return;
       }
-      const ext=type.includes('ogg')?'ogg':'webm';
-      const file=new File([blob],`voice-${Date.now()}.${ext}`,{type,lastModified:Date.now()});
+      const normalized=await normalizeVoiceRecordingForPlayback(blob);
+      if(normalized.blob.size>8*1024*1024){
+        showToast('Voice message is too large. Please record a shorter clip.');
+        return;
+      }
+      const file=new File([normalized.blob],`voice-${Date.now()}.${normalized.ext}`,{type:normalized.type,lastModified:Date.now()});
       if(disposition==='send') await sendChatVoiceFile(file);
       else{
         pendingChatAudioFile=file;
