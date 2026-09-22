@@ -5636,9 +5636,11 @@ async function renderUniverseSecretLab(){
         return `<article class="secret-project-card ${project.due?'revealed':''}" data-secret-project="${escapeHtml(project.id)}">
           <header><div><small>${project.due?'READY TO OPEN':project.role==='owner'?'YOU CREATED THIS':'YOU ARE A CONTRIBUTOR'}</small><strong>${escapeHtml(project.title)}</strong><p>For ${escapeHtml(recipient.displayName||recipient.tag)} · reveals ${escapeHtml(universeDateLabel(project.revealDate))}</p></div>${project.role==='owner'?`<button class="icon-btn secret-project-delete" type="button" data-secret-delete="${escapeHtml(project.id)}">×</button>`:''}</header>
           <div class="secret-project-people"><span>Created by ${escapeHtml(owner.displayName||owner.tag)}</span>${contributorProfiles.length?`<span>Contributors: ${contributorProfiles.map(p=>'@'+escapeHtml(p.tag)).join(', ')}</span>`:''}</div>
-          <div class="secret-contribution-grid">${contributions.map(item=>{const p=secretProjectPerson(project,item.author);return `<article>${item.image?`<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />`:'<span>✦</span>'}<div><small>${escapeHtml(p.displayName||p.tag)} · @${escapeHtml(p.tag||item.author)}</small>${item.text?`<p>${escapeHtml(item.text)}</p>`:''}<time>${escapeHtml(new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(item.createdAt)))}</time></div></article>`;}).join('')||'<div class="lab-soft-empty">No contributions yet.</div>'}</div>
+          ${project.due&&project.role==='recipient'?`<div class="secret-open-banner"><div><strong>♡ It is reveal day.</strong><span>Your surprise is ready. Open it when you are ready.</span></div><button class="primary secret-open-surprise" type="button" data-secret-open="${escapeHtml(project.id)}">Open surprise</button></div>`:''}
+          <div class="secret-reveal-content ${project.due&&project.role==='recipient'?'hidden':''}" data-secret-content="${escapeHtml(project.id)}">
+            <div class="secret-contribution-grid">${contributions.map(item=>{const p=secretProjectPerson(project,item.author);return `<article>${item.image?`<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />`:'<span>✦</span>'}<div><small>${escapeHtml(p.displayName||p.tag)} · @${escapeHtml(p.tag||item.author)}</small>${item.text?`<p>${escapeHtml(item.text)}</p>`:''}<time>${escapeHtml(new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(item.createdAt)))}</time></div></article>`;}).join('')||'<div class="lab-soft-empty">No contributions yet.</div>'}</div>
+          </div>
           ${project.canContribute?`<form class="secret-add-contribution" data-secret-contribute="${escapeHtml(project.id)}"><textarea name="text" rows="3" maxlength="1400" placeholder="Add a note, story, or memory…"></textarea><label class="ghost">▣ Photo<input type="file" name="photo" accept="image/*" hidden /></label><button class="primary" type="submit">Add secretly</button><small class="secret-photo-name"></small></form>`:''}
-          ${project.due&&project.role==='recipient'?'<div class="secret-open-banner"><strong>♡ It is reveal day.</strong><span>This surprise is now open for you.</span></div>':''}
         </article>`;
       }).join('')||'<div class="lab-soft-empty">No shared surprises yet. Create one from the form.</div>'}</div>
     </section>
@@ -5669,6 +5671,14 @@ async function renderUniverseSecretLab(){
       await renderUniverseSecretLab();
     }catch(err){showToast(err.message||'Could not create the surprise.');btn.disabled=false;}
   });
+  stage.querySelectorAll('[data-secret-open]').forEach(btn=>btn.addEventListener('click',()=>{
+    const projectId=btn.dataset.secretOpen;
+    const content=stage.querySelector(`[data-secret-content="${CSS.escape(projectId)}"]`);
+    content?.classList.remove('hidden');
+    btn.closest('.secret-open-banner')?.classList.add('opened');
+    btn.remove();
+    content?.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }));
   stage.querySelectorAll('.secret-add-contribution').forEach(form=>{
     const fileInput=form.querySelector('input[type="file"]'),name=form.querySelector('.secret-photo-name');
     fileInput?.addEventListener('change',()=>{if(name)name.textContent=fileInput.files?.[0]?.name||'';});
