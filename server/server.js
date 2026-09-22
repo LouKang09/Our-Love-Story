@@ -1647,6 +1647,98 @@ async function handleApi(req, res, url) {
     });
   }
 
+  if (pathname === '/api/preview/secret-contributors' && req.method === 'GET') {
+    const projects = (social.secretContributorProjects || [])
+      .filter(project => canSeeSecretProject(project,user))
+      .sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .map(project => decorateSecretProject(social,project,user));
+    return json(res,200,{ projects });
+  }
+
+  if (pathname === '/api/preview/secret-contributors' && req.method === 'POST') {
+    const body = await readBody(req,128 * 1024);
+    const title = String(body.title || '').trim().slice(0,90);
+    const recipient = slugTag(body.recipient);
+    const revealDate = String(body.revealDate || '').trim();
+    const revealAt = String(body.revealAt || '').trim();
+    const contributorTags = [...new Set((Array.isArray(body.contributors) ? body.contributors : [])
+      .map(slugTag)
+      .filter(tag => tag && tag !== user && tag !== recipient))].slice(0,12);
+    if (!title) return json(res,400,{ error:'Add a surprise title.' });
+    if (!recipient || recipient === user || !(await accountExists(recipient))) return json(res,400,{ error:'Choose a valid recipient @tag.' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(revealDate) || !Number.isFinite(Date.parse(revealAt))) return json(res,400,{ error:'Choose a valid reveal date.' });
+    for (const tag of contributorTags) {
+      if (!(await accountExists(tag))) return json(res,400,{ error:`We could not find @${tag}.` });
+    }
+    const project = {
+      id:crypto.randomUUID(),
+      owner:user,
+      recipient,
+      contributors:contributorTags,
+      title,
+      revealDate,
+      revealAt,
+      createdAt:new Date().toISOString(),
+      contributions:[],
+      revealNotifiedAt:null
+    };
+    social.secretContributorProjects.push(project);
+    if (social.secretContributorProjects.length > 600) social.secretContributorProjects = social.secretContributorProjects.slice(-600);
+    const actor = publicProfileFor(social,user);
+    for (const tag of contributorTags) {
+      appendActivityNotification(social,{to:tag,from:user,type:'secret_contributor_invite',excerpt:title});
+      await sendUserPush(social,{
+        to:tag,
+        title:`${actor.displayName || displayTag(user)} invited you to a secret Scrapella surprise`,
+        body:'Open Memory Universe → Secret Contributors to add something.',
+        tag:`secret-contributor-${project.id}`,
+        url:'/?beta=secret'
+      });
+      emitLiveEvent(tag,'notification',{type:'secret_contributor_invite',from:user,projectId:project.id});
+      emitLiveEvent(tag,'secret',{type:'secret_invite',projectId:project.id,from:user});
+    }
+    await writeSocial(social);
+    return json(res,201,{ project:decorateSecretProject(social,project,user) });
+  }
+
+  const secretContributionMatch = pathname.match(/^\/api\/preview\/secret-contributors\/([a-f0-9-]+)\/contributions$/i);
+  if (secretContributionMatch && req.method === 'POST') {
+    const project = (social.secretContributorProjects || []).find(item => item.id === secretContributionMatch[1]);
+    if (!project) return notFound(res);
+    if (!canContributeSecretProject(project,user)) return forbidden(res,'You are not a contributor to this surprise.');
+    if (secretProjectDue(project)) return json(res,409,{ error:'This surprise has already reached its reveal date.' });
+    const body = await readBody(req,256 * 1024);
+    const text = String(body.text || '').trim().slice(0,1400);
+    const image = String(body.image || '');
+    const safeImage = image.startsWith('/uploads/') ? image : '';
+    if (!text && !safeImage) return json(res,400,{ error:'Add text or one photo.' });
+    if (safeImage && social.uploadOwners?.[safeImage] !== user) return forbidden(res,'You can only add a photo you uploaded.');
+    project.contributions ||= [];
+    project.contributions.push({
+      id:crypto.randomUUID(),
+      author:user,
+      text,
+      image:safeImage,
+      createdAt:new Date().toISOString()
+    });
+    for (const tag of secretProjectParticipants(project)) {
+      if (tag === user) continue;
+      emitLiveEvent(tag,'secret',{type:'secret_contribution',projectId:project.id,from:user});
+    }
+    await writeSocial(social);
+    return json(res,201,{ project:decorateSecretProject(social,project,user) });
+  }
+
+  const secretProjectDeleteMatch = pathname.match(/^\/api\/preview\/secret-contributors\/([a-f0-9-]+)$/i);
+  if (secretProjectDeleteMatch && req.method === 'DELETE') {
+    const project = (social.secretContributorProjects || []).find(item => item.id === secretProjectDeleteMatch[1]);
+    if (!project) return notFound(res);
+    if (project.owner !== user) return forbidden(res,'Only the creator can remove this preview surprise.');
+    social.secretContributorProjects = social.secretContributorProjects.filter(item => item.id !== project.id);
+    await writeSocial(social);
+    return json(res,200,{ ok:true });
+  }
+
   if (pathname === '/api/preview/freedom-wall' && req.method === 'GET') {
     const posts = [...social.freedomWall]
       .sort((a,b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
@@ -2827,11 +2919,19 @@ const server = http.createServer(async (req, res) => {
         );
         if (chatMessage) {
           const chat = social.chats?.find(item => item.id === chatMessage.chatId);
-          if (!chat || !canAccessChat(social, chat, viewer)) return forbidden(res, 'You do not have access to this chat photo.');
+          if (!chat || !canAccessChat(social, chat, viewer)) return forbidden(res, 'You do not have access to this chat attachment.');
         } else {
-          const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
-          const isOwnedPendingUpload = social.uploadOwners?.[assetPath] === viewer;
-          if (!isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
+          const secretProject = (social.secretContributorProjects || []).find(project =>
+            (project.contributions || []).some(item => item?.image === assetPath)
+          );
+          if (secretProject) {
+            const allowed = canContributeSecretProject(secretProject,viewer) || (secretProject.recipient === viewer && secretProjectDue(secretProject));
+            if (!allowed) return forbidden(res,'This secret contribution is still sealed.');
+          } else {
+            const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
+            const isOwnedPendingUpload = social.uploadOwners?.[assetPath] === viewer;
+            if (!isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
+          }
         }
       }
       return serveFile(res, path.join(UPLOADS, path.basename(pathname)), req);
