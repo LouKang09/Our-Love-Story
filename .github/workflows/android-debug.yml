@@ -68,6 +68,9 @@ jobs:
           cat > android/app/src/main/java/com/loukang/scrapella/MainActivity.java <<'JAVA'
           package com.loukang.scrapella;
 
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.content.Context;
           import android.os.Build;
           import android.os.Bundle;
           import android.view.View;
@@ -80,7 +83,24 @@ jobs:
               public void onCreate(Bundle savedInstanceState) {
                   registerPlugin(MicrophonePermissionPlugin.class);
                   super.onCreate(savedInstanceState);
+                  createMessageNotificationChannel();
                   hideNavigationBar();
+              }
+
+              private void createMessageNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                      if (manager == null) return;
+                      NotificationChannel channel = new NotificationChannel(
+                          "messages",
+                          "Messages",
+                          NotificationManager.IMPORTANCE_HIGH
+                      );
+                      channel.setDescription("Scrapella chat messages");
+                      channel.enableVibration(true);
+                      channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
+                      manager.createNotificationChannel(channel);
+                  }
               }
 
               @Override
@@ -180,6 +200,15 @@ jobs:
               pos = manifest.find(">", manifest.find("<manifest"))
               addition = "\n    " + "\n    ".join(missing)
               manifest = manifest[:pos+1] + addition + manifest[pos+1:]
+          app_tag = '<application'
+          app_pos = manifest.find(app_tag)
+          if app_pos >= 0 and 'com.google.firebase.messaging.default_notification_channel_id' not in manifest:
+              close_pos = manifest.find('>', app_pos)
+              metadata = '''
+              <meta-data
+                  android:name="com.google.firebase.messaging.default_notification_channel_id"
+                  android:value="messages" />'''
+              manifest = manifest[:close_pos] + metadata + manifest[close_pos:]
           manifest_path.write_text(manifest)
           PY
 
