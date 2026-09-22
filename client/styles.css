@@ -13408,3 +13408,65 @@ html[data-theme="night"] .universe-owner-override{background:#3a3033;color:var(-
   html.native-app #streamModeBtn{display:none!important}
   html.native-app #universeModeBtn{display:inline-flex!important;align-items:center;justify-content:center}
 }
+
+
+/* ===== 2026-09-23 MEMORY UNIVERSE CONTEXT + STEP BACK ===== */
+@media(max-width:800px){
+  .mode-switch{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+  #streamModeBtn{display:none!important}
+  #universeModeBtn{display:inline-flex!important;align-items:center;justify-content:center}
+
+  .book-view.mobile-books-only .book-controls,
+  .book-view.mobile-books-only #bookShell{display:none!important}
+  .book-view.mobile-books-only .mobile-book-shelf{margin-bottom:18px}
+
+  .memory-universe-view{
+    width:100%!important;
+    margin:0!important;
+    padding:10px 10px calc(92px + env(safe-area-inset-bottom,0px))!important;
+    gap:10px!important
+  }
+  .memory-universe-view .universe-hero{padding:18px 15px!important;border-radius:17px!important}
+  .memory-universe-view .universe-panel{padding:13px 11px!important;border-radius:16px!important}
+  .memory-universe-view .universe-panel-head{margin-bottom:11px!important;gap:7px!important}
+}
+.mobile-universe-back{display:none!important}
+
+html[data-theme="night"] #memoryUniverseView{
+  color:#f4e9e6!important;
+  background:#211a1d!important
+}
+html[data-theme="night"] #memoryUniverseView .universe-hero{
+  color:#f4e9e6!important;
+  border-color:#4b3b40!important;
+  background:
+    radial-gradient(circle at 82% 18%,rgba(193,104,131,.16),transparent 31%),
+    radial-gradient(circle at 12% 88%,rgba(112,75,88,.13),transparent 34%),
+    #292124!important
+}
+html[data-theme="night"] #memoryUniverseView .universe-panel,
+html[data-theme="night"] #memoryUniverseView .memory-universe-stats>div,
+html[data-theme="night"] #memoryUniverseView .memory-universe-detail,
+html[data-theme="night"] #memoryUniverseView .lab-workbench,
+html[data-theme="night"] #memoryUniverseView .lab-compose-card,
+html[data-theme="night"] #memoryUniverseView .memory-echo-card,
+html[data-theme="night"] #memoryUniverseView .perspective-card{
+  color:#f4e9e6!important;
+  border-color:#4b3b40!important;
+  background:#2b2326!important
+}
+html[data-theme="night"] #memoryUniverseView .memory-constellation{
+  border-color:#4b3b40!important;
+  background:
+    radial-gradient(circle at 50% 50%,rgba(193,104,131,.11),transparent 24%),
+    #1d1719!important
+}
+html[data-theme="night"] #memoryUniverseView input,
+html[data-theme="night"] #memoryUniverseView textarea,
+html[data-theme="night"] #memoryUniverseView select,
+html[data-theme="night"] #memoryUniverseView .lab-memory-picker-button,
+html[data-theme="night"] #memoryUniverseView .lab-memory-picker-menu{
+  color:#f4e9e6!important;
+  border-color:#4b3b40!important;
+  background:#201a1c!important
+}
