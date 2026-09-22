@@ -208,7 +208,7 @@ jobs:
               <meta-data
                   android:name="com.google.firebase.messaging.default_notification_channel_id"
                   android:value="messages" />'''
-              manifest = manifest[:close_pos] + metadata + manifest[close_pos:]
+              manifest = manifest[:close_pos+1] + metadata + manifest[close_pos+1:]
           manifest_path.write_text(manifest)
           PY
 
