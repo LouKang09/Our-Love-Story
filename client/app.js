@@ -61,6 +61,10 @@ let chatRecordTicker = null;
 let chatAudioContext = null;
 let chatAudioAnalyser = null;
 let chatAudioAnimationFrame = null;
+let chatPcmProcessor = null;
+let chatPcmSilentGain = null;
+let chatPcmChunks = [];
+let chatPcmSampleRate = 0;
 let reactionViewer = null;
 let viewedPersonData = null;
 let ownerOverrideTargetTag = null;
@@ -3816,8 +3820,24 @@ async function hydrateProtectedChatAudio(audio) {
     if (!response.ok) throw new Error(`Audio fetch failed (${response.status})`);
     const blob = await response.blob();
     if (!blob.size) throw new Error('Empty voice message');
-    const objectUrl = URL.createObjectURL(blob);
     const previous = audio.dataset.chatAudioObjectUrl || '';
+    if(isNativeScrapellaApp()){
+      // A data URL keeps playback inside the WebView media context instead of
+      // handing an authenticated URL/blob to Android's external media stack.
+      const dataUrl=await new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>resolve(String(reader.result||''));
+        reader.onerror=()=>reject(reader.error||new Error('Could not prepare voice message.'));
+        reader.readAsDataURL(blob);
+      });
+      audio.dataset.chatAudioObjectUrl='';
+      audio.dataset.chatAudioHydrated='1';
+      audio.src=dataUrl;
+      audio.load();
+      if(previous)URL.revokeObjectURL(previous);
+      return true;
+    }
+    const objectUrl = URL.createObjectURL(blob);
     audio.dataset.chatAudioObjectUrl = objectUrl;
     audio.dataset.chatAudioHydrated = '1';
     audio.src = objectUrl;
@@ -4489,6 +4509,14 @@ function stopChatAudioVisualizer() {
   chatAudioAnimationFrame=null;
   clearInterval(chatRecordTicker);
   chatRecordTicker=null;
+  if(chatPcmProcessor){
+    try{chatPcmProcessor.onaudioprocess=null;chatPcmProcessor.disconnect();}catch{}
+  }
+  if(chatPcmSilentGain){
+    try{chatPcmSilentGain.disconnect();}catch{}
+  }
+  chatPcmProcessor=null;
+  chatPcmSilentGain=null;
   if(chatAudioContext){
     try{chatAudioContext.close();}catch{}
   }
@@ -4524,6 +4552,26 @@ function startChatAudioVisualizer(stream,mode='tap') {
       chatAudioAnalyser=chatAudioContext.createAnalyser();
       chatAudioAnalyser.fftSize=64;
       source.connect(chatAudioAnalyser);
+
+      // Native Scrapella records a parallel PCM stream. MediaRecorder output
+      // varies by Android/iOS WebView (WebM/Opus, OGG, MP4), and some devices
+      // can record a codec that their own media player later refuses to play.
+      // Capturing PCM here lets us always send a plain WAV voice message.
+      if(isNativeScrapellaApp() && chatAudioContext.createScriptProcessor){
+        chatPcmChunks=[];
+        chatPcmSampleRate=chatAudioContext.sampleRate || 48000;
+        chatPcmProcessor=chatAudioContext.createScriptProcessor(4096,1,1);
+        chatPcmSilentGain=chatAudioContext.createGain();
+        chatPcmSilentGain.gain.value=0;
+        chatPcmProcessor.onaudioprocess=event=>{
+          const input=event.inputBuffer?.getChannelData?.(0);
+          if(input?.length)chatPcmChunks.push(new Float32Array(input));
+        };
+        source.connect(chatPcmProcessor);
+        chatPcmProcessor.connect(chatPcmSilentGain);
+        chatPcmSilentGain.connect(chatAudioContext.destination);
+      }
+
       const data=new Uint8Array(chatAudioAnalyser.frequencyBinCount);
       const draw=()=>{
         if(!chatAudioAnalyser)return;
@@ -4538,6 +4586,38 @@ function startChatAudioVisualizer(stream,mode='tap') {
     }
   }catch{}
 }
+function wavFromPcmChunks(chunks, inputRate = 48000, targetRate = 16000) {
+  const usable=(chunks||[]).filter(chunk=>chunk?.length);
+  if(!usable.length)return null;
+  const total=usable.reduce((sum,chunk)=>sum+chunk.length,0);
+  if(!total)return null;
+  const source=new Float32Array(total);
+  let cursor=0;
+  for(const chunk of usable){source.set(chunk,cursor);cursor+=chunk.length;}
+  const rate=Math.max(8000,Number(inputRate)||48000);
+  const outRate=Math.min(rate,Math.max(8000,Number(targetRate)||16000));
+  const frames=Math.max(1,Math.round(source.length*outRate/rate));
+  const mono=new Float32Array(frames);
+  for(let i=0;i<frames;i++){
+    const pos=(i/Math.max(1,frames-1))*Math.max(0,source.length-1);
+    const left=Math.floor(pos),right=Math.min(source.length-1,left+1),frac=pos-left;
+    mono[i]=(source[left]||0)*(1-frac)+(source[right]||0)*frac;
+  }
+  const buffer=new ArrayBuffer(44+mono.length*2);
+  const view=new DataView(buffer);
+  const write=(offset,value)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i));};
+  write(0,'RIFF');view.setUint32(4,36+mono.length*2,true);write(8,'WAVE');
+  write(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+  view.setUint32(24,outRate,true);view.setUint32(28,outRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+  write(36,'data');view.setUint32(40,mono.length*2,true);
+  let offset=44;
+  for(let i=0;i<mono.length;i++,offset+=2){
+    const sample=Math.max(-1,Math.min(1,mono[i]));
+    view.setInt16(offset,Math.round(sample<0?sample*0x8000:sample*0x7fff),true);
+  }
+  return new Blob([buffer],{type:'audio/wav'});
+}
+
 async function normalizeVoiceRecordingForPlayback(blob) {
   if (!blob?.size) return { blob, type:blob?.type || 'audio/webm', ext:'webm' };
   try {
@@ -4631,21 +4711,28 @@ async function startChatAudioRecording(mode='tap') {
       const duration=Date.now()-chatRecordingStartedAt;
       const type=recorder?.mimeType || chatAudioChunks[0]?.type || 'audio/webm';
       const blob=new Blob(chatAudioChunks,{type});
+      const pcmChunks=chatPcmChunks;
+      const pcmRate=chatPcmSampleRate;
       chatMediaRecorder=null;
       chatAudioChunks=[];
+      chatPcmChunks=[];
+      chatPcmSampleRate=0;
       stopChatMediaStream();
       stopChatAudioVisualizer();
       button.classList.remove('recording');
       if(disposition==='cancel')return;
-      if(duration<400||!blob.size){
+      if(duration<400||(!blob.size&&!pcmChunks.length)){
         showToast('Recording was too short.');
         return;
       }
-      if(blob.size>8*1024*1024){
+      if(blob.size>8*1024*1024&&!pcmChunks.length){
         showToast('Voice message is too large. Please record a shorter clip.');
         return;
       }
-      const normalized=await normalizeVoiceRecordingForPlayback(blob);
+      const nativeWav=isNativeScrapellaApp()?wavFromPcmChunks(pcmChunks,pcmRate,16000):null;
+      const normalized=nativeWav
+        ? {blob:nativeWav,type:'audio/wav',ext:'wav'}
+        : await normalizeVoiceRecordingForPlayback(blob);
       if(normalized.blob.size>8*1024*1024){
         showToast('Voice message is too large. Please record a shorter clip.');
         return;
