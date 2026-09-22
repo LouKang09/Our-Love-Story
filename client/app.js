@@ -110,6 +110,7 @@ let presenceUiTimer = null;
 
 const PHONE_UI_QUERY = '(max-width: 800px)';
 let mobileBookContextTag = null;
+let mobileBookBackToSelfAfterProfile = false;
 let mobileHomeSearchTimer = null;
 let mobileHomeSearchSeq = 0;
 let desktopHomeSearchTimer = null;
@@ -3185,6 +3186,14 @@ $('#personFollowingBtn').addEventListener('click', () => { personListMode='follo
 $('#personFollowersTab').addEventListener('click', () => { personListMode='followers'; renderPersonConnections(); });
 $('#personFollowingTab').addEventListener('click', () => { personListMode='following'; renderPersonConnections(); });
 $('#personProfileBackBtn').addEventListener('click', async () => {
+  if (isPhoneUI() && mobileBookBackToSelfAfterProfile && me?.tag) {
+    mobileBookBackToSelfAfterProfile=false;
+    viewedPersonData=null;
+    mobileBookContextTag=me.tag;
+    await loadSession(null);
+    await prepareMobileBookView();
+    return;
+  }
   if (isPhoneUI() && phoneHistoryReady) {
     phoneBackButton();
     return;
@@ -7597,15 +7606,17 @@ $('#scrapbookPicker').addEventListener('change', async e => {
 });
 $('#mobileBookBackBtn')?.addEventListener('click', async () => {
   if (!isPhoneUI() || !me?.tag) return;
-  if (phoneHistoryReady && history.state?.journalPhone) {
-    phoneBackButton();
-    return;
-  }
   const contextTag=mobileBookContextTag || me.tag;
   if(contextTag!==me.tag){
-    await openPersonProfile(contextTag,{preserveReturn:true});
+    mobileBookBackToSelfAfterProfile=true;
+    if (phoneHistoryReady && history.state?.journalPhone) {
+      phoneBackButton(() => openPersonProfile(contextTag,{preserveReturn:true}));
+    } else {
+      await openPersonProfile(contextTag,{preserveReturn:true});
+    }
     return;
   }
+  mobileBookBackToSelfAfterProfile=false;
   mobileBookContextTag=me.tag;
   await prepareMobileBookView();
 });
