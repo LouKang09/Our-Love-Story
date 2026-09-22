@@ -3801,8 +3801,37 @@ function chatVoiceHtml(message) {
     <button class="chat-voice-play" type="button" aria-label="Play voice message"><span>▶</span></button>
     <button class="chat-voice-wave" type="button" aria-label="Seek voice message">${chatVoiceBars()}</button>
     <span class="chat-voice-duration">0:00</span>
-    <audio preload="metadata" src="${escapeHtml(message.audio)}"></audio>
+    <audio preload="metadata" data-chat-audio-src="${escapeHtml(message.audio)}" src="${escapeHtml(message.audio)}"></audio>
   </div>`;
+}
+async function hydrateProtectedChatAudio(audio) {
+  if (!audio || audio.dataset.chatAudioHydrated === '1') return true;
+  const source = String(audio.dataset.chatAudioSrc || audio.getAttribute('src') || '');
+  if (!source) return false;
+  try {
+    // Android/iOS media pipelines can bypass the WebView cookie jar for a
+    // protected <audio src>. Fetching with credentials first guarantees that
+    // the authenticated chat attachment becomes a local blob URL.
+    const response = await fetch(source,{credentials:'same-origin',cache:'no-store'});
+    if (!response.ok) throw new Error(`Audio fetch failed (${response.status})`);
+    const blob = await response.blob();
+    if (!blob.size) throw new Error('Empty voice message');
+    const objectUrl = URL.createObjectURL(blob);
+    const previous = audio.dataset.chatAudioObjectUrl || '';
+    audio.dataset.chatAudioObjectUrl = objectUrl;
+    audio.dataset.chatAudioHydrated = '1';
+    audio.src = objectUrl;
+    audio.load();
+    if (previous) URL.revokeObjectURL(previous);
+    return true;
+  } catch {
+    // Keep the original URL as a fallback for browsers whose normal media
+    // loader already handles authenticated range requests correctly.
+    audio.dataset.chatAudioHydrated = 'fallback';
+    audio.src = source;
+    try { audio.load(); } catch {}
+    return false;
+  }
 }
 function scrollChatToMessage(messageId) {
   const host=$('#chatMessages');
@@ -3841,10 +3870,27 @@ function wireChatVoicePlayers(host) {
     });
     audio.addEventListener('pause',paint);
     audio.addEventListener('ended',()=>{audio.currentTime=0;paint();});
-    play.addEventListener('click',e=>{
+    play.addEventListener('click',async e=>{
       e.stopPropagation();
-      if(audio.paused)audio.play().catch(()=>showToast('Could not play that voice message.'));
-      else audio.pause();
+      if(audio.paused){
+        if(audio.dataset.chatAudioHydrated!=='1' && (isNativeScrapellaApp() || isPhoneUI())) {
+          play.disabled=true;
+          await hydrateProtectedChatAudio(audio);
+          play.disabled=false;
+        }
+        try {
+          await audio.play();
+        } catch {
+          // Retry once through an authenticated blob in case the native media
+          // stack rejected the protected URL directly.
+          audio.dataset.chatAudioHydrated='';
+          const hydrated=await hydrateProtectedChatAudio(audio);
+          if(hydrated){
+            try { await audio.play(); return; } catch {}
+          }
+          showToast('Could not play that voice message.');
+        }
+      } else audio.pause();
     });
     wave.addEventListener('click',e=>{
       e.stopPropagation();
@@ -3853,6 +3899,9 @@ function wireChatVoicePlayers(host) {
       audio.currentTime=Math.max(0,Math.min(audio.duration,((e.clientX-rect.left)/rect.width)*audio.duration));
       paint();
     });
+    if (isNativeScrapellaApp() || isPhoneUI()) {
+      hydrateProtectedChatAudio(audio).catch(()=>{});
+    }
     paint();
   });
 }
