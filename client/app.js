@@ -294,16 +294,21 @@ async function requestScrapellaNativePermissions() {
   if (button) button.disabled = true;
 
   const push = nativePlugin('PushNotifications');
+  const local = nativePlugin('LocalNotifications');
   const camera = nativePlugin('Camera');
   const platform = nativePlatform();
 
   try {
     setNativePermissionState('notifications','working','Waiting…');
-    let result = push?.checkPermissions ? await permissionTimeout(push.checkPermissions()) : null;
-    if (push?.requestPermissions && (!result || result.receive === 'prompt' || result.receive === 'prompt-with-rationale')) {
-      result = await permissionTimeout(push.requestPermissions());
+    let pushResult = push?.checkPermissions ? await permissionTimeout(push.checkPermissions()) : null;
+    let localResult = local?.checkPermissions ? await permissionTimeout(local.checkPermissions()) : null;
+    if (push?.requestPermissions && (!pushResult || pushResult.receive === 'prompt' || pushResult.receive === 'prompt-with-rationale')) {
+      pushResult = await permissionTimeout(push.requestPermissions());
     }
-    const allowed = result?.receive === 'granted';
+    if (local?.requestPermissions && (!localResult || localResult.display !== 'granted')) {
+      localResult = await permissionTimeout(local.requestPermissions());
+    }
+    const allowed = pushResult?.receive === 'granted' || localResult?.display === 'granted';
     setNativePermissionState('notifications',allowed ? 'granted' : 'denied',allowed ? 'Allowed' : 'Not allowed');
   } catch {
     setNativePermissionState('notifications','denied','Skipped');
@@ -379,15 +384,23 @@ async function checkProfilePermission(kind, { request = false } = {}) {
   if (kind === 'notifications') {
     try {
       const push = nativePlugin('PushNotifications');
-      if (push) {
-        let result = push.checkPermissions ? await permissionTimeout(push.checkPermissions(),4500) : null;
-        if (request && push.requestPermissions && result?.receive !== 'granted') {
-          result = await permissionTimeout(push.requestPermissions(),9000);
+      const local = nativePlugin('LocalNotifications');
+      if (push || local) {
+        let pushResult = push?.checkPermissions ? await permissionTimeout(push.checkPermissions(),4500) : null;
+        let localResult = local?.checkPermissions ? await permissionTimeout(local.checkPermissions(),4500) : null;
+        if (request && push?.requestPermissions && pushResult?.receive !== 'granted') {
+          pushResult = await permissionTimeout(push.requestPermissions(),9000);
         }
-        const state = result?.receive === 'granted' ? 'granted'
-          : result?.receive === 'denied' ? 'denied'
-          : 'prompt';
-        setProfilePermissionState(kind,state,state === 'granted' ? 'Allowed' : state === 'denied' ? 'Not allowed' : 'Tap to allow');
+        if (request && local?.requestPermissions && localResult?.display !== 'granted') {
+          localResult = await permissionTimeout(local.requestPermissions(),9000);
+        }
+        const granted = pushResult?.receive === 'granted' || localResult?.display === 'granted';
+        const denied = pushResult?.receive === 'denied' && (!local || localResult?.display === 'denied');
+        const state = granted ? 'granted' : denied ? 'denied' : 'prompt';
+        const label = state === 'granted'
+          ? (config.nativePushEnabled ? 'Allowed · background push ready' : 'Allowed · app alerts ready')
+          : state === 'denied' ? 'Not allowed' : 'Tap to allow';
+        setProfilePermissionState(kind,state,label);
         return state;
       }
       if ('Notification' in window) {
@@ -6815,6 +6828,7 @@ async function ensureNativeChatNotifications() {
           } catch {}
         });
         await push.addListener('registrationError', error => {
+          nativePushRegistrationReady=false;
           console.warn('Native push registration failed:',error?.error || error?.message || error);
         });
         await push.addListener('pushNotificationActionPerformed', async event => {
@@ -6896,7 +6910,6 @@ async function showNativeChatNotification(payload = {}) {
         title:String(title).slice(0,90),
         body:String(body).slice(0,180),
         channelId:nativePlatform()==='android' ? 'messages' : undefined,
-        schedule:{at:new Date(Date.now()+180)},
         extra:{chatId:payload.chatId}
       }]
     });
