@@ -2213,6 +2213,9 @@ function connectLiveEvents() {
     try { refreshChatRealtime(JSON.parse(e.data || '{}')); }
     catch { refreshChatRealtime({}); }
   });
+  source.addEventListener('secret', () => {
+    if (currentMode === 'universe' && universeLabMode === 'secret') renderUniverseSecretLab().catch(()=>{});
+  });
   source.addEventListener('wall', () => {
     if (currentMode === 'universe' && universeLabMode === 'wall') renderUniverseFreedomWallLab().catch(()=>{});
   });
@@ -5449,12 +5452,121 @@ async function renderUniverseQrLab() {
   }catch(err){const host=$('#qrKeepsakeImage');if(host)host.textContent='Could not generate QR preview.';}
 }
 
-function renderUniverseSecretLab() {
-  const stage=$('#universeLabStage');if(!stage)return;const data=loadUniversePreview('secretContributors',{title:'',revealDate:'',messages:[]});
-  stage.innerHTML=`<div class="lab-split"><form id="secretContributorForm" class="lab-compose-card secret-envelope"><span class="lab-icon">✉</span><p class="eyebrow">SECRET CONTRIBUTORS</p><h4>Build a scrapbook behind someone’s back — for a good reason.</h4><label class="lab-field">Surprise title<input name="title" maxlength="90" value="${escapeHtml(data.title||'')}" placeholder="For Sarah’s birthday" /></label><label class="lab-field">Reveal date<input name="revealDate" type="date" value="${escapeHtml(data.revealDate||'')}" /></label><label class="lab-field">Contributor<input name="tag" maxlength="30" placeholder="@friendtag" /></label><label class="lab-field">Secret contribution<textarea name="message" rows="5" maxlength="900" placeholder="A note, story, or memory they won't see until reveal day…" required></textarea></label><button class="primary" type="submit">Add secret contribution</button><small>No real invitation or reveal happens in preview mode.</small></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">BEHIND THE CURTAIN</p><h4>${escapeHtml(data.title||'A surprise scrapbook')}</h4></div><span class="lab-preview-pill">${data.messages.length} secrets</span></div><div class="secret-contribution-grid">${data.messages.map(m=>`<article><span>✦</span><div><small>${escapeHtml(m.tag||'Anonymous contributor')}</small><p>${escapeHtml(m.message)}</p></div></article>`).join('')||'<div class="lab-soft-empty">No secret contributions yet.</div>'}</div>${data.revealDate?`<p class="secret-reveal-date">Reveal planned for <strong>${escapeHtml(universeDateLabel(data.revealDate))}</strong></p>`:''}</section></div>`;
-  $('#secretContributorForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);data.title=String(f.get('title')||'').trim();data.revealDate=String(f.get('revealDate')||'');data.messages.push({id:crypto.randomUUID?.()||String(Date.now()),tag:String(f.get('tag')||'').trim(),message:String(f.get('message')||'').trim(),createdAt:new Date().toISOString()});saveUniversePreview('secretContributors',data);renderUniverseSecretLab();});
+function secretProjectPerson(project,tag){
+  return project?.profiles?.[tag] || {tag,displayName:tag,avatar:''};
 }
 
+function wireSecretTagSearch(input,host,onSelect){
+  if(!input||!host)return;
+  let timer=null,seq=0;
+  const close=()=>{host.classList.add('hidden');host.innerHTML='';};
+  input.addEventListener('input',()=>{
+    clearTimeout(timer);
+    const q=String(input.value||'').trim().replace(/^@/,'').toLowerCase();
+    if(!q){close();return;}
+    const current=++seq;
+    timer=setTimeout(async()=>{
+      try{
+        const data=await api(`/api/people?q=${encodeURIComponent(q)}`);
+        if(current!==seq)return;
+        const people=(data.people||[]).filter(person=>person.tag!==me?.tag);
+        if(!people.length){host.innerHTML='<div class="secret-tag-empty">No matching @tag.</div>';host.classList.remove('hidden');return;}
+        host.innerHTML=people.map(person=>`<button type="button" data-secret-tag="${escapeHtml(person.tag)}">${avatarHtml(person,'secret-tag-avatar')}<span><strong>${escapeHtml(person.displayName||person.tag)}</strong><small>@${escapeHtml(person.tag)}</small></span></button>`).join('');
+        host.classList.remove('hidden');
+        host.querySelectorAll('[data-secret-tag]').forEach(btn=>btn.addEventListener('click',()=>{
+          onSelect(btn.dataset.secretTag);
+          close();
+        }));
+      }catch{close();}
+    },220);
+  });
+  input.addEventListener('blur',()=>setTimeout(close,180));
+}
+
+async function renderUniverseSecretLab(){
+  const stage=$('#universeLabStage');if(!stage)return;
+  stage.innerHTML='<div class="universe-empty wide"><span>✉</span><strong>Opening Secret Contributors…</strong><p>Loading shared beta surprises.</p></div>';
+  let projects=[];
+  try{projects=(await api('/api/preview/secret-contributors')).projects||[];}
+  catch(err){stage.innerHTML=`<div class="lab-soft-empty">Could not load Secret Contributors: ${escapeHtml(err.message||'Unknown error')}</div>`;return;}
+  const future=new Date();future.setDate(future.getDate()+7);
+  stage.innerHTML=`<div class="secret-beta-layout">
+    <form id="secretProjectCreateForm" class="lab-compose-card secret-envelope">
+      <span class="lab-icon">✉</span><p class="eyebrow">SECRET CONTRIBUTORS · BETA</p><h4>Create a surprise people can build together.</h4>
+      <label class="lab-field">Surprise title<input name="title" maxlength="90" placeholder="For Sarah’s birthday" required /></label>
+      <label class="lab-field">Recipient @tag<div class="secret-tag-field"><input id="secretRecipientTag" name="recipient" maxlength="30" placeholder="@friendtag" autocomplete="off" required /><div id="secretRecipientSuggestions" class="secret-tag-suggestions hidden"></div></div></label>
+      <label class="lab-field">Reveal date<input name="revealDate" type="date" min="${new Date().toISOString().slice(0,10)}" value="${future.toISOString().slice(0,10)}" required /></label>
+      <label class="lab-field">Invite contributors<div class="secret-tag-field"><input id="secretContributorTagInput" maxlength="30" placeholder="Search @friendtag" autocomplete="off" /><div id="secretContributorSuggestions" class="secret-tag-suggestions hidden"></div></div></label>
+      <div id="secretContributorChips" class="secret-contributor-chips"></div>
+      <button class="primary" type="submit">Create secret surprise</button>
+      <small>The recipient sees only a sealed envelope until the reveal date. Invited contributors can add text or one photo.</small>
+    </form>
+    <section class="lab-workbench">
+      <div class="lab-title-row"><div><p class="eyebrow">YOUR SECRET SURPRISES</p><h4>Contribute now. Reveal later.</h4></div><span class="lab-preview-pill">${projects.length} projects</span></div>
+      <div class="secret-project-list">${projects.map(project=>{
+        const owner=secretProjectPerson(project,project.owner);
+        const recipient=secretProjectPerson(project,project.recipient);
+        const contributorProfiles=(project.contributors||[]).map(tag=>secretProjectPerson(project,tag));
+        if(project.sealed){
+          return `<article class="secret-project-card sealed"><div class="secret-sealed-icon">✉</div><div><small>SEALED FOR YOU</small><strong>${escapeHtml(project.title)}</strong><p>This surprise opens on ${escapeHtml(universeDateLabel(project.revealDate))}.</p><span>Created privately by Scrapella contributors.</span></div></article>`;
+        }
+        const contributions=project.contributions||[];
+        return `<article class="secret-project-card ${project.due?'revealed':''}" data-secret-project="${escapeHtml(project.id)}">
+          <header><div><small>${project.due?'READY TO OPEN':project.role==='owner'?'YOU CREATED THIS':'YOU ARE A CONTRIBUTOR'}</small><strong>${escapeHtml(project.title)}</strong><p>For ${escapeHtml(recipient.displayName||recipient.tag)} · reveals ${escapeHtml(universeDateLabel(project.revealDate))}</p></div>${project.role==='owner'?`<button class="icon-btn secret-project-delete" type="button" data-secret-delete="${escapeHtml(project.id)}">×</button>`:''}</header>
+          <div class="secret-project-people"><span>Created by ${escapeHtml(owner.displayName||owner.tag)}</span>${contributorProfiles.length?`<span>Contributors: ${contributorProfiles.map(p=>'@'+escapeHtml(p.tag)).join(', ')}</span>`:''}</div>
+          <div class="secret-contribution-grid">${contributions.map(item=>{const p=secretProjectPerson(project,item.author);return `<article>${item.image?`<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />`:'<span>✦</span>'}<div><small>${escapeHtml(p.displayName||p.tag)} · @${escapeHtml(p.tag||item.author)}</small>${item.text?`<p>${escapeHtml(item.text)}</p>`:''}<time>${escapeHtml(new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(item.createdAt)))}</time></div></article>`;}).join('')||'<div class="lab-soft-empty">No contributions yet.</div>'}</div>
+          ${project.canContribute?`<form class="secret-add-contribution" data-secret-contribute="${escapeHtml(project.id)}"><textarea name="text" rows="3" maxlength="1400" placeholder="Add a note, story, or memory…"></textarea><label class="ghost">▣ Photo<input type="file" name="photo" accept="image/*" hidden /></label><button class="primary" type="submit">Add secretly</button><small class="secret-photo-name"></small></form>`:''}
+          ${project.due&&project.role==='recipient'?'<div class="secret-open-banner"><strong>♡ It is reveal day.</strong><span>This surprise is now open for you.</span></div>':''}
+        </article>`;
+      }).join('')||'<div class="lab-soft-empty">No shared surprises yet. Create one from the form.</div>'}</div>
+    </section>
+  </div>`;
+
+  const selectedContributors=new Set();
+  const chips=$('#secretContributorChips');
+  const renderChips=()=>{
+    if(chips)chips.innerHTML=[...selectedContributors].map(tag=>`<button type="button" data-remove-secret-tag="${escapeHtml(tag)}">@${escapeHtml(tag)} ×</button>`).join('');
+    chips?.querySelectorAll('[data-remove-secret-tag]').forEach(btn=>btn.addEventListener('click',()=>{selectedContributors.delete(btn.dataset.removeSecretTag);renderChips();}));
+  };
+  const recipientInput=$('#secretRecipientTag');
+  wireSecretTagSearch(recipientInput,$('#secretRecipientSuggestions'),tag=>{recipientInput.value='@'+tag;});
+  wireSecretTagSearch($('#secretContributorTagInput'),$('#secretContributorSuggestions'),tag=>{selectedContributors.add(tag);$('#secretContributorTagInput').value='';renderChips();});
+  $('#secretProjectCreateForm')?.addEventListener('submit',async e=>{
+    e.preventDefault();const btn=e.currentTarget.querySelector('button[type="submit"]');btn.disabled=true;
+    try{
+      const f=new FormData(e.currentTarget),revealDate=String(f.get('revealDate')||'');
+      const localReveal=new Date(revealDate+'T00:00:00');
+      await api('/api/preview/secret-contributors',{method:'POST',body:JSON.stringify({
+        title:String(f.get('title')||'').trim(),
+        recipient:String(f.get('recipient')||'').trim(),
+        revealDate,
+        revealAt:localReveal.toISOString(),
+        contributors:[...selectedContributors]
+      })});
+      showToast('Secret surprise created. Contributors can now add to it.');
+      await renderUniverseSecretLab();
+    }catch(err){showToast(err.message||'Could not create the surprise.');btn.disabled=false;}
+  });
+  stage.querySelectorAll('.secret-add-contribution').forEach(form=>{
+    const fileInput=form.querySelector('input[type="file"]'),name=form.querySelector('.secret-photo-name');
+    fileInput?.addEventListener('change',()=>{if(name)name.textContent=fileInput.files?.[0]?.name||'';});
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();const btn=form.querySelector('button[type="submit"]');btn.disabled=true;
+      try{
+        const f=new FormData(form),file=fileInput?.files?.[0]||null;let image='';
+        if(file){const up=await uploadImage(file);image=up.src||'';}
+        await api(`/api/preview/secret-contributors/${encodeURIComponent(form.dataset.secretContribute)}/contributions`,{method:'POST',body:JSON.stringify({text:String(f.get('text')||'').trim(),image})});
+        showToast('Secret contribution added.');
+        await renderUniverseSecretLab();
+      }catch(err){showToast(err.message||'Could not add the contribution.');btn.disabled=false;}
+    });
+  });
+  stage.querySelectorAll('[data-secret-delete]').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(!confirm('Remove this beta surprise?'))return;
+    try{await api(`/api/preview/secret-contributors/${encodeURIComponent(btn.dataset.secretDelete)}`,{method:'DELETE'});await renderUniverseSecretLab();}
+    catch(err){showToast(err.message||'Could not remove the surprise.');}
+  }));
+}
 function renderUniverseUnfinishedLab() {
   const stage=$('#universeLabStage');if(!stage)return;
   const unfinished=entries.filter(entry=>{const text=String(entry.text||'').trim();const image=universeEntryImage(entry);return !entry.title||String(entry.title).trim().length<3||text.length<45||!image;}).slice(-12).reverse();
