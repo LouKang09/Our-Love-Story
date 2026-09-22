@@ -2847,6 +2847,33 @@ function reminderMinutes(value) {
   const match = String(value || '20:00').match(/^([01]\d|2[0-3]):([0-5]\d)$/);
   return match ? Number(match[1]) * 60 + Number(match[2]) : 20 * 60;
 }
+async function processSecretRevealNotifications() {
+  const social = await readSocial();
+  let changed = false;
+  for (const project of social.secretContributorProjects || []) {
+    if (project.revealNotifiedAt || !secretProjectDue(project) || !project.recipient) continue;
+    project.revealNotifiedAt = new Date().toISOString();
+    appendActivityNotification(social,{
+      to:project.recipient,
+      from:project.owner,
+      type:'secret_reveal',
+      excerpt:project.title
+    });
+    const actor = publicProfileFor(social,project.owner);
+    await sendUserPush(social,{
+      to:project.recipient,
+      title:'A secret Scrapella surprise is ready ♡',
+      body:`${actor.displayName || displayTag(project.owner)} and friends left something for you.`,
+      tag:`secret-reveal-${project.id}`,
+      url:'/?beta=secret'
+    });
+    emitLiveEvent(project.recipient,'notification',{type:'secret_reveal',from:project.owner,projectId:project.id});
+    emitLiveEvent(project.recipient,'secret',{type:'secret_reveal',projectId:project.id,from:project.owner});
+    changed = true;
+  }
+  if (changed) await writeSocial(social);
+}
+
 async function sendDailyReminders() {
   if (!PUSH_READY) return;
   const social = await readSocial();
@@ -2960,6 +2987,8 @@ ensureStorage().then(async () => {
   if (PROD && !process.env.SESSION_SECRET) console.warn('WARNING: SESSION_SECRET is not set.');
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Private journal running at http://localhost:${PORT}`);
+    setTimeout(() => processSecretRevealNotifications().catch(err => console.error('Initial secret reveal check failed:', err)), 20 * 1000);
+    setInterval(() => processSecretRevealNotifications().catch(err => console.error('Secret reveal check failed:', err)), 5 * 60 * 1000);
     if (PUSH_READY) {
       setTimeout(() => sendDailyReminders().catch(err => console.error('Initial reminder check failed:', err)), 30 * 1000);
       setInterval(() => sendDailyReminders().catch(err => console.error('Reminder check failed:', err)), 10 * 60 * 1000);
