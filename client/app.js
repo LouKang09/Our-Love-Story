@@ -5320,13 +5320,28 @@ async function startUniverseMemoryVoiceRecording(entryId) {
   if(universeMemoryVoiceRecorder?.state==='recording')return;
   const start=$('#voiceMemoryRecordBtn'),stop=$('#voiceMemoryStopBtn'),status=$('#voiceMemoryStatus');
   try{
+    if(!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder==='undefined'){
+      showToast('Voice recording is not supported on this device.');
+      return;
+    }
+    if(isNativeScrapellaApp()){
+      const permission=await checkMicrophonePermission({request:true});
+      if(permission==='denied'){
+        setProfilePermissionState('microphone','denied','Not allowed');
+        showToast('Microphone access is blocked. Open Profile → App permissions and allow Microphone.');
+        return;
+      }
+    }
     universeMemoryVoiceStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    setProfilePermissionState('microphone','granted','Allowed');
     universeMemoryVoiceChunks=[]; universeMemoryVoiceStartedAt=Date.now();
-    universeMemoryVoiceRecorder=new MediaRecorder(universeMemoryVoiceStream);
+    const preferred=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'].find(type=>MediaRecorder.isTypeSupported?.(type));
+    universeMemoryVoiceRecorder=new MediaRecorder(universeMemoryVoiceStream,preferred?{mimeType:preferred}:undefined);
     universeMemoryVoiceRecorder.ondataavailable=e=>{if(e.data?.size)universeMemoryVoiceChunks.push(e.data);};
     universeMemoryVoiceRecorder.onstop=()=>{
-      const blob=new Blob(universeMemoryVoiceChunks,{type:universeMemoryVoiceRecorder?.mimeType||'audio/webm'});
-      universeMemoryVoiceClips.push({id:crypto.randomUUID?.()||String(Date.now()),entryId,url:URL.createObjectURL(blob),duration:Date.now()-universeMemoryVoiceStartedAt});
+      const type=universeMemoryVoiceRecorder?.mimeType || universeMemoryVoiceChunks[0]?.type || 'audio/webm';
+      const blob=new Blob(universeMemoryVoiceChunks,{type});
+      universeMemoryVoiceClips.push({id:crypto.randomUUID?.()||String(Date.now()),entryId,url:URL.createObjectURL(blob),duration:Date.now()-universeMemoryVoiceStartedAt,type});
       universeMemoryVoiceStream?.getTracks?.().forEach(t=>t.stop()); universeMemoryVoiceStream=null; universeMemoryVoiceRecorder=null;
       renderUniverseVoiceMemoryLab();
     };
