@@ -734,6 +734,7 @@ function phonePullReset(){
   }
 }
 document.addEventListener('touchstart',e=>{
+  if(e.target.closest?.('.memory-constellation,.scrapella-select-menu,.chat-messages,.scrap-canvas-stage')){phonePullReset();return;}
   if(!isPhoneUI()||phonePullRefreshing||e.touches.length!==1){phonePullReset();return;}
   phonePullScroller=nearestPhoneScroller(e.target);
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
@@ -1179,6 +1180,13 @@ function enhanceScrapellaSelect(select){
   select.classList.add('scrapella-native-select');
   select._scrapellaSelect={wrapper,button};
   button.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openScrapellaSelect(select);});
+  const parentLabel=wrapper.closest('label');
+  parentLabel?.addEventListener('click',e=>{
+    if(e.target.closest('.scrapella-select-button')) return;
+    if(e.target===select) return;
+    e.preventDefault();
+    openScrapellaSelect(select);
+  });
   button.addEventListener('keydown',e=>{
     if(['Enter',' ','ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();openScrapellaSelect(select);}
     else if(e.key==='Escape')closeScrapellaSelect();
@@ -1194,7 +1202,10 @@ document.addEventListener('click',e=>{
   if(scrapellaSelectPortal && !scrapellaSelectPortal.contains(e.target) && !scrapellaSelectActive?.button?.contains(e.target)) closeScrapellaSelect();
 });
 window.addEventListener('resize',()=>closeScrapellaSelect());
-window.addEventListener('scroll',()=>closeScrapellaSelect(),true);
+window.addEventListener('scroll',e=>{
+  if(scrapellaSelectPortal && scrapellaSelectPortal.contains(e.target)) return;
+  closeScrapellaSelect();
+},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeScrapellaSelect();});
 const scrapellaSelectObserver=new MutationObserver(records=>{
   records.forEach(record=>record.addedNodes.forEach(node=>{
