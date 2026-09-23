@@ -652,7 +652,8 @@ function phoneMainScrollTop(scroller=phonePullScroller){
   const root=document.scrollingElement || document.documentElement;
   const activeView=
     currentMode==='home' ? $('#homeView') :
-    currentMode==='book' || currentMode==='cover' ? $('#bookView') :
+    currentMode==='book' ? $('#bookView') :
+    currentMode==='cover' ? $('#coverStage') :
     currentMode==='stream' ? $('#streamView') :
     currentMode==='universe' ? $('#memoryUniverseView') :
     currentMode==='connections' ? $('#connectionsView') :
@@ -878,9 +879,9 @@ function renderMobileBookShelf() {
   }
   $('#mobileLeaveScrapbookBtn')?.classList.toggle('hidden', !canLeaveGroup);
 }
-async function prepareMobileBookView() {
+async function prepareMobileBookView(){
   if (!isPhoneUI()) {
-    if (!activeScrapbook) { await refreshAndShow('connections', null); return; }
+    if (!activeScrapbook) { scrapbookDialog.showModal(); return; }
     await refreshAndShow('book');
     return;
   }
@@ -896,12 +897,9 @@ async function prepareMobileBookView() {
   }
   renderScrapbookPicker();
   renderMobileBookShelf();
-  if (!activeScrapbook) {
-    showView('book');
-    return;
-  }
-  setBookCoverOpen(true);
-  showView('book');
+  setBookCoverOpen(false);
+  showView('cover');
+  if (!activeScrapbook) scrapbookDialog.showModal();
 }
 
 
@@ -1735,6 +1733,13 @@ function positionMobilePageArrows() {
   const top = Math.max(24, targetRect.top - shellRect.top + (targetRect.height / 2));
   shell.style.setProperty('--mobile-page-arrow-top', `${top}px`);
 }
+function renderBookSharingPanel() {
+  const panel=$('#bookSharingPanel');
+  if(!panel)return;
+  const show=Boolean(activeScrapbook && (activeScrapbook.type==='group' || activeScrapbook.type==='couple'));
+  panel.classList.toggle('hidden',!show);
+  if(show)renderConnections();
+}
 function renderBook() {
   const ordered = chronologicalEntries();
   const mobile = isMobileBook();
@@ -1755,6 +1760,7 @@ function renderBook() {
   if ($('#mobilePrevBtn')) $('#mobilePrevBtn').disabled = spreadIndex <= 0;
   if ($('#mobileNextBtn')) $('#mobileNextBtn').disabled = spreadIndex + step >= ordered.length;
   wireEntryButtons(bookShell);
+  renderBookSharingPanel();
   if (mobile) requestAnimationFrame(() => requestAnimationFrame(positionMobilePageArrows));
 }
 function renderTimeline() {
@@ -1804,6 +1810,11 @@ async function ensureMemoryCaptureLibrary() {
   }
   return html2CanvasLoader;
 }
+if (isNativeScrapellaApp()) {
+  const warmCapture=()=>ensureMemoryCaptureLibrary().catch(()=>{});
+  if ('requestIdleCallback' in window) requestIdleCallback(warmCapture,{timeout:1800});
+  else setTimeout(warmCapture,900);
+}
 async function waitForShareImages(root) {
   const images = [...(root?.querySelectorAll?.('img') || [])];
   await Promise.all(images.map(img => {
@@ -1812,7 +1823,7 @@ async function waitForShareImages(root) {
       const done = () => resolve();
       img.addEventListener('load',done,{once:true});
       img.addEventListener('error',done,{once:true});
-      setTimeout(done,3500);
+      setTimeout(done,1600);
     });
   }));
 }
@@ -1823,10 +1834,12 @@ async function captureMemoryShareImage(entryId, sourceNode = null) {
     || document.querySelector(`.timeline-item[data-entry-id="${CSS.escape(entryId)}"] .stream-card`);
   if (!source) throw new Error('Could not find this memory on screen.');
 
+  const dark=document.documentElement.dataset.theme==='night';
   const host = document.createElement('div');
   host.className = 'memory-share-render-host';
   const card = source.cloneNode(true);
   card.classList.add('memory-share-capture-card');
+  card.classList.toggle('memory-share-dark',dark);
   card.querySelectorAll('.memory-comments,.page-actions,.comment-form,.comment-actions,.comment-reply-form').forEach(node => node.remove());
   card.querySelectorAll('button').forEach(button => {
     if (button.closest('.entry-meta')) button.setAttribute('tabindex','-1');
@@ -1835,18 +1848,18 @@ async function captureMemoryShareImage(entryId, sourceNode = null) {
   document.body.appendChild(host);
   try {
     await waitForShareImages(card);
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise(resolve => requestAnimationFrame(resolve));
     const canvas = await html2canvas(card,{
-      backgroundColor:'#f7f0e5',
-      scale:Math.min(2,Math.max(1,window.devicePixelRatio || 1)),
+      backgroundColor:dark ? '#1d1719' : '#f4eadf',
+      scale:isNativeScrapellaApp() ? 1.3 : Math.min(1.6,Math.max(1,window.devicePixelRatio || 1)),
       useCORS:true,
       allowTaint:false,
       logging:false,
-      imageTimeout:8000,
+      imageTimeout:3000,
       removeContainer:true
     });
     const blob = await new Promise((resolve,reject) => {
-      canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the scrapbook image.')),'image/png',0.95);
+      canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the scrapbook image.')),'image/jpeg',0.9);
     });
     return blob;
   } finally {
@@ -1875,7 +1888,7 @@ async function shareMemory(entryId, sourceNode = null, button = null) {
   }
   try {
     const blob = await captureMemoryShareImage(entry.id,sourceNode);
-    const fileName = `scrapella-memory-${String(entry.id || Date.now()).replace(/[^a-z0-9_-]/gi,'-')}.png`;
+    const fileName = `scrapella-memory-${String(entry.id || Date.now()).replace(/[^a-z0-9_-]/gi,'-')}.jpg`;
 
     if (isNativeScrapellaApp()) {
       const sharePlugin = nativePlugin('Share');
@@ -1905,7 +1918,7 @@ async function shareMemory(entryId, sourceNode = null, button = null) {
       }
     }
 
-    const file = new File([blob],fileName,{ type:'image/png', lastModified:Date.now() });
+    const file = new File([blob],fileName,{ type:'image/jpeg', lastModified:Date.now() });
     if (navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))) {
       await navigator.share({ title, text, files:[file] });
       return;
@@ -2070,6 +2083,7 @@ function renderScrapbookPicker() {
     picker.value = selectedId;
   }
   picker.disabled = !source.length;
+  refreshScrapellaSelect(picker);
   renderMobileBookShelf();
 }
 function isBookCoverOpen() {
@@ -2092,7 +2106,7 @@ function setBookCoverOpen(open) {
 }
 async function toggleBookCover() {
   if (!activeScrapbook) {
-    await refreshAndShow('connections', null);
+    scrapbookDialog.showModal();
     return;
   }
   if (isBookCoverOpen()) {
@@ -2881,10 +2895,10 @@ const GUIDE_STEPS = [
   },
   {
     selector:'#connectionsModeBtn',
-    eyebrow:'PEOPLE & PRIVACY',
-    title:'People connects your scrapbook circle.',
-    text:'Search @tags, follow people, invite members to Group or Lovers scrapbooks, manage your Personal scrapbook privacy, and see your relationship connections.',
-    prepare:() => showView('connections')
+    eyebrow:'SCRAPBOOK PROFILES',
+    title:'Profiles keeps social navigation separate from book sharing.',
+    text:'Open a Scrapbook Profile to view their scrapbooks, Memory Universe, message them, and browse followers or following. Group and Lovers membership now lives inside Book.',
+    prepare:() => openPersonProfile(me?.tag,{list:'followers'})
   },
   {
     introducedIn:8,
@@ -3334,7 +3348,7 @@ function renderPersonProfile() {
 
   wireProfileLinks($('#personProfileIdentity'));
   $('#personAvatarZoomBtn')?.addEventListener('click', () => openProfileImageViewer(p));
-  $('#personMemoryUniverseBtn')?.addEventListener('click',()=>openMemoryUniverse(p.tag));
+  $('#personMemoryUniverseBtn')?.addEventListener('click',()=>openMemoryUniverse(p.tag,{override:data.overrideActive===true}));
   $('#personEditOwnProfile')?.addEventListener('click', () => $('#profileBtn').click());
   $('#personProfileActions .person-message-btn')?.addEventListener('click', () => startPrivateChat(p.tag));
   $('#personOverrideBtn')?.addEventListener('click', async e => {
@@ -3475,7 +3489,7 @@ function renderHome() {
       </button>
       <div class="home-personal-books-grid">${booksHtml}${emptyHtml}${moreBooksHtml}</div>
     </article>`;
-  }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from People and their Personal scrapbooks will appear here when they choose to share them with you.</p></div>';
+  }).join('') : '<div class="home-empty"><span>♡</span><strong>Your shelf is empty.</strong><p>Follow someone from Profiles and their Personal scrapbooks will appear here when they choose to share them with you.</p></div>';
 
   const suggestions = Array.isArray(homeData.friendSuggestions) ? homeData.friendSuggestions : [];
   $('#homeSuggestions').innerHTML = suggestions.length ? suggestions.map(item => {
@@ -3635,7 +3649,11 @@ async function openHomeScrapbook(id, mode = 'book') {
     renderScrapbookPicker();
     updateCover();
     if (mode === 'stream') showView('stream');
-    else {
+    else if (isPhoneUI()) {
+      setBookCoverOpen(false);
+      renderMobileBookShelf();
+      showView('cover');
+    } else {
       setBookCoverOpen(true);
       showView('book');
     }
@@ -5399,6 +5417,7 @@ let universeContextProfile = null;
 let universeBooks = [];
 let universeCanSeeExtended = true;
 let universeOwnerOverride = false;
+let universeOwnerOverrideAvailable = false;
 let universeOfficialState = {};
 let universeStateSaveTimer = null;
 let universeReplayTimer = null;
@@ -5468,33 +5487,112 @@ function renderMemoryUniverseDetail(entry) {
 }
 function wireMemoryConstellationPan(){
   const viewport=$('#memoryConstellation');
-  if(!viewport || viewport.dataset.panWired==='1')return;
+  const scene=$('#memoryConstellationScene');
+  const world=$('#memoryConstellationWorld');
+  if(!viewport || !scene || !world || viewport.dataset.panWired==='1')return;
   viewport.dataset.panWired='1';
-  let dragging=false,startX=0,startY=0,startLeft=0,startTop=0,moved=false;
+
+  const pointers=new Map();
+  let pan=null;
+  let pinch=null;
+  let suppressClickUntil=0;
+  const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+  const baseWidth=Number(world.dataset.baseWidth)||world.offsetWidth||(isPhoneUI()?1120:1280);
+  const baseHeight=Number(world.dataset.baseHeight)||world.offsetHeight||(isPhoneUI()?620:690);
+  world.dataset.baseWidth=String(baseWidth);
+  world.dataset.baseHeight=String(baseHeight);
+  let scale=clamp(Number(viewport.dataset.zoom)||1,.65,2.2);
+
+  const applyScale=next=>{
+    scale=clamp(next,.65,2.2);
+    viewport.dataset.zoom=String(scale);
+    world.style.transform=`scale(${scale})`;
+    scene.style.width=`${baseWidth*scale}px`;
+    scene.style.minWidth=`${baseWidth*scale}px`;
+    scene.style.height=`${baseHeight*scale}px`;
+  };
+  applyScale(scale);
+
+  const relativePoint=(a,b=null)=>{
+    const rect=viewport.getBoundingClientRect();
+    if(!b)return {x:a.x-rect.left,y:a.y-rect.top};
+    return {x:((a.x+b.x)/2)-rect.left,y:((a.y+b.y)/2)-rect.top};
+  };
+  const beginPinch=()=>{
+    if(pointers.size<2)return;
+    const [a,b]=[...pointers.values()].slice(0,2);
+    const mid=relativePoint(a,b);
+    const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+    pinch={
+      distance,
+      scale,
+      contentX:(viewport.scrollLeft+mid.x)/scale,
+      contentY:(viewport.scrollTop+mid.y)/scale
+    };
+    pan=null;
+    viewport.classList.add('dragging','pinching');
+  };
+
   viewport.addEventListener('pointerdown',e=>{
-    if(e.target.closest('button,.scrapella-select-control,.scrapella-select-menu'))return;
-    dragging=true;moved=false;
-    startX=e.clientX;startY=e.clientY;
-    startLeft=viewport.scrollLeft;startTop=viewport.scrollTop;
-    viewport.classList.add('dragging');
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     try{viewport.setPointerCapture(e.pointerId);}catch{}
+    if(pointers.size>=2){
+      beginPinch();
+      e.preventDefault();
+      return;
+    }
+    if(e.target.closest('button,.scrapella-select-control,.scrapella-select-menu'))return;
+    pan={pointerId:e.pointerId,x:e.clientX,y:e.clientY,left:viewport.scrollLeft,top:viewport.scrollTop};
+    viewport.classList.add('dragging');
   });
+
   viewport.addEventListener('pointermove',e=>{
-    if(!dragging)return;
-    const dx=e.clientX-startX,dy=e.clientY-startY;
-    if(Math.hypot(dx,dy)>3)moved=true;
-    viewport.scrollLeft=startLeft-dx;
-    viewport.scrollTop=startTop-dy;
+    if(!pointers.has(e.pointerId))return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size>=2){
+      if(!pinch)beginPinch();
+      const [a,b]=[...pointers.values()].slice(0,2);
+      const mid=relativePoint(a,b);
+      const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+      const nextScale=clamp(pinch.scale*(distance/pinch.distance),.65,2.2);
+      applyScale(nextScale);
+      viewport.scrollLeft=Math.max(0,pinch.contentX*scale-mid.x);
+      viewport.scrollTop=Math.max(0,pinch.contentY*scale-mid.y);
+      suppressClickUntil=Date.now()+280;
+      e.preventDefault();
+      return;
+    }
+    if(!pan || pan.pointerId!==e.pointerId)return;
+    const dx=e.clientX-pan.x,dy=e.clientY-pan.y;
+    viewport.scrollLeft=pan.left-dx;
+    viewport.scrollTop=pan.top-dy;
+    if(Math.hypot(dx,dy)>3)suppressClickUntil=Date.now()+180;
     e.preventDefault();
-  });
+  },{passive:false});
+
   const end=e=>{
-    if(!dragging)return;
-    dragging=false;
-    viewport.classList.remove('dragging');
+    pointers.delete(e.pointerId);
     try{viewport.releasePointerCapture(e.pointerId);}catch{}
+    if(pointers.size<2){
+      pinch=null;
+      viewport.classList.remove('pinching');
+    }
+    if(pointers.size===1){
+      const [pointerId,point]=[...pointers.entries()][0];
+      pan={pointerId,x:point.x,y:point.y,left:viewport.scrollLeft,top:viewport.scrollTop};
+    }else if(!pointers.size){
+      pan=null;
+      viewport.classList.remove('dragging');
+    }
   };
   viewport.addEventListener('pointerup',end);
   viewport.addEventListener('pointercancel',end);
+  viewport.addEventListener('click',e=>{
+    if(Date.now()<suppressClickUntil){
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  },true);
 }
 function renderMemoryConstellation(ordered) {
   const nodesHost = $('#memoryConstellationNodes');
@@ -5717,13 +5815,14 @@ async function loadMemoryUniverse(tag = me?.tag, { override = universeOwnerOverr
     universeConstellationMonth='';
   }
   const query=new URLSearchParams({tag:clean});
-  if(self && override)query.set('override','1');
+  if(!self && override)query.set('override','1');
   const data=await api(`/api/memory-universe?${query.toString()}`);
   universeTargetTag=data.profile?.tag || clean;
   universeContextProfile=data.profile || {tag:clean,displayName:clean};
   universeBooks=Array.isArray(data.books)?data.books:[];
   universeCanSeeExtended=data.canSeeExtended===true;
   universeOwnerOverride=data.ownerOverrideActive===true;
+  universeOwnerOverrideAvailable=data.ownerOverrideAvailable===true;
   universeOfficialState=data.state && typeof data.state==='object' ? data.state : {};
   entries=Array.isArray(data.entries)?data.entries:[];
   authorProfiles=data.profiles && typeof data.profiles==='object' ? data.profiles : {};
@@ -6326,11 +6425,13 @@ function renderUniverseFamilyLab() {
   stage.querySelectorAll('.remove-family-preview').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('family',relatives.filter(r=>r.id!==btn.dataset.previewId));renderUniverseFamilyLab();}));
 }
 
-function renderUniverseInheritedLab() {
+function renderUniverseInheritedLab(){
   const stage=$('#universeLabStage');if(!stage)return;const items=loadUniversePreview('inherited',[]);
   stage.innerHTML=`<div class="lab-split"><form id="inheritedPreviewForm" class="lab-compose-card"><span class="lab-icon">⇢</span><p class="eyebrow">INHERITED MEMORY</p><h4>Keep the story attached to who passed it down.</h4><label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(universeSelectedEntry()?.id||'')}</select></label><label class="lab-field">Originally from<input name="from" maxlength="70" placeholder="Lola · Dad · @jill" required /></label><label class="lab-field">Pass forward to<input name="to" maxlength="70" placeholder="My children · @janella" /></label><label class="lab-field">Lineage note<textarea name="note" rows="5" maxlength="700" placeholder="This photo came from her old album…"></textarea></label><button class="primary" type="submit">Add lineage</button></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">MEMORY LINEAGE</p><h4>Stories can travel without losing their origin.</h4></div><span class="lab-preview-pill">${items.length} inherited</span></div><div class="inheritance-list">${items.map(item=>{const e=entries.find(x=>x.id===item.entryId);return `<article><div class="inheritance-chain"><span>${escapeHtml(item.from)}</span><i>→</i><strong>${escapeHtml(e?.title||'Memory')}</strong><i>→</i><span>${escapeHtml(item.to||'Future family')}</span></div><p>${escapeHtml(item.note||'')}</p></article>`;}).join('')||'<div class="lab-soft-empty">No inherited memories marked yet.</div>'}</div></section></div>`;
   finalizeUniverseControls(stage);
-  $('#inheritedPreviewForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget),item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(f.get('entryId')||''),from:String(f.get('from')||'').trim(),to:String(f.get('to')||'').trim(),note:String(f.get('note')||'').trim()};saveUniversePreview('inherited',items.concat(item));renderUniverseInheritedLab();});
+  const form=$('#inheritedPreviewForm');
+  ['from','to'].forEach(name=>wireMentionAutocomplete(form?.elements?.[name]));
+  form?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget),item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(f.get('entryId')||''),from:String(f.get('from')||'').trim(),to:String(f.get('to')||'').trim(),note:String(f.get('note')||'').trim()};saveUniversePreview('inherited',items.concat(item));renderUniverseInheritedLab();});
 }
 
 async function renderUniverseQrLab() {
@@ -6552,16 +6653,18 @@ function renderMemoryUniverse() {
   if(title)title.textContent=self ? 'Your memories are more than a feed.' : `${display}’s Memory Universe`;
   const audience=$('#memoryUniverseAudience');
   if(audience){
-    audience.textContent=universeCanSeeExtended
-      ? (self
-          ? (universeOwnerOverride ? 'Owner override is on: Followers Only, Partner Only, Only You, Groups, and your bound Partner memories are included.' : 'Standard owner view: Followers Only memories plus Groups and your bound Partner context. Use owner override to include Partner Only and Only You memories.')
-          : 'You follow this person, so Memory Echoes and all Memory Universe features are available alongside the memories shared with you.')
-      : 'Only Memory Constellation is visible here. It includes Followers Only memories you can access, shared Groups, and bound Partner context when applicable.';
+    audience.textContent=universeOwnerOverride
+      ? `Owner Override is active for @${profile.tag || universeTargetTag}. Private Personal scrapbook memories are visible read-only alongside memories you normally share.`
+      : (universeCanSeeExtended
+          ? (self
+              ? 'This is your own Memory Universe, using the privacy of each scrapbook as its normal context.'
+              : 'You follow this person, so Memory Echoes and all Memory Universe features are available alongside the memories shared with you.')
+          : 'Only Memory Constellation is visible here. It includes memories and shared-book context available to you.');
   }
   const overrideBtn=$('#memoryUniverseOwnerOverrideBtn');
   if(overrideBtn){
-    overrideBtn.classList.toggle('hidden',!self);
-    overrideBtn.textContent=universeOwnerOverride ? 'Owner override: showing all' : 'Owner override: show Partner + Only You';
+    overrideBtn.classList.toggle('hidden',self || !universeOwnerOverrideAvailable);
+    overrideBtn.textContent=universeOwnerOverride ? 'Owner Override: showing private memories' : 'Owner Override';
     overrideBtn.classList.toggle('active',universeOwnerOverride);
   }
   document.querySelectorAll('#memoryUniverseView .universe-extended-section').forEach(el=>el.classList.toggle('hidden',!universeCanSeeExtended));
@@ -6657,7 +6760,7 @@ function showView(mode) {
   messagesView.classList.toggle('hidden', mode !== 'messages');
   personProfileView.classList.toggle('hidden', mode !== 'person');
   $('#homeModeBtn').classList.toggle('active', mode === 'home');
-  $('#bookModeBtn').classList.toggle('active', mode === 'book' || (isPhoneUI() && mode === 'stream'));
+  $('#bookModeBtn').classList.toggle('active', mode === 'book' || (isPhoneUI() && (mode === 'cover' || mode === 'stream')));
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
   $('#universeModeBtn')?.classList.toggle('active', mode === 'universe');
   $('#connectionsModeBtn').classList.toggle('active', mode === 'connections' || mode === 'person');
@@ -7189,23 +7292,27 @@ function wireCanvasItems() {
       if(item.type==='text'&&!e.target.closest('.canvas-drag-handle'))return;
       bringItemFront();
       const r=rect();
+      const visualScale=Math.max(.01,Number(editingCanvasZoom)||1);
       const sx=e.clientX,sy=e.clientY,ox=item.x,oy=item.y;
       let nextX=ox,nextY=oy;
+      let dragActivated=false;
       try{el.setPointerCapture(e.pointerId);}catch{}
       el.classList.add('dragging');
       const move=ev=>{
         if(canvasGesturePinching)return;
         const rawDx=ev.clientX-sx,rawDy=ev.clientY-sy;
+        if(!dragActivated && Math.hypot(rawDx,rawDy)<5)return;
+        dragActivated=true;
         const dx=rawDx/r.width*100,dy=rawDy/r.height*100;
         nextX=Math.max(0,Math.min(100-item.w,ox+dx));
         nextY=Math.max(0,Math.min(100-item.h,oy+dy));
-        const visualDx=(nextX-ox)/100*r.width;
-        const visualDy=(nextY-oy)/100*r.height;
+        const visualDx=(nextX-ox)/100*(r.width/visualScale);
+        const visualDy=(nextY-oy)/100*(r.height/visualScale);
         el.style.setProperty('--drag-x',`${visualDx}px`);
         el.style.setProperty('--drag-y',`${visualDy}px`);
       };
       const up=()=>{
-        item.x=nextX;item.y=nextY;
+        if(dragActivated){item.x=nextX;item.y=nextY;}
         el.removeEventListener('pointermove',move);
         el.removeEventListener('pointerup',up);
         el.removeEventListener('pointercancel',up);
@@ -7242,17 +7349,32 @@ function wireCanvasItems() {
       const cx=box.left+box.width/2,cy=box.top+box.height/2;
       const startAngle=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI;
       const startRotation=Number(item.rotation)||0;
+      let straightGuide=canvas.querySelector('.canvas-straight-guide');
+      if(!straightGuide){
+        straightGuide=document.createElement('div');
+        straightGuide.className='canvas-straight-guide';
+        straightGuide.innerHTML='<span class="canvas-guide-vertical"></span><span class="canvas-guide-horizontal"></span>';
+        canvas.appendChild(straightGuide);
+      }
       try{rotateHandle.setPointerCapture(e.pointerId);}catch{}
       el.classList.add('rotating');
       const move=ev=>{
         const angle=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI;
-        item.rotation=((startRotation+(angle-startAngle))%360+360)%360;
+        const raw=((startRotation+(angle-startAngle))%360+360)%360;
+        const nearest=Math.round(raw/90)*90;
+        const delta=Math.abs((((raw-nearest)+540)%360)-180);
+        const snapped=delta<=4;
+        item.rotation=snapped ? ((nearest%360)+360)%360 : raw;
         el.style.setProperty('--item-rotation',`${item.rotation}deg`);
+        straightGuide.style.setProperty('--guide-x',`${item.x+item.w/2}%`);
+        straightGuide.style.setProperty('--guide-y',`${item.y+item.h/2}%`);
+        straightGuide.classList.toggle('show',snapped);
       };
       const up=()=>{
         rotateHandle.removeEventListener('pointermove',move);
         rotateHandle.removeEventListener('pointerup',up);
         rotateHandle.removeEventListener('pointercancel',up);
+        straightGuide.classList.remove('show');
         el.classList.remove('rotating');
       };
       rotateHandle.addEventListener('pointermove',move);
@@ -7318,6 +7440,7 @@ function wireCanvasItems() {
         if(!desktopMouseDrag && !phoneTouchDrag)return;
 
         const r=rect();
+        const visualScale=Math.max(.01,Number(editingCanvasZoom)||1);
         const sx=e.clientX,sy=e.clientY,ox=item.x,oy=item.y;
         const pointerId=e.pointerId;
         let longDragging=false;
@@ -7348,8 +7471,8 @@ function wireCanvasItems() {
           const dy=(ev.clientY-sy)/r.height*100;
           nextX=Math.max(0,Math.min(100-item.w,ox+dx));
           nextY=Math.max(0,Math.min(100-item.h,oy+dy));
-          el.style.setProperty('--drag-x',`${(nextX-ox)/100*r.width}px`);
-          el.style.setProperty('--drag-y',`${(nextY-oy)/100*r.height}px`);
+          el.style.setProperty('--drag-x',`${(nextX-ox)/100*(r.width/visualScale)}px`);
+          el.style.setProperty('--drag-y',`${(nextY-oy)/100*(r.height/visualScale)}px`);
           ev.preventDefault();
         };
 
@@ -8040,18 +8163,15 @@ $('#universeModeBtn')?.addEventListener('click', () => {
   openMemoryUniverse(target);
 });
 $('#memoryUniverseOwnerOverrideBtn')?.addEventListener('click',async()=>{
-  if((universeTargetTag || me?.tag)!==me?.tag)return;
-  universeOwnerOverride=!universeOwnerOverride;
-  await openMemoryUniverse(me.tag,{override:universeOwnerOverride});
+  const target=universeTargetTag || me?.tag;
+  if(!target || target===me?.tag || !universeOwnerOverrideAvailable)return;
+  await openMemoryUniverse(target,{override:!universeOwnerOverride});
 });
 $('#memoryReplayBtn')?.addEventListener('click',()=>startMemoryReplay());
 $('#memorySurpriseBtn')?.addEventListener('click',()=>{ if(!entries.length){ showToast('Add a memory first.'); return; } const entry=entries[Math.floor(Math.random()*entries.length)]; renderMemoryUniverseDetail(entry); $('#memoryUniverseDetail')?.scrollIntoView({behavior:'smooth',block:'nearest'}); });
 $('#connectionsModeBtn').addEventListener('click', async () => {
-  if (!isPhoneUI()) { await refreshAndShow('connections'); return; }
-  const options = mobileBookOptions();
-  const target = options.find(book => book.id === activeScrapbook?.id) || options[0] || null;
-  if (target && target.id !== activeScrapbook?.id) await loadSession(target.id);
-  showView('connections');
+  if (!me?.tag) return;
+  await openPersonProfile(me.tag,{list:'followers'});
 });
 $('#messagesModeBtn').addEventListener('click', () => { closeMobileChat(); showView('messages'); });
 $('#newEntryBtn').addEventListener('click', () => openEditor());
@@ -8087,9 +8207,9 @@ $('#scrapbookPicker').addEventListener('change', async e => {
   try {
     await loadSession(selectedId);
     if (isPhoneUI()) {
-      setBookCoverOpen(true);
+      setBookCoverOpen(false);
       renderMobileBookShelf();
-      showView('book');
+      showView('cover');
     } else {
       setBookCoverOpen(true);
       showView(activeScrapbook ? 'book' : 'cover');
@@ -8132,7 +8252,7 @@ function updateScrapbookDialogForType() {
   $('#personalPrivacyWrap').classList.toggle('hidden', !personal);
   $('#scrapbookHelper').textContent = personal
     ? 'Personal scrapbooks are written only by you. Privacy controls who may read them.'
-    : 'After creating it, invite people from the People view using their @tag.';
+    : 'After creating it, open Book → Who shares this book to invite by @tag.';
   if (!$('#scrapbookName').value.trim()) {
     $('#scrapbookName').placeholder = personal ? 'My Personal Scrapbook' : (type === 'couple' ? 'Our Love Story' : 'Our Weekend Crew');
   }
@@ -8709,8 +8829,13 @@ function syncResponsiveChrome() {
     [$('#createScrapbookBtn'), $('#profileBtn'), $('#messagesModeBtn'), $('#notificationWrap'), $('#guideBtn'), $('#logoutBtn')]
       .filter(Boolean).forEach(el => mobileActions?.appendChild(el));
     if ($('#themeModeBtn')) mobileThemeSlot?.appendChild($('#themeModeBtn'));
-    if ($('#scrapbookPicker') && mobileBookSlot && $('#scrapbookPicker').parentNode !== mobileBookSlot) {
-      mobileBookSlot.appendChild($('#scrapbookPicker'));
+    const mobilePicker=$('#scrapbookPicker');
+    const mobilePickerNode=mobilePicker?._scrapellaSelect?.wrapper || mobilePicker;
+    if (mobilePickerNode && mobileBookSlot && mobilePickerNode.parentNode !== mobileBookSlot) {
+      mobileBookSlot.appendChild(mobilePickerNode);
+    }
+    if (mobileBookShelf && coverStage && mobileBookShelf.parentNode !== coverStage) {
+      coverStage.insertBefore(mobileBookShelf, coverStage.firstChild);
     }
     if (privacyQuick && mobileBookShelf && privacyQuick.parentNode !== mobileBookShelf) mobileBookShelf.appendChild(privacyQuick);
     if (suggestions && searchSection && suggestions.parentNode !== searchSection) searchSection.appendChild(suggestions);
@@ -8718,8 +8843,13 @@ function syncResponsiveChrome() {
     if ($('#privateChatTag')) $('#privateChatTag').placeholder = 'Search';
   } else {
     const desktopPickerSlot = $('#desktopBookPickerSlot');
-    if ($('#scrapbookPicker') && pickerWrap && $('#scrapbookPicker').parentNode !== pickerWrap) {
-      pickerWrap.insertBefore($('#scrapbookPicker'), $('#createScrapbookBtn') || null);
+    const desktopPicker=$('#scrapbookPicker');
+    const desktopPickerNode=desktopPicker?._scrapellaSelect?.wrapper || desktopPicker;
+    if (desktopPickerNode && pickerWrap && desktopPickerNode.parentNode !== pickerWrap) {
+      pickerWrap.insertBefore(desktopPickerNode, $('#createScrapbookBtn') || null);
+    }
+    if (mobileBookShelf && bookView && mobileBookShelf.parentNode !== bookView) {
+      bookView.insertBefore(mobileBookShelf, bookView.firstChild);
     }
     if ($('#createScrapbookBtn') && pickerWrap) pickerWrap.appendChild($('#createScrapbookBtn'));
     if (pickerWrap && desktopPickerSlot && pickerWrap.parentNode !== desktopPickerSlot) {
