@@ -5,6 +5,7 @@ self.addEventListener('push', event => {
   const options = {
     body: data.body || 'Add a little memory before the day ends.',
     tag: data.tag || 'journey-reminder',
+    icon: '/assets/scrapella-favicon.svg',
     renotify: false,
     data: { url: data.url || '/' }
   };
