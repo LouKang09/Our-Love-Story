@@ -648,12 +648,29 @@ function nearestPhoneScroller(node){
   }
   return document.scrollingElement || document.documentElement;
 }
-function phoneAtScrollTop(scroller=phonePullScroller){
+function phoneMainScrollTop(scroller=phonePullScroller){
   const root=document.scrollingElement || document.documentElement;
+  const activeView=
+    currentMode==='home' ? $('#homeView') :
+    currentMode==='book' || currentMode==='cover' ? $('#bookView') :
+    currentMode==='stream' ? $('#streamView') :
+    currentMode==='universe' ? $('#memoryUniverseView') :
+    currentMode==='connections' ? $('#connectionsView') :
+    currentMode==='messages' ? $('#messagesView') :
+    currentMode==='person' ? $('#personProfileView') : null;
+  const values=[
+    Number(root?.scrollTop||0),
+    Number(window.scrollY||0),
+    Number(journalApp?.scrollTop||0),
+    Number(activeView?.scrollTop||0)
+  ];
   if(scroller && scroller!==root && scroller!==document.body && scroller!==document.documentElement){
-    return Number(scroller.scrollTop||0)<=1;
+    values.push(Number(scroller.scrollTop||0));
   }
-  return Number(root?.scrollTop||window.scrollY||0)<=1;
+  return Math.max(...values.filter(Number.isFinite),0);
+}
+function phoneAtScrollTop(scroller=phonePullScroller){
+  return phoneMainScrollTop(scroller)<=6;
 }
 function phonePullIndicator(){
   let el=document.querySelector('.scrapella-pull-refresh');
@@ -736,7 +753,8 @@ function phonePullReset(){
 document.addEventListener('touchstart',e=>{
   if(e.target.closest?.('.memory-constellation,.scrapella-select-menu,.chat-messages,.scrap-canvas-stage')){phonePullReset();return;}
   if(!isPhoneUI()||phonePullRefreshing||e.touches.length!==1){phonePullReset();return;}
-  phonePullScroller=nearestPhoneScroller(e.target);
+  const nearest=nearestPhoneScroller(e.target);
+  phonePullScroller=(nearest && Number(nearest.scrollTop||0)>6) ? nearest : null;
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
   phonePullStartY=e.touches[0].clientY;
   phonePullDistance=0;
@@ -747,14 +765,14 @@ document.addEventListener('touchmove',e=>{
   const delta=Math.max(0,e.touches[0].clientY-phonePullStartY);
   phonePullDistance=Math.min(130,delta);
   const indicator=phonePullIndicator();
-  const progress=Math.min(1,phonePullDistance/72);
-  indicator.classList.toggle('visible',phonePullDistance>8);
+  const progress=Math.min(1,phonePullDistance/58);
+  indicator.classList.toggle('visible',phonePullDistance>6);
   indicator.style.setProperty('--pull',String(progress));
-  indicator.querySelector('b').textContent=phonePullDistance>=72?'Release to refresh':'Pull to refresh';
+  indicator.querySelector('b').textContent=phonePullDistance>=58?'Release to refresh':'Pull to refresh';
 },{passive:true,capture:true});
 document.addEventListener('touchend',()=>{
   if(phonePullStartY===null)return;
-  const shouldRefresh=phonePullDistance>=72 && phoneAtScrollTop(phonePullScroller);
+  const shouldRefresh=phonePullDistance>=58 && phoneAtScrollTop(phonePullScroller);
   phonePullStartY=null;
   phonePullDistance=0;
   if(shouldRefresh)refreshNativePhoneContext();
@@ -5454,7 +5472,7 @@ function wireMemoryConstellationPan(){
   viewport.dataset.panWired='1';
   let dragging=false,startX=0,startY=0,startLeft=0,startTop=0,moved=false;
   viewport.addEventListener('pointerdown',e=>{
-    if(e.pointerType==='touch' || e.target.closest('button'))return;
+    if(e.target.closest('button,.scrapella-select-control,.scrapella-select-menu'))return;
     dragging=true;moved=false;
     startX=e.clientX;startY=e.clientY;
     startLeft=viewport.scrollLeft;startTop=viewport.scrollTop;
@@ -5748,6 +5766,17 @@ function applyUniverseReadOnlyState() {
   stage.querySelectorAll('input,textarea,select,button[type="submit"],.remove-preview-item,.remove-letter-preview,.remove-trail-preview,.remove-heirloom-preview').forEach(el=>el.disabled=true);
   stage.querySelectorAll('input[type="file"],.lab-drop-photo').forEach(el=>{ el.disabled=true; el.classList?.add('disabled'); });
 }
+function finalizeUniverseControls(stage=$('#universeLabStage')){
+  if(!stage)return;
+  enhanceAllScrapellaSelects(stage);
+  stage.querySelectorAll('input,textarea').forEach(field=>{
+    if(field.closest('form') && !field.hasAttribute('data-optional') && !field.disabled){
+      // Keep clearly optional helper fields optional; everything explicitly marked required stays required.
+      if(field.required) field.setAttribute('aria-required','true');
+    }
+  });
+}
+
 function renderUniverseLabs() {
   const stage = $('#universeLabStage');
   if (!stage) return;
@@ -5760,6 +5789,7 @@ function renderUniverseLabs() {
     btn.classList.toggle('active',official && mode===universeLabMode);
   });
   renderUniverseLabStage();
+  finalizeUniverseControls(stage);
   requestAnimationFrame(applyUniverseReadOnlyState);
 }
 
@@ -6283,6 +6313,7 @@ function renderUniverseVaultLab() {
   const stage=$('#universeLabStage');if(!stage)return;
   const vault=loadUniversePreview('vault',[]);
   stage.innerHTML=`<div class="lab-split"><form id="vaultPreviewForm" class="lab-compose-card vault-compose"><span class="lab-icon">▣</span><p class="eyebrow">PERSONAL VAULT</p><h4>A second lock for your most private memories.</h4><label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(universeSelectedEntry()?.id||'')}</select></label><label class="lab-field">Protection idea<select name="mode"><option>PIN + device unlock</option><option>Biometric only</option><option>PIN + recovery phrase</option></select></label><button class="primary" type="submit">Add to Personal Vault</button><div class="vault-warning"><strong>Private Memory Universe shelf.</strong><span>Only you can load your saved Personal Vault shelf. Adding a memory here does not change the privacy of its original scrapbook page.</span></div></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">VAULT SHELF</p><h4>Memories behind another door.</h4></div><span class="lab-preview-pill">${vault.length} locked</span></div><div class="vault-grid">${vault.map(item=>{const e=entries.find(x=>x.id===item.entryId);return `<article><span>▣</span><div><small>${escapeHtml(item.mode)}</small><strong>${escapeHtml(e?.title||'Memory')}</strong><p>${escapeHtml(universeDateLabel(e?.date))}</p></div><button class="icon-btn remove-vault-preview" type="button" data-preview-id="${escapeHtml(item.id)}">×</button></article>`;}).join('')||'<div class="lab-soft-empty">Nothing is in Memory Universe vault yet.</div>'}</div></section></div>`;
+  finalizeUniverseControls(stage);
   $('#vaultPreviewForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);const item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(f.get('entryId')||''),mode:String(f.get('mode')||'PIN + device unlock')};if(vault.some(v=>v.entryId===item.entryId)){showToast('That memory is already in Memory Universe vault.');return;}saveUniversePreview('vault',vault.concat(item));renderUniverseVaultLab();});
   stage.querySelectorAll('.remove-vault-preview').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('vault',vault.filter(v=>v.id!==btn.dataset.previewId));renderUniverseVaultLab();}));
 }
@@ -6298,6 +6329,7 @@ function renderUniverseFamilyLab() {
 function renderUniverseInheritedLab() {
   const stage=$('#universeLabStage');if(!stage)return;const items=loadUniversePreview('inherited',[]);
   stage.innerHTML=`<div class="lab-split"><form id="inheritedPreviewForm" class="lab-compose-card"><span class="lab-icon">⇢</span><p class="eyebrow">INHERITED MEMORY</p><h4>Keep the story attached to who passed it down.</h4><label class="lab-field">Memory<select name="entryId">${universeMemorySelectOptions(universeSelectedEntry()?.id||'')}</select></label><label class="lab-field">Originally from<input name="from" maxlength="70" placeholder="Lola · Dad · @jill" required /></label><label class="lab-field">Pass forward to<input name="to" maxlength="70" placeholder="My children · @janella" /></label><label class="lab-field">Lineage note<textarea name="note" rows="5" maxlength="700" placeholder="This photo came from her old album…"></textarea></label><button class="primary" type="submit">Add lineage</button></form><section class="lab-workbench"><div class="lab-title-row"><div><p class="eyebrow">MEMORY LINEAGE</p><h4>Stories can travel without losing their origin.</h4></div><span class="lab-preview-pill">${items.length} inherited</span></div><div class="inheritance-list">${items.map(item=>{const e=entries.find(x=>x.id===item.entryId);return `<article><div class="inheritance-chain"><span>${escapeHtml(item.from)}</span><i>→</i><strong>${escapeHtml(e?.title||'Memory')}</strong><i>→</i><span>${escapeHtml(item.to||'Future family')}</span></div><p>${escapeHtml(item.note||'')}</p></article>`;}).join('')||'<div class="lab-soft-empty">No inherited memories marked yet.</div>'}</div></section></div>`;
+  finalizeUniverseControls(stage);
   $('#inheritedPreviewForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget),item={id:crypto.randomUUID?.()||String(Date.now()),entryId:String(f.get('entryId')||''),from:String(f.get('from')||'').trim(),to:String(f.get('to')||'').trim(),note:String(f.get('note')||'').trim()};saveUniversePreview('inherited',items.concat(item));renderUniverseInheritedLab();});
 }
 
@@ -7536,9 +7568,11 @@ async function nativeNotificationIconOptions(){
     if(!appPlugin?.getInfo)return {};
     nativeAppInfoPromise ||= appPlugin.getInfo().catch(()=>null);
     const info=await nativeAppInfoPromise;
-    return versionAtLeast(info?.version,'2.3.1')
-      ? {smallIcon:'ic_stat_scrapella',iconColor:'#6e3d46'}
-      : {};
+    return versionAtLeast(info?.version,'2.3.2')
+      ? {smallIcon:'ic_stat_scrapella',largeIcon:'scrapella_notification_large',iconColor:'#6e3d46'}
+      : versionAtLeast(info?.version,'2.3.1')
+        ? {smallIcon:'ic_stat_scrapella',iconColor:'#6e3d46'}
+        : {};
   }catch{return {};}
 }
 function nativeNotificationId(value='') {
@@ -7715,7 +7749,6 @@ async function showNativeSocialNotification(payload = {}) {
   if(!isNativeScrapellaApp() || payload?.from===me?.tag)return;
   const type=String(payload?.type || '');
   if(!['comment','comment_mention','profile_mention'].includes(type))return;
-  if(config.nativePushEnabled)return;
   const local=nativePlugin('LocalNotifications');
   if(!local)return;
   await ensureNativeChatNotifications();
