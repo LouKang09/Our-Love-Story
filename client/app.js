@@ -5465,6 +5465,7 @@ let universeBooks = [];
 let universeCanSeeExtended = true;
 let universeOwnerOverride = false;
 let universeOwnerOverrideAvailable = false;
+let universeHiddenCategories = [];
 let universeOfficialState = {};
 let universeStateSaveTimer = null;
 let universeReplayTimer = null;
@@ -5784,6 +5785,13 @@ function renderMemoryPerspectives(ordered) {
   host.querySelectorAll('[data-universe-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.universeEntry)));
 }
 const OFFICIAL_UNIVERSE_MODES = ['voiceMemory','letters','prompts','anniversaries','box','themes','peopleMemory','vault','family','inherited','secret','faith','wall','capsules','museum'];
+const UNIVERSE_CATEGORY_LABELS={
+  voiceMemory:'Voice Memories',letters:'Letter To',prompts:'Memory Prompts',anniversaries:'Anniversary Resurfacing',
+  box:'Memory Box',themes:'Living Theme',peopleMemory:'People in My Memory',vault:'Personal Vault',
+  family:'Family History',inherited:'Inherited Memory',secret:'Secret Contributors',faith:'Reflection Journal',
+  wall:'Freedom Wall',capsules:'Future Capsules',museum:'Life Museum'
+};
+
 let universeLabMode = 'voiceMemory';
 let universeVoiceRecorder = null;
 let universeVoiceStream = null;
@@ -5870,6 +5878,7 @@ async function loadMemoryUniverse(tag = me?.tag, { override = universeOwnerOverr
   universeCanSeeExtended=data.canSeeExtended===true;
   universeOwnerOverride=data.ownerOverrideActive===true;
   universeOwnerOverrideAvailable=data.ownerOverrideAvailable===true;
+  universeHiddenCategories=Array.isArray(data.hiddenCategories)?data.hiddenCategories:[];
   universeOfficialState=data.state && typeof data.state==='object' ? data.state : {};
   entries=Array.isArray(data.entries)?data.entries:[];
   authorProfiles=data.profiles && typeof data.profiles==='object' ? data.profiles : {};
@@ -5899,8 +5908,64 @@ function universeMemorySelectOptions(selectedId = '') {
   return ordered.map(entry => `<option value="${escapeHtml(entry.id)}"${entry.id===selectedId?' selected':''}>${escapeHtml(universeDateLabel(entry.date,{month:'short',day:'numeric',year:'numeric'}))} · ${escapeHtml(entry.title || 'Untitled memory')}</option>`).join('');
 }
 
-function universeLabSetMode(mode) {
-  universeLabMode = OFFICIAL_UNIVERSE_MODES.includes(mode) ? mode : OFFICIAL_UNIVERSE_MODES[0];
+function visibleUniverseModes(){
+  const hidden=new Set(Array.isArray(universeHiddenCategories)?universeHiddenCategories:[]);
+  return OFFICIAL_UNIVERSE_MODES.filter(mode=>!hidden.has(mode));
+}
+async function saveUniversePreferences(patch={}){
+  const hidden=Array.isArray(patch.hiddenCategories)
+    ? patch.hiddenCategories
+    : (Array.isArray(me?.hiddenUniverseCategories)?me.hiddenUniverseCategories:[]);
+  const reflectionReligion=patch.reflectionReligion || me?.reflectionReligion || 'general';
+  const data=await api('/api/preferences/memory-universe',{
+    method:'PUT',
+    body:JSON.stringify({hiddenCategories:hidden,reflectionReligion})
+  });
+  if(me){
+    me.hiddenUniverseCategories=Array.isArray(data.hiddenCategories)?data.hiddenCategories:[];
+    me.reflectionReligion=data.reflectionReligion || 'general';
+  }
+  if((universeTargetTag || me?.tag)===me?.tag){
+    universeHiddenCategories=Array.isArray(data.hiddenCategories)?data.hiddenCategories:[];
+  }
+  return data;
+}
+async function hideUniverseCategory(mode){
+  if((universeTargetTag || me?.tag)!==me?.tag || !OFFICIAL_UNIVERSE_MODES.includes(mode))return;
+  const hidden=[...new Set([...(me?.hiddenUniverseCategories||[]),mode])];
+  try{
+    await saveUniversePreferences({hiddenCategories:hidden});
+    const visible=visibleUniverseModes();
+    if(universeLabMode===mode)universeLabMode=visible[0] || '';
+    renderUniverseLabs();
+    renderHiddenUniverseProfileSettings();
+    showToast('If you wish to appear again, look for the setting in your profile.');
+  }catch(err){showToast(err?.message || 'Could not hide that category.');}
+}
+async function restoreUniverseCategory(mode){
+  const hidden=(me?.hiddenUniverseCategories||[]).filter(item=>item!==mode);
+  try{
+    await saveUniversePreferences({hiddenCategories:hidden});
+    renderHiddenUniverseProfileSettings();
+    if(currentMode==='universe' && (universeTargetTag || me?.tag)===me?.tag)renderUniverseLabs();
+    showToast(`${UNIVERSE_CATEGORY_LABELS[mode] || 'Category'} is visible again in Memory Universe.`);
+  }catch(err){showToast(err?.message || 'Could not restore that category.');}
+}
+function renderHiddenUniverseProfileSettings(){
+  const host=$('#hiddenUniverseList');
+  if(!host)return;
+  const hidden=Array.isArray(me?.hiddenUniverseCategories)?me.hiddenUniverseCategories.filter(mode=>OFFICIAL_UNIVERSE_MODES.includes(mode)):[];
+  if(!hidden.length){
+    host.innerHTML='<div class="hidden-universe-empty">No hidden Memory Universe categories.</div>';
+    return;
+  }
+  host.innerHTML=hidden.map(mode=>`<div class="hidden-universe-row"><span><strong>${escapeHtml(UNIVERSE_CATEGORY_LABELS[mode]||mode)}</strong><small>Hidden from your Memory Universe</small></span><button class="ghost" type="button" data-restore-universe="${escapeHtml(mode)}">Show again</button></div>`).join('');
+  host.querySelectorAll('[data-restore-universe]').forEach(btn=>btn.addEventListener('click',()=>restoreUniverseCategory(btn.dataset.restoreUniverse)));
+}
+
+function universeLabSetMode(mode){
+  const visible=visibleUniverseModes();
+  universeLabMode = visible.includes(mode) ? mode : (visible[0] || '');
   document.querySelectorAll('[data-universe-lab]').forEach(btn => btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode));
   renderUniverseLabStage();
 }
@@ -5923,17 +5988,31 @@ function finalizeUniverseControls(stage=$('#universeLabStage')){
   });
 }
 
-function renderUniverseLabs() {
+function renderUniverseLabs(){
   const stage = $('#universeLabStage');
   if (!stage) return;
-  if (!OFFICIAL_UNIVERSE_MODES.includes(universeLabMode)) universeLabMode = OFFICIAL_UNIVERSE_MODES[0];
-  document.querySelectorAll('[data-universe-lab]').forEach(btn => {
+  const visible=visibleUniverseModes();
+  if (!visible.includes(universeLabMode)) universeLabMode = visible[0] || '';
+  const self=(universeTargetTag || me?.tag)===me?.tag;
+  document.querySelectorAll('.universe-lab-tab-item').forEach(item=>{
+    const btn=item.querySelector('[data-universe-lab]');
+    if(!btn)return;
     const mode=btn.dataset.universeLab || '';
     const official=OFFICIAL_UNIVERSE_MODES.includes(mode);
-    btn.hidden = !official;
-    btn.onclick = official ? (() => universeLabSetMode(mode)) : null;
-    btn.classList.toggle('active',official && mode===universeLabMode);
+    const hidden=universeHiddenCategories.includes(mode);
+    item.hidden=!official || hidden;
+    btn.onclick=official && !hidden ? (()=>universeLabSetMode(mode)) : null;
+    btn.classList.toggle('active',official && !hidden && mode===universeLabMode);
+    const hideBtn=item.querySelector('[data-hide-universe-category]');
+    if(hideBtn){
+      hideBtn.hidden=!self || hidden;
+      hideBtn.onclick=self && !hidden ? (e=>{e.preventDefault();e.stopPropagation();hideUniverseCategory(mode);}) : null;
+    }
   });
+  if(!visible.length){
+    stage.innerHTML='<div class="universe-empty wide"><span>◌</span><strong>All Memory Universe categories are hidden.</strong><p>Open your Profile settings to show categories again.</p></div>';
+    return;
+  }
   renderUniverseLabStage();
   finalizeUniverseControls(stage);
   requestAnimationFrame(applyUniverseReadOnlyState);
@@ -6655,6 +6734,21 @@ function renderUniverseUnfinishedLab() {
   stage.querySelectorAll('[data-unfinished-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.unfinishedEntry)));
 }
 
+const REFLECTION_RELIGIONS=[
+  ['general','General / Personal'],['catholic','Catholic'],['christian','Christian'],['muslim','Muslim'],
+  ['jewish','Jewish'],['hindu','Hindu'],['buddhist','Buddhist'],['other','Other']
+];
+function reflectionReligionLabel(value){
+  return REFLECTION_RELIGIONS.find(([key])=>key===value)?.[1] || 'General / Personal';
+}
+function reflectionReligionOptions(selected){
+  return REFLECTION_RELIGIONS.map(([key,label])=>`<option value="${key}"${key===selected?' selected':''}>${escapeHtml(label)}</option>`).join('');
+}
+function scripturePassageHtml(payload,label){
+  if(!payload || !Array.isArray(payload.verses) || !payload.verses.length)return '';
+  const text=payload.verses.map(item=>`<span class="scripture-verse-number">${escapeHtml(String(item.verse))}</span> ${escapeHtml(item.text||'')}`).join(' ');
+  return `<article class="reflection-scripture-card"><header><span>${escapeHtml(label)}</span><strong>${escapeHtml(payload.displayReference || payload.reference || '')}</strong></header><blockquote>${text}</blockquote><small>Full text shown in Catholic Public Domain Version (CPDV).</small></article>`;
+}
 function localDateKey(date=new Date()){
   const y=date.getFullYear();
   const m=String(date.getMonth()+1).padStart(2,'0');
@@ -6670,19 +6764,23 @@ function faithHistoryHtml(all){
     .sort((x,y)=>String(y[0]).localeCompare(String(x[0])));
   if(!rows.length)return '<div class="faith-history-empty">No saved reflections yet.</div>';
   return rows.map(([date,item],index)=>{
-    const oldWord=item.word ? `<div><small>WORD / PHRASE</small><p>${escapeHtml(item.word)}</p></div>` : '';
-    return `<details class="faith-history-item" ${index===0?'open':''}>
-      <summary><span><strong>${escapeHtml(faithSavedDateLabel(date))}</strong><small>${escapeHtml(item.celebration||'Daily reflection')}</small></span><b>⌄</b></summary>
-      <div class="faith-history-body">
-        <div class="faith-history-readings">
+    const religion=item.religion || ((item.reading1||item.gospel)?'catholic':'general');
+    const readingSummary=religion==='catholic'
+      ? `<div class="faith-history-readings">
           <span><small>First Reading</small><strong>${escapeHtml(item.reading1||'—')}</strong></span>
           <span><small>Psalm</small><strong>${escapeHtml(item.psalm||'—')}</strong></span>
           <span><small>Second Reading</small><strong>${escapeHtml(item.reading2||'No second reading')}</strong></span>
           <span><small>Gospel</small><strong>${escapeHtml(item.gospel||'—')}</strong></span>
-        </div>
-        ${oldWord}
+        </div>`
+      : (item.sacredReference || item.sacredText
+          ? `<div class="reflection-history-source"><small>SACRED TEXT / TEACHING</small><strong>${escapeHtml(item.sacredReference||'Personal passage')}</strong><p>${escapeHtml(item.sacredText||'')}</p></div>`
+          : '');
+    return `<details class="faith-history-item" ${index===0?'open':''}>
+      <summary><span><strong>${escapeHtml(faithSavedDateLabel(date))}</strong><small>${escapeHtml(reflectionReligionLabel(religion))}${item.celebration?' · '+escapeHtml(item.celebration):''}</small></span><b>⌄</b></summary>
+      <div class="faith-history-body">
+        ${readingSummary}
         <div><small>REFLECTION</small><p>${escapeHtml(item.reflection||'')}</p></div>
-        <div><small>PRAYER</small><p>${escapeHtml(item.prayer||'')}</p></div>
+        <div><small>${religion==='general'?'INTENTION':'PRAYER / INTENTION'}</small><p>${escapeHtml(item.prayer||'')}</p></div>
         <div><small>ONE ACTION TODAY</small><p>${escapeHtml(item.action||'')}</p></div>
       </div>
     </details>`;
@@ -6698,75 +6796,102 @@ function renderUniverseFaithLab(){
   const all=loadUniversePreview('faithJournal',{});
   const today=localDateKey();
   const item=all[today]||{};
+  const inferred=item.religion || ((item.reading1||item.gospel)?'catholic':(me?.reflectionReligion||'general'));
+  const religion=REFLECTION_RELIGIONS.some(([key])=>key===inferred)?inferred:'general';
   const savedRefs=Boolean(item.reading1 && item.psalm && item.gospel);
   const canEdit=(universeTargetTag || me?.tag)===me?.tag;
-  stage.innerHTML=`<div class="faith-journal">
-    <header class="faith-journal-head"><span>✝</span><div><p class="eyebrow">CATHOLIC DAILY READING REFLECTION</p><h4>${escapeHtml(new Intl.DateTimeFormat(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'}).format(new Date()))}</h4><p id="faithCelebration">${escapeHtml(item.celebration||'Loading today’s USCCB readings…')}</p></div></header>
-    <form id="faithJournalForm" class="faith-journal-page" data-readings-ready="${savedRefs?'1':'0'}">
-      <div class="faith-reading-grid">
+  const catholic=religion==='catholic';
+  const title=catholic?'Catholic daily reflection':'Daily reflection';
+  stage.innerHTML=`<div class="faith-journal reflection-journal">
+    <header class="faith-journal-head"><span>◌</span><div><p class="eyebrow">REFLECTION JOURNAL</p><h4>${escapeHtml(new Intl.DateTimeFormat(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'}).format(new Date()))}</h4><p id="faithCelebration">${escapeHtml(catholic?(item.celebration||'Loading today’s Catholic readings…'):'A private place to reflect, pray or set an intention, and choose one action for today.')}</p></div></header>
+    <div class="reflection-tradition-bar">
+      <label>Reflection tradition<select id="reflectionReligionSelect" ${canEdit?'':'disabled'}>${reflectionReligionOptions(religion)}</select></label>
+      <p>${catholic?'Daily citations follow USCCB/NABRE. Full Scripture text is displayed from the public-domain CPDV.':'Choose the tradition that fits you. Scrapella does not assume a religion.'}</p>
+    </div>
+    <form id="faithJournalForm" class="faith-journal-page" data-readings-ready="${catholic&&savedRefs?'1':(catholic?'0':'1')}">
+      ${catholic?`<div class="faith-reading-grid">
         <label>First Reading<input name="reading1" value="${escapeHtml(item.reading1||'Loading…')}" readonly aria-readonly="true" /></label>
         <label>Psalm<input name="psalm" value="${escapeHtml(item.psalm||'Loading…')}" readonly aria-readonly="true" /></label>
         <label>Second Reading <small>(if applicable)</small><input name="reading2" value="${escapeHtml(item.reading2||'Loading…')}" readonly aria-readonly="true" /></label>
         <label>Gospel<input name="gospel" value="${escapeHtml(item.gospel||'Loading…')}" readonly aria-readonly="true" /></label>
       </div>
-      <div class="faith-reading-source"><span id="faithReadingStatus">${savedRefs?'Refreshing references from USCCB…':'Loading today’s NABRE references from USCCB…'}</span><button id="faithRetryReadings" class="ghost hidden" type="button">Retry readings</button></div>
+      <div id="faithScriptureText" class="reflection-scripture-list">${item.scriptureTextsHtml||''}</div>
+      <div class="faith-reading-source"><span id="faithReadingStatus">${savedRefs?'Refreshing today’s references and Scripture text…':'Loading today’s Catholic readings…'}</span><button id="faithRetryReadings" class="ghost hidden" type="button">Retry readings</button></div>`
+      :`<div class="reflection-manual-source">
+        <label><span>Sacred text / teaching <small>(optional)</small></span><input name="sacredReference" maxlength="160" value="${escapeHtml(item.sacredReference||'')}" placeholder="e.g. Surah, Torah portion, sutra, teaching, quote…" /></label>
+        <label><span>Text / excerpt <small>(optional)</small></span><textarea name="sacredText" rows="4" maxlength="2000" placeholder="Paste or write the passage you are reflecting on…">${escapeHtml(item.sacredText||'')}</textarea></label>
+      </div>`}
       <div class="faith-response-grid">
-        <label><span>Reflection</span><textarea name="reflection" rows="5" maxlength="2400" required placeholder="What is God inviting me to notice today?">${escapeHtml(item.reflection||'')}</textarea></label>
-        <label><span>Prayer</span><textarea name="prayer" rows="5" maxlength="1000" required placeholder="Lord…">${escapeHtml(item.prayer||'')}</textarea></label>
+        <label><span>Reflection</span><textarea name="reflection" rows="5" maxlength="2400" required placeholder="What stayed with you today?">${escapeHtml(item.reflection||'')}</textarea></label>
+        <label><span>${religion==='general'?'Intention':'Prayer / intention'}</span><textarea name="prayer" rows="5" maxlength="1000" required placeholder="${religion==='general'?'What do you want to hold in mind today?':'Write your prayer or intention…'}">${escapeHtml(item.prayer||'')}</textarea></label>
         <label><span>One action today</span><textarea name="action" rows="5" maxlength="700" required placeholder="Today I will…">${escapeHtml(item.action||'')}</textarea></label>
       </div>
-      <button id="faithSaveBtn" class="primary" type="submit" ${(!canEdit || !savedRefs)?'disabled':''}>Save today’s reflection</button>
-      <small class="helper">The reading references are filled automatically from the USCCB daily readings (NABRE). You only write your reflection, prayer, and one action for today.</small>
+      <button id="faithSaveBtn" class="primary" type="submit" ${(!canEdit || (catholic&&!savedRefs))?'disabled':''}>Save today’s reflection</button>
+      <small class="helper">${catholic?'USCCB/NABRE is used for the daily reading references; CPDV is used for the displayed full Scripture text.':'Your selected tradition is saved to your profile and can be changed here any time.'}</small>
     </form>
     <section class="faith-history"><div class="faith-history-head"><div><p class="eyebrow">SAVED REFLECTIONS</p><h4>Your reflection journal</h4></div><span>${Object.keys(all||{}).length}</span></div><div id="faithHistoryList">${faithHistoryHtml(all)}</div></section>
   </div>`;
+  finalizeUniverseControls(stage);
   const form=$('#faithJournalForm');
-  const status=$('#faithReadingStatus');
-  const retry=$('#faithRetryReadings');
-  const saveBtn=$('#faithSaveBtn');
-
-  const fillReadings=readings=>{
-    form.elements.reading1.value=readings.reading1||'';
-    form.elements.psalm.value=readings.psalm||'';
-    form.elements.reading2.value=readings.reading2||'No second reading today';
-    form.elements.gospel.value=readings.gospel||'';
-    form.dataset.readingsReady=(readings.reading1&&readings.psalm&&readings.gospel)?'1':'0';
-    $('#faithCelebration').textContent=readings.celebration || 'Today’s Catholic readings';
-    status.textContent='NABRE references loaded from USCCB.';
-    retry.classList.add('hidden');
-    saveBtn.disabled=!canEdit || form.dataset.readingsReady!=='1';
-    form.dataset.readingSource=readings.source||'';
-    form.dataset.readingTranslation=readings.translation||'NABRE';
-  };
-  const load=async()=>{
-    retry.classList.add('hidden');
-    status.textContent='Loading today’s NABRE references from USCCB…';
+  const religionSelect=$('#reflectionReligionSelect');
+  religionSelect?.addEventListener('change',async e=>{
+    if(!canEdit)return;
+    const next=e.target.value;
     try{
-      fillReadings(await loadFaithReadings(today));
-    }catch(err){
-      if(savedRefs){
-        form.elements.reading1.value=item.reading1||'';
-        form.elements.psalm.value=item.psalm||'';
-        form.elements.reading2.value=item.reading2||'No second reading today';
-        form.elements.gospel.value=item.gospel||'';
-        form.dataset.readingsReady='1';
-        status.textContent='Using the references saved with today’s reflection. USCCB could not be refreshed.';
-        saveBtn.disabled=!canEdit;
-      }else{
-        form.elements.reading1.value='';
-        form.elements.psalm.value='';
-        form.elements.reading2.value='';
-        form.elements.gospel.value='';
-        form.dataset.readingsReady='0';
-        status.textContent=err?.message || 'Could not load today’s readings.';
-        saveBtn.disabled=true;
+      await saveUniversePreferences({reflectionReligion:next});
+      renderUniverseFaithLab();
+    }catch(err){showToast(err?.message || 'Could not update the reflection tradition.');}
+  });
+  if(catholic){
+    const status=$('#faithReadingStatus');
+    const retry=$('#faithRetryReadings');
+    const saveBtn=$('#faithSaveBtn');
+    const scriptureHost=$('#faithScriptureText');
+    const fillReadings=readings=>{
+      form.elements.reading1.value=readings.reading1||'';
+      form.elements.psalm.value=readings.psalm||'';
+      form.elements.reading2.value=readings.reading2||'No second reading today';
+      form.elements.gospel.value=readings.gospel||'';
+      form.dataset.readingsReady=(readings.reading1&&readings.psalm&&readings.gospel)?'1':'0';
+      $('#faithCelebration').textContent=readings.celebration || title;
+      if(scriptureHost){
+        scriptureHost.innerHTML=[
+          scripturePassageHtml(readings.texts?.reading1,'First Reading'),
+          scripturePassageHtml(readings.texts?.psalm,'Psalm'),
+          scripturePassageHtml(readings.texts?.reading2,'Second Reading'),
+          scripturePassageHtml(readings.texts?.gospel,'Gospel')
+        ].filter(Boolean).join('');
       }
-      retry.classList.remove('hidden');
-    }
-  };
-  retry?.addEventListener('click',load);
-  load();
-
+      status.textContent=readings.textWarning || 'USCCB/NABRE references and CPDV Scripture text loaded.';
+      retry.classList.add('hidden');
+      saveBtn.disabled=!canEdit || form.dataset.readingsReady!=='1';
+      form.dataset.readingSource=readings.source||'';
+      form.dataset.referenceTranslation=readings.referenceTranslation||'NABRE';
+      form.dataset.textTranslation=readings.textTranslation||'CPDV';
+    };
+    const load=async()=>{
+      retry.classList.add('hidden');
+      status.textContent='Loading today’s Catholic readings and Scripture text…';
+      try{fillReadings(await loadFaithReadings(today));}
+      catch(err){
+        if(savedRefs){
+          form.elements.reading1.value=item.reading1||'';
+          form.elements.psalm.value=item.psalm||'';
+          form.elements.reading2.value=item.reading2||'No second reading today';
+          form.elements.gospel.value=item.gospel||'';
+          form.dataset.readingsReady='1';
+          status.textContent='Using the references saved with today’s reflection. The Scripture source could not be refreshed.';
+          saveBtn.disabled=!canEdit;
+        }else{
+          form.elements.reading1.value='';form.elements.psalm.value='';form.elements.reading2.value='';form.elements.gospel.value='';
+          form.dataset.readingsReady='0';status.textContent=err?.message || 'Could not load today’s readings.';saveBtn.disabled=true;
+        }
+        retry.classList.remove('hidden');
+      }
+    };
+    retry?.addEventListener('click',load);
+    load();
+  }
   form?.addEventListener('submit',e=>{
     e.preventDefault();
     if(!canEdit)return;
@@ -6774,28 +6899,24 @@ function renderUniverseFaithLab(){
     const reflection=String(f.get('reflection')||'').trim();
     const prayer=String(f.get('prayer')||'').trim();
     const action=String(f.get('action')||'').trim();
-    if(!reflection || !prayer || !action){
-      showToast('Reflection, prayer, and one action today are required.');
-      return;
+    if(!reflection || !prayer || !action){showToast('Reflection, prayer or intention, and one action today are required.');return;}
+    if(catholic && form.dataset.readingsReady!=='1'){showToast('Today’s readings are still loading. Please retry first.');return;}
+    const record={religion,reflection,prayer,action,savedAt:new Date().toISOString()};
+    if(catholic){
+      const second=String(f.get('reading2')||'').trim();
+      Object.assign(record,{
+        reading1:String(f.get('reading1')||'').trim(),psalm:String(f.get('psalm')||'').trim(),
+        reading2:second==='No second reading today'?'':second,gospel:String(f.get('gospel')||'').trim(),
+        celebration:$('#faithCelebration')?.textContent?.trim()||'',referenceTranslation:form.dataset.referenceTranslation||'NABRE',
+        textTranslation:form.dataset.textTranslation||'CPDV',source:form.dataset.readingSource||item.source||''
+      });
+    }else{
+      record.sacredReference=String(f.get('sacredReference')||'').trim();
+      record.sacredText=String(f.get('sacredText')||'').trim();
     }
-    if(form.dataset.readingsReady!=='1'){
-      showToast('Today’s readings are still loading. Please retry the readings first.');
-      return;
-    }
-    const second=String(f.get('reading2')||'').trim();
-    all[today]={
-      reading1:String(f.get('reading1')||'').trim(),
-      psalm:String(f.get('psalm')||'').trim(),
-      reading2:second==='No second reading today'?'':second,
-      gospel:String(f.get('gospel')||'').trim(),
-      reflection,prayer,action,
-      celebration:$('#faithCelebration')?.textContent?.trim()||'',
-      translation:form.dataset.readingTranslation||'NABRE',
-      source:form.dataset.readingSource||item.source||'',
-      savedAt:new Date().toISOString()
-    };
+    all[today]=record;
     saveUniversePreview('faithJournal',all);
-    showToast('Today’s Catholic reflection saved.');
+    showToast('Today’s reflection saved.');
     renderUniverseFaithLab();
   });
 }
@@ -9087,6 +9208,7 @@ $('#profileBtn').addEventListener('click', () => {
   $('#profileError').textContent = '';
   updateNotificationStatus();
   refreshProfilePermissionSettings().catch(()=>{});
+  renderHiddenUniverseProfileSettings();
   profileDialog.showModal();
 });
 $('#closeProfileDialog').addEventListener('click', () => profileDialog.close());
