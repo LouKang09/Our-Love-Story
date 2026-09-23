@@ -889,7 +889,7 @@ async function appendMentionNotifications(social, { from, text, kind, scrapbookI
     if (allowedTargets && !allowedTargets.has(target)) continue;
     if (!(await accountExists(target))) continue;
     const excerpt = String(text || '').trim().slice(0, 180);
-    social.mentions.push({
+    const mention={
       id: crypto.randomUUID(),
       to: target,
       from,
@@ -900,10 +900,21 @@ async function appendMentionNotifications(social, { from, text, kind, scrapbookI
       messageId,
       excerpt,
       createdAt: new Date().toISOString()
-    });
+    };
+    social.mentions.push(mention);
     await sendMentionPush(social, { to:target, from, kind, excerpt, chatId });
     const type = kind === 'profile' ? 'profile_mention' : (kind === 'chat' ? 'chat_mention' : 'comment_mention');
-    emitLiveEvent(target, 'notification', { type, from, scrapbookId, entryId, chatId });
+    emitLiveEvent(target, 'notification', {
+      type,
+      notificationId:`mention:${mention.id}`,
+      from,
+      actor:publicProfileFor(social,from),
+      scrapbookId,
+      entryId,
+      chatId,
+      excerpt,
+      createdAt:mention.createdAt
+    });
   }
   if (social.mentions.length > 2000) social.mentions = social.mentions.slice(-2000);
 }
@@ -2907,7 +2918,7 @@ async function handleApi(req, res, url) {
       : [book.owner].filter(tag => tag && tag !== user && !allowedMentionTargets.has(tag));
     const actor = publicProfileFor(social, user);
     for (const target of genericRecipients) {
-      appendActivityNotification(social, {
+      const activity=appendActivityNotification(social, {
         to:target,
         from:user,
         type:'comment',
@@ -2922,7 +2933,17 @@ async function handleApi(req, res, url) {
         body:text,
         tag:`comment-${entry.id}-${comment.id}-${target}`
       });
-      emitLiveEvent(target, 'notification', { type:'comment', from:user, scrapbookId:book.id, entryId:entry.id });
+      emitLiveEvent(target, 'notification', {
+        type:'comment',
+        notificationId:activity?.id ? `activity:${activity.id}` : `comment:${comment.id}`,
+        from:user,
+        actor,
+        scrapbookId:book.id,
+        entryId:entry.id,
+        scrapbookName:book.name,
+        excerpt:text,
+        createdAt:activity?.createdAt || comment.createdAt
+      });
     }
 
     await writeEntries(entries);
