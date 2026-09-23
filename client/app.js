@@ -6765,13 +6765,21 @@ function faithHistoryHtml(all){
   if(!rows.length)return '<div class="faith-history-empty">No saved reflections yet.</div>';
   return rows.map(([date,item],index)=>{
     const religion=item.religion || ((item.reading1||item.gospel)?'catholic':'general');
+    const scripture=religion==='catholic'
+      ? `<div class="reflection-scripture-list history-scripture-list">${[
+          scripturePassageHtml(item.scriptureTexts?.reading1,'First Reading'),
+          scripturePassageHtml(item.scriptureTexts?.psalm,'Psalm'),
+          scripturePassageHtml(item.scriptureTexts?.reading2,'Second Reading'),
+          scripturePassageHtml(item.scriptureTexts?.gospel,'Gospel')
+        ].filter(Boolean).join('')}</div>`
+      : '';
     const readingSummary=religion==='catholic'
       ? `<div class="faith-history-readings">
           <span><small>First Reading</small><strong>${escapeHtml(item.reading1||'—')}</strong></span>
           <span><small>Psalm</small><strong>${escapeHtml(item.psalm||'—')}</strong></span>
           <span><small>Second Reading</small><strong>${escapeHtml(item.reading2||'No second reading')}</strong></span>
           <span><small>Gospel</small><strong>${escapeHtml(item.gospel||'—')}</strong></span>
-        </div>`
+        </div>${scripture}`
       : (item.sacredReference || item.sacredText
           ? `<div class="reflection-history-source"><small>SACRED TEXT / TEACHING</small><strong>${escapeHtml(item.sacredReference||'Personal passage')}</strong><p>${escapeHtml(item.sacredText||'')}</p></div>`
           : '');
@@ -6796,10 +6804,11 @@ function renderUniverseFaithLab(){
   const all=loadUniversePreview('faithJournal',{});
   const today=localDateKey();
   const item=all[today]||{};
-  const inferred=item.religion || ((item.reading1||item.gospel)?'catholic':(me?.reflectionReligion||'general'));
+  const canEdit=(universeTargetTag || me?.tag)===me?.tag;
+  const storedReligion=item.religion || ((item.reading1||item.gospel)?'catholic':'general');
+  const inferred=canEdit ? (me?.reflectionReligion || storedReligion) : storedReligion;
   const religion=REFLECTION_RELIGIONS.some(([key])=>key===inferred)?inferred:'general';
   const savedRefs=Boolean(item.reading1 && item.psalm && item.gospel);
-  const canEdit=(universeTargetTag || me?.tag)===me?.tag;
   const catholic=religion==='catholic';
   const title=catholic?'Catholic daily reflection':'Daily reflection';
   stage.innerHTML=`<div class="faith-journal reflection-journal">
@@ -6815,7 +6824,12 @@ function renderUniverseFaithLab(){
         <label>Second Reading <small>(if applicable)</small><input name="reading2" value="${escapeHtml(item.reading2||'Loading…')}" readonly aria-readonly="true" /></label>
         <label>Gospel<input name="gospel" value="${escapeHtml(item.gospel||'Loading…')}" readonly aria-readonly="true" /></label>
       </div>
-      <div id="faithScriptureText" class="reflection-scripture-list">${item.scriptureTextsHtml||''}</div>
+      <div id="faithScriptureText" class="reflection-scripture-list">${[
+        scripturePassageHtml(item.scriptureTexts?.reading1,'First Reading'),
+        scripturePassageHtml(item.scriptureTexts?.psalm,'Psalm'),
+        scripturePassageHtml(item.scriptureTexts?.reading2,'Second Reading'),
+        scripturePassageHtml(item.scriptureTexts?.gospel,'Gospel')
+      ].filter(Boolean).join('')}</div>
       <div class="faith-reading-source"><span id="faithReadingStatus">${savedRefs?'Refreshing today’s references and Scripture text…':'Loading today’s Catholic readings…'}</span><button id="faithRetryReadings" class="ghost hidden" type="button">Retry readings</button></div>`
       :`<div class="reflection-manual-source">
         <label><span>Sacred text / teaching <small>(optional)</small></span><input name="sacredReference" maxlength="160" value="${escapeHtml(item.sacredReference||'')}" placeholder="e.g. Surah, Torah portion, sutra, teaching, quote…" /></label>
@@ -6842,6 +6856,7 @@ function renderUniverseFaithLab(){
       renderUniverseFaithLab();
     }catch(err){showToast(err?.message || 'Could not update the reflection tradition.');}
   });
+  let loadedScriptureTexts=item.scriptureTexts || {};
   if(catholic){
     const status=$('#faithReadingStatus');
     const retry=$('#faithRetryReadings');
@@ -6854,6 +6869,7 @@ function renderUniverseFaithLab(){
       form.elements.gospel.value=readings.gospel||'';
       form.dataset.readingsReady=(readings.reading1&&readings.psalm&&readings.gospel)?'1':'0';
       $('#faithCelebration').textContent=readings.celebration || title;
+      loadedScriptureTexts=readings.texts || {};
       if(scriptureHost){
         scriptureHost.innerHTML=[
           scripturePassageHtml(readings.texts?.reading1,'First Reading'),
@@ -6908,7 +6924,8 @@ function renderUniverseFaithLab(){
         reading1:String(f.get('reading1')||'').trim(),psalm:String(f.get('psalm')||'').trim(),
         reading2:second==='No second reading today'?'':second,gospel:String(f.get('gospel')||'').trim(),
         celebration:$('#faithCelebration')?.textContent?.trim()||'',referenceTranslation:form.dataset.referenceTranslation||'NABRE',
-        textTranslation:form.dataset.textTranslation||'CPDV',source:form.dataset.readingSource||item.source||''
+        textTranslation:form.dataset.textTranslation||'CPDV',source:form.dataset.readingSource||item.source||'',
+        scriptureTexts:loadedScriptureTexts
       });
     }else{
       record.sacredReference=String(f.get('sacredReference')||'').trim();
