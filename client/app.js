@@ -105,6 +105,8 @@ let liveEventSource = null;
 let realtimeEntryTimer = null;
 let realtimeSocialTimer = null;
 let realtimeChatTimer = null;
+let realtimeChatPollTimer = null;
+let realtimeChatPollBusy = false;
 let presencePingTimer = null;
 let presenceUiTimer = null;
 
@@ -689,6 +691,7 @@ async function refreshNativePhoneContext(){
   const indicator=phonePullIndicator();
   indicator.classList.add('refreshing','visible');
   indicator.style.setProperty('--pull','1');
+  setPhonePullVisual(72,true);
   indicator.querySelector('b').textContent='Refreshing…';
 
   const mode=currentMode;
@@ -734,21 +737,32 @@ async function refreshNativePhoneContext(){
     showToast(err?.message || 'Could not refresh Scrapella.');
   }finally{
     setTimeout(()=>{
-      indicator.classList.remove('visible','refreshing');
-      indicator.style.setProperty('--pull','0');
       phonePullRefreshing=false;
-      phonePullScroller=null;
+      phonePullReset({force:true});
     },560);
   }
 }
-function phonePullReset(){
+function setPhonePullVisual(distance=0,settling=false){
+  const shift=Math.max(0,Math.min(78,Number(distance||0)*.62));
+  journalApp?.style.setProperty('--scrapella-pull-shift',`${shift}px`);
+  document.body.classList.toggle('scrapella-pull-active',shift>0);
+  document.body.classList.toggle('scrapella-pull-settling',Boolean(settling));
+}
+function phonePullReset({force=false}={}){
   phonePullStartY=null;
   phonePullDistance=0;
   phonePullScroller=null;
-  const indicator=document.querySelector('.scrapella-pull-refresh');
-  if(indicator && !phonePullRefreshing){
-    indicator.classList.remove('visible');
-    indicator.style.setProperty('--pull','0');
+  if(!phonePullRefreshing || force){
+    const indicator=document.querySelector('.scrapella-pull-refresh');
+    if(indicator){
+      indicator.classList.remove('visible','refreshing');
+      indicator.style.setProperty('--pull','0');
+    }
+    setPhonePullVisual(0,true);
+    setTimeout(()=>{
+      document.body.classList.remove('scrapella-pull-active','scrapella-pull-settling');
+      journalApp?.style.setProperty('--scrapella-pull-shift','0px');
+    },190);
   }
 }
 document.addEventListener('touchstart',e=>{
@@ -759,27 +773,35 @@ document.addEventListener('touchstart',e=>{
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
   phonePullStartY=e.touches[0].clientY;
   phonePullDistance=0;
+  document.body.classList.remove('scrapella-pull-settling');
 },{passive:true,capture:true});
 document.addEventListener('touchmove',e=>{
   if(phonePullStartY===null||e.touches.length!==1)return;
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
-  const delta=Math.max(0,e.touches[0].clientY-phonePullStartY);
-  phonePullDistance=Math.min(130,delta);
+  const raw=e.touches[0].clientY-phonePullStartY;
+  if(raw<=0)return;
+  phonePullDistance=Math.min(140,raw);
   const indicator=phonePullIndicator();
-  const progress=Math.min(1,phonePullDistance/58);
-  indicator.classList.toggle('visible',phonePullDistance>6);
+  const progress=Math.min(1,phonePullDistance/64);
+  indicator.classList.toggle('visible',phonePullDistance>5);
   indicator.style.setProperty('--pull',String(progress));
-  indicator.querySelector('b').textContent=phonePullDistance>=58?'Release to refresh':'Pull to refresh';
-},{passive:true,capture:true});
+  indicator.querySelector('b').textContent=phonePullDistance>=64?'Release to refresh':'Pull to refresh';
+  setPhonePullVisual(phonePullDistance);
+  if(phonePullDistance>4)e.preventDefault();
+},{passive:false,capture:true});
 document.addEventListener('touchend',()=>{
   if(phonePullStartY===null)return;
-  const shouldRefresh=phonePullDistance>=58 && phoneAtScrollTop(phonePullScroller);
+  const shouldRefresh=phonePullDistance>=64 && phoneAtScrollTop(phonePullScroller);
   phonePullStartY=null;
-  phonePullDistance=0;
-  if(shouldRefresh)refreshNativePhoneContext();
-  else phonePullReset();
+  if(shouldRefresh){
+    setPhonePullVisual(72,true);
+    refreshNativePhoneContext();
+  }else{
+    phonePullDistance=0;
+    phonePullReset({force:true});
+  }
 },{passive:true,capture:true});
-document.addEventListener('touchcancel',phonePullReset,{passive:true,capture:true});
+document.addEventListener('touchcancel',()=>phonePullReset({force:true}),{passive:true,capture:true});
 
 function compactPhoneCount(value) {
   const count = Math.max(0, Number(value) || 0);
@@ -2518,6 +2540,7 @@ function connectLiveEvents() {
   }
   const source = new EventSource('/api/events');
   liveEventSource = source;
+  source.addEventListener('open',()=>syncChatsRealtimeSafe({refreshOpenThread:true}));
   source.addEventListener('notification', e => {
     let payload={};
     try{payload=JSON.parse(e.data || '{}');}catch{}
@@ -2555,6 +2578,8 @@ function connectLiveEvents() {
   };
 }
 function disconnectLiveEvents() {
+  clearInterval(realtimeChatPollTimer);
+  realtimeChatPollTimer=null;
   if (liveEventSource) {
     try { liveEventSource.close(); } catch {}
     liveEventSource = null;
@@ -5396,6 +5421,28 @@ async function startPrivateChat(tag) {
     showToast(err.message || 'Could not start that conversation.');
   }
 }
+async function syncChatsRealtimeSafe({refreshOpenThread=true}={}){
+  if(realtimeChatPollBusy || !me?.tag || journalApp.classList.contains('hidden') || document.visibilityState==='hidden')return;
+  realtimeChatPollBusy=true;
+  try{
+    const openSelect=scrapellaSelectActive?.select || null;
+    await loadChats();
+    if(refreshOpenThread && currentMode==='messages' && activeChatId){
+      await loadChatMessages(activeChatId);
+    }
+    if(openSelect && scrapellaSelectActive?.select===openSelect && scrapellaSelectPortal){
+      positionScrapellaSelectPortal(scrapellaSelectActive.button,scrapellaSelectPortal);
+    }
+  }catch{}finally{
+    realtimeChatPollBusy=false;
+  }
+}
+function startRealtimeChatFallback(){
+  clearInterval(realtimeChatPollTimer);
+  syncChatsRealtimeSafe({refreshOpenThread:false});
+  realtimeChatPollTimer=setInterval(()=>syncChatsRealtimeSafe({refreshOpenThread:true}),5000);
+}
+
 async function refreshChatRealtime(payload = {}) {
   clearTimeout(realtimeChatTimer);
   realtimeChatTimer = setTimeout(async () => {
@@ -8249,6 +8296,7 @@ async function enterApp() {
   initializePhoneHistory();
   connectLiveEvents();
   startPresenceHeartbeat();
+  startRealtimeChatFallback();
   ensureNativeChatNotifications().catch(()=>{});
   if (guideState.required) setTimeout(() => startGuide(true), 180);
   else maybeOpenReminderComposer();
@@ -9514,6 +9562,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && !journalApp.classList.contains('hidden')) {
     connectLiveEvents();
     refreshNotificationCount();
+    syncChatsRealtimeSafe({refreshOpenThread:true});
   }
 });
 setInterval(() => refreshNotificationCount(), 60 * 1000);
