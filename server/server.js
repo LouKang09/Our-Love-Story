@@ -457,12 +457,122 @@ async function getCatholicReadings(dateText) {
     psalm:extractCatholicReadingReference(lines,'Responsorial Psalm'),
     reading2:extractCatholicReadingReference(lines,'Reading 2'),
     gospel:extractCatholicReadingReference(lines,'Gospel'),
-    translation:'NABRE',
+    referenceTranslation:'NABRE',
+    textTranslation:'CPDV',
     source
   };
   if(!value.reading1 || !value.psalm || !value.gospel)throw new Error('Could not identify today’s USCCB reading references.');
+  try{
+    value.texts={
+      reading1:await catholicVerseText(value.reading1),
+      psalm:await catholicVerseText(value.psalm),
+      reading2:value.reading2?await catholicVerseText(value.reading2):null,
+      gospel:await catholicVerseText(value.gospel)
+    };
+  }catch(err){
+    value.texts={};
+    value.textWarning='The daily references loaded, but the public-domain Scripture text could not be loaded.';
+  }
   CATHOLIC_READING_CACHE.set(date,{cachedAt:Date.now(),value});
   return value;
+}
+
+let CPDV_CACHE = null;
+let CPDV_CACHE_PROMISE = null;
+const CPDV_SOURCE_URL='https://raw.githubusercontent.com/scrollmapper/bible_databases/refs/heads/master/sources/en/CPDV/CPDV.json';
+const CPDV_BOOK_ALIASES={
+  gn:'Genesis',gen:'Genesis',ex:'Exodus',lv:'Leviticus',lev:'Leviticus',nm:'Numbers',num:'Numbers',
+  dt:'Deuteronomy',deut:'Deuteronomy',jos:'Joshua',josh:'Joshua',jgs:'Judges',judg:'Judges',ru:'Ruth',
+  '1 sm':'I Samuel','1 sam':'I Samuel','2 sm':'II Samuel','2 sam':'II Samuel',
+  '1 kgs':'I Kings','1 kg':'I Kings','2 kgs':'II Kings','2 kg':'II Kings',
+  '1 chr':'I Chronicles','1 chron':'I Chronicles','2 chr':'II Chronicles','2 chron':'II Chronicles',
+  ezr:'Ezra',neh:'Nehemiah',tb:'Tobit',tob:'Tobit',jdt:'Judith',est:'Esther',jb:'Job',job:'Job',
+  ps:'Psalms',psalm:'Psalms',psalms:'Psalms',prv:'Proverbs',prov:'Proverbs',proverbs:'Proverbs',
+  eccl:'Ecclesiastes',ecclesiastes:'Ecclesiastes',sg:'Song of Solomon',song:'Song of Solomon',
+  wis:'Wisdom',sir:'Sirach',is:'Isaiah',isa:'Isaiah',jer:'Jeremiah',lam:'Lamentations',bar:'Baruch',
+  ez:'Ezekiel',ezek:'Ezekiel',dn:'Daniel',dan:'Daniel',hos:'Hosea',jl:'Joel',joel:'Joel',am:'Amos',
+  ob:'Obadiah',obad:'Obadiah',jon:'Jonah',mi:'Micah',mic:'Micah',na:'Nahum',nah:'Nahum',
+  hb:'Habakkuk',hab:'Habakkuk',zep:'Zephaniah',zeph:'Zephaniah',hg:'Haggai',hag:'Haggai',
+  zec:'Zechariah',zech:'Zechariah',mal:'Malachi','1 mc':'I Maccabees','1 macc':'I Maccabees',
+  '2 mc':'II Maccabees','2 macc':'II Maccabees',mt:'Matthew',matt:'Matthew',mk:'Mark',mrk:'Mark',
+  lk:'Luke',luke:'Luke',jn:'John',john:'John',acts:'Acts',rom:'Romans',
+  '1 cor':'I Corinthians','2 cor':'II Corinthians',gal:'Galatians',eph:'Ephesians',phil:'Philippians',
+  col:'Colossians','1 thes':'I Thessalonians','1 thess':'I Thessalonians','2 thes':'II Thessalonians',
+  '2 thess':'II Thessalonians','1 tm':'I Timothy','1 tim':'I Timothy','2 tm':'II Timothy','2 tim':'II Timothy',
+  ti:'Titus',tit:'Titus',phlm:'Philemon',philem:'Philemon',heb:'Hebrews',jas:'James',james:'James',
+  '1 pt':'I Peter','1 pet':'I Peter','2 pt':'II Peter','2 pet':'II Peter',
+  '1 jn':'I John','2 jn':'II John','3 jn':'III John',jude:'Jude',rv:'Revelation of John',rev:'Revelation of John'
+};
+function fetchLargeExternalText(url,timeoutMs=18000,maxBytes=20*1024*1024){
+  return new Promise((resolve,reject)=>{
+    const req=https.get(url,{headers:{'User-Agent':'Scrapella/2.3 (+https://scrapella.up.railway.app)','Accept':'application/json,text/plain,*/*'}},res=>{
+      if(res.statusCode>=300&&res.statusCode<400&&res.headers.location){
+        res.resume();
+        return resolve(fetchLargeExternalText(new URL(res.headers.location,url).toString(),timeoutMs,maxBytes));
+      }
+      if(res.statusCode!==200){res.resume();return reject(new Error(`Scripture source returned HTTP ${res.statusCode||0}.`));}
+      let size=0;const chunks=[];
+      res.on('data',chunk=>{
+        size+=chunk.length;
+        if(size>maxBytes){req.destroy(new Error('Scripture source response was too large.'));return;}
+        chunks.push(chunk);
+      });
+      res.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));
+    });
+    req.setTimeout(timeoutMs,()=>req.destroy(new Error('Scripture source timed out.')));
+    req.on('error',reject);
+  });
+}
+async function cpdvBible(){
+  if(CPDV_CACHE)return CPDV_CACHE;
+  if(CPDV_CACHE_PROMISE)return CPDV_CACHE_PROMISE;
+  CPDV_CACHE_PROMISE=(async()=>{
+    const raw=await fetchLargeExternalText(CPDV_SOURCE_URL);
+    const parsed=JSON.parse(raw);
+    const books=Array.isArray(parsed?.books)?parsed.books:[];
+    const byName=new Map(books.map(book=>[String(book.name||'').toLowerCase(),book]));
+    CPDV_CACHE={books,byName};
+    return CPDV_CACHE;
+  })().finally(()=>{CPDV_CACHE_PROMISE=null;});
+  return CPDV_CACHE_PROMISE;
+}
+function normalizeBibleReference(ref){
+  return String(ref||'').replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
+}
+function parseBibleReference(ref){
+  const clean=normalizeBibleReference(ref);
+  const match=clean.match(/^(.+?)\s+(\d+):(.*)$/);
+  if(!match)return null;
+  const rawBook=match[1].toLowerCase().replace(/\./g,'').trim();
+  const book=CPDV_BOOK_ALIASES[rawBook] || match[1].trim();
+  const chapter=Number(match[2]);
+  const verseSpec=String(match[3]||'').replace(/[^0-9,;\-]/g,'');
+  const verses=[];
+  for(const part of verseSpec.split(/[;,]/).filter(Boolean)){
+    if(part.includes('-')){
+      const [start,end]=part.split('-').map(Number);
+      if(Number.isFinite(start)&&Number.isFinite(end)){
+        for(let verse=Math.max(1,start);verse<=Math.min(end,start+80);verse++)verses.push(verse);
+      }
+    }else{
+      const verse=Number(part);
+      if(Number.isFinite(verse)&&verse>0)verses.push(verse);
+    }
+  }
+  return {book,chapter,verses:[...new Set(verses)].slice(0,100)};
+}
+async function catholicVerseText(ref){
+  const parsed=parseBibleReference(ref);
+  if(!parsed||!parsed.verses.length)return {reference:ref,translation:'CPDV',verses:[]};
+  const bible=await cpdvBible();
+  const book=bible.byName.get(String(parsed.book).toLowerCase());
+  const chapter=book?.chapters?.find(item=>Number(item.chapter)===parsed.chapter);
+  const byVerse=new Map((chapter?.verses||[]).map(item=>[Number(item.verse),item]));
+  const verses=parsed.verses.map(number=>byVerse.get(number)).filter(Boolean).map(item=>({
+    verse:Number(item.verse),
+    text:String(item.text||'')
+  }));
+  return {reference:ref,displayReference:`${book?.name||parsed.book} ${parsed.chapter}:${String(ref).split(':').slice(1).join(':')}`,translation:'CPDV',verses};
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -740,6 +850,12 @@ function profileFor(social, tag) {
     bio: p.bio || '',
     isPlatformOwner: isPlatformOwner(social, tag),
     appearanceMode: ['light','night'].includes(p.appearanceMode) ? p.appearanceMode : 'light',
+    hiddenUniverseCategories: Array.isArray(p.hiddenUniverseCategories)
+      ? [...new Set(p.hiddenUniverseCategories.map(String))].filter(Boolean).slice(0,50)
+      : [],
+    reflectionReligion: ['general','catholic','christian','muslim','jewish','hindu','buddhist','other'].includes(String(p.reflectionReligion||''))
+      ? String(p.reflectionReligion)
+      : 'general',
     notifications: {
       enabled: notify.enabled === true,
       reminderTime: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(notify.reminderTime || '')) ? notify.reminderTime : '20:00',
@@ -1618,6 +1734,9 @@ async function handleApi(req, res, url) {
       canSeeExtended,
       ownerOverrideAvailable:viewerIsOwner && !isSelf,
       ownerOverrideActive,
+      hiddenCategories:Array.isArray(social.profiles?.[target]?.hiddenUniverseCategories)
+        ? social.profiles[target].hiddenUniverseCategories
+        : [],
       books:books.map(book => ({
         ...decorateBook(social,book,user),
         universeAccess:book.type === 'personal' ? personalPrivacy(book) : (book.type === 'group' ? 'group-member' : 'partner')
@@ -1830,6 +1949,29 @@ async function handleApi(req, res, url) {
     else accounts.push(next);
     await writeAccounts(accounts);
     return json(res,200,{ok:true});
+  }
+
+  if (pathname === '/api/preferences/memory-universe' && req.method === 'PUT') {
+    const body=await readBody(req,64*1024);
+    const allowedCategories=new Set([
+      'voiceMemory','letters','prompts','anniversaries','box','themes','peopleMemory','vault',
+      'family','inherited','secret','faith','wall','capsules','museum'
+    ]);
+    const hidden=Array.isArray(body.hiddenCategories)
+      ? [...new Set(body.hiddenCategories.map(value=>String(value||'')).filter(value=>allowedCategories.has(value)))]
+      : null;
+    const religion=String(body.reflectionReligion||'');
+    const allowedReligions=new Set(['general','catholic','christian','muslim','jewish','hindu','buddhist','other']);
+    const profile=social.profiles[user] || {tag:user,displayName:user,avatar:'',bio:'',createdAt:new Date().toISOString()};
+    if(hidden)profile.hiddenUniverseCategories=hidden;
+    if(religion && allowedReligions.has(religion))profile.reflectionReligion=religion;
+    social.profiles[user]=profile;
+    await writeSocial(social);
+    emitLiveEvent(user,'universe',{type:'preferences'});
+    return json(res,200,{
+      hiddenCategories:Array.isArray(profile.hiddenUniverseCategories)?profile.hiddenUniverseCategories:[],
+      reflectionReligion:allowedReligions.has(String(profile.reflectionReligion||''))?profile.reflectionReligion:'general'
+    });
   }
 
   if (pathname === '/api/preferences' && req.method === 'PUT') {
