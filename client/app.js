@@ -637,10 +637,23 @@ function phoneBackButton(fallback) {
 let phonePullStartY=null;
 let phonePullDistance=0;
 let phonePullRefreshing=false;
-function phoneAtScrollTop(){
-  const docTop=Number(document.scrollingElement?.scrollTop||0);
-  const appTop=Number(journalApp?.scrollTop||0);
-  return Math.max(docTop,appTop)<=1;
+let phonePullScroller=null;
+function nearestPhoneScroller(node){
+  let el=node instanceof Element ? node : node?.parentElement;
+  while(el && el!==document.body && el!==document.documentElement){
+    const style=getComputedStyle(el);
+    const overflowY=style.overflowY || '';
+    if(/auto|scroll|overlay/.test(overflowY) && el.scrollHeight>el.clientHeight+2) return el;
+    el=el.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+function phoneAtScrollTop(scroller=phonePullScroller){
+  const root=document.scrollingElement || document.documentElement;
+  if(scroller && scroller!==root && scroller!==document.body && scroller!==document.documentElement){
+    return Number(scroller.scrollTop||0)<=1;
+  }
+  return Number(root?.scrollTop||window.scrollY||0)<=1;
 }
 function phonePullIndicator(){
   let el=document.querySelector('.scrapella-pull-refresh');
@@ -657,6 +670,7 @@ async function refreshNativePhoneContext(){
   phonePullRefreshing=true;
   const indicator=phonePullIndicator();
   indicator.classList.add('refreshing','visible');
+  indicator.style.setProperty('--pull','1');
   indicator.querySelector('b').textContent='Refreshing…';
 
   const mode=currentMode;
@@ -689,6 +703,9 @@ async function refreshNativePhoneContext(){
       showView(mode);
     }else if(mode==='connections'){
       showView('connections');
+    }else if(mode==='messages'){
+      await loadChats().catch(()=>{});
+      showView('messages');
     }else{
       showView('home');
     }
@@ -698,29 +715,51 @@ async function refreshNativePhoneContext(){
     indicator.querySelector('b').textContent='Could not refresh';
     showToast(err?.message || 'Could not refresh Scrapella.');
   }finally{
-    setTimeout(()=>{indicator.classList.remove('visible','refreshing');phonePullRefreshing=false;},520);
+    setTimeout(()=>{
+      indicator.classList.remove('visible','refreshing');
+      indicator.style.setProperty('--pull','0');
+      phonePullRefreshing=false;
+      phonePullScroller=null;
+    },560);
   }
 }
-journalApp?.addEventListener('touchstart',e=>{
-  if(!isPhoneUI()||phonePullRefreshing||!phoneAtScrollTop()||e.touches.length!==1){phonePullStartY=null;return;}
-  phonePullStartY=e.touches[0].clientY;phonePullDistance=0;
-},{passive:true});
-journalApp?.addEventListener('touchmove',e=>{
+function phonePullReset(){
+  phonePullStartY=null;
+  phonePullDistance=0;
+  phonePullScroller=null;
+  const indicator=document.querySelector('.scrapella-pull-refresh');
+  if(indicator && !phonePullRefreshing){
+    indicator.classList.remove('visible');
+    indicator.style.setProperty('--pull','0');
+  }
+}
+document.addEventListener('touchstart',e=>{
+  if(!isPhoneUI()||phonePullRefreshing||e.touches.length!==1){phonePullReset();return;}
+  phonePullScroller=nearestPhoneScroller(e.target);
+  if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
+  phonePullStartY=e.touches[0].clientY;
+  phonePullDistance=0;
+},{passive:true,capture:true});
+document.addEventListener('touchmove',e=>{
   if(phonePullStartY===null||e.touches.length!==1)return;
+  if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
   const delta=Math.max(0,e.touches[0].clientY-phonePullStartY);
-  phonePullDistance=Math.min(120,delta);
+  phonePullDistance=Math.min(130,delta);
   const indicator=phonePullIndicator();
-  indicator.classList.toggle('visible',phonePullDistance>12);
-  indicator.style.setProperty('--pull',String(Math.min(1,phonePullDistance/82)));
-  indicator.querySelector('b').textContent=phonePullDistance>=82?'Release to refresh':'Pull to refresh';
-},{passive:true});
-journalApp?.addEventListener('touchend',()=>{
+  const progress=Math.min(1,phonePullDistance/72);
+  indicator.classList.toggle('visible',phonePullDistance>8);
+  indicator.style.setProperty('--pull',String(progress));
+  indicator.querySelector('b').textContent=phonePullDistance>=72?'Release to refresh':'Pull to refresh';
+},{passive:true,capture:true});
+document.addEventListener('touchend',()=>{
   if(phonePullStartY===null)return;
-  const shouldRefresh=phonePullDistance>=82 && phoneAtScrollTop();
-  phonePullStartY=null;phonePullDistance=0;
+  const shouldRefresh=phonePullDistance>=72 && phoneAtScrollTop(phonePullScroller);
+  phonePullStartY=null;
+  phonePullDistance=0;
   if(shouldRefresh)refreshNativePhoneContext();
-  else phonePullIndicator().classList.remove('visible');
-},{passive:true});
+  else phonePullReset();
+},{passive:true,capture:true});
+document.addEventListener('touchcancel',phonePullReset,{passive:true,capture:true});
 
 function compactPhoneCount(value) {
   const count = Math.max(0, Number(value) || 0);
@@ -899,6 +938,7 @@ function applyActiveCoverTheme() {
   if (select) {
     select.value = theme;
     select.disabled = !activeScrapbook || activeScrapbook.isOwner !== true;
+    refreshScrapellaSelect(select);
     select.title = select.disabled ? 'Only the scrapbook owner can change the shared cover.' : 'Change the shared scrapbook cover';
   }
   wrap?.classList.toggle('hidden', !activeScrapbook);
@@ -1056,6 +1096,119 @@ function wireMentionAutocomplete(input) {
   window.addEventListener('resize', () => {
     if (input._mentionPopup) positionMentionSuggestions(input, input._mentionPopup);
   });
+}
+
+
+let scrapellaSelectPortal=null;
+let scrapellaSelectActive=null;
+function closeScrapellaSelect(){
+  scrapellaSelectPortal?.remove();
+  scrapellaSelectPortal=null;
+  if(scrapellaSelectActive?.button) scrapellaSelectActive.button.setAttribute('aria-expanded','false');
+  scrapellaSelectActive=null;
+}
+function scrapellaSelectLabel(select){
+  const option=select.options?.[select.selectedIndex] || [...(select.options||[])].find(opt=>opt.value===select.value);
+  return option?.textContent?.trim() || select.getAttribute('aria-label') || 'Choose';
+}
+function refreshScrapellaSelect(select){
+  const enhanced=select?._scrapellaSelect;
+  if(!enhanced)return;
+  enhanced.button.querySelector('strong').textContent=scrapellaSelectLabel(select);
+  enhanced.button.disabled=select.disabled;
+}
+function positionScrapellaSelectPortal(button,portal){
+  const rect=button.getBoundingClientRect();
+  const width=Math.max(180,rect.width);
+  portal.style.width=`${Math.min(width,window.innerWidth-16)}px`;
+  portal.style.left=`${Math.max(8,Math.min(window.innerWidth-width-8,rect.left))}px`;
+  portal.style.top=`${Math.min(window.innerHeight-12,rect.bottom+6)}px`;
+  requestAnimationFrame(()=>{
+    const ph=portal.offsetHeight||220;
+    if(rect.bottom+6+ph>window.innerHeight-8){
+      portal.style.top=`${Math.max(8,rect.top-ph-6)}px`;
+    }
+  });
+}
+function openScrapellaSelect(select){
+  const enhanced=select?._scrapellaSelect;
+  if(!enhanced || select.disabled)return;
+  if(scrapellaSelectActive?.select===select){closeScrapellaSelect();return;}
+  closeScrapellaSelect();
+  refreshScrapellaSelect(select);
+  const portal=document.createElement('div');
+  portal.className='scrapella-select-menu';
+  portal.setAttribute('role','listbox');
+  portal.innerHTML=[...(select.options||[])].map((option,index)=>`
+    <button type="button" role="option" data-option-index="${index}" aria-selected="${option.selected?'true':'false'}" class="${option.selected?'active':''}" ${option.disabled?'disabled':''}>
+      <strong>${escapeHtml(option.textContent||'')}</strong>
+    </button>`).join('');
+  document.body.appendChild(portal);
+  positionScrapellaSelectPortal(enhanced.button,portal);
+  scrapellaSelectPortal=portal;
+  scrapellaSelectActive={select,button:enhanced.button};
+  enhanced.button.setAttribute('aria-expanded','true');
+  portal.querySelectorAll('[data-option-index]').forEach(btn=>btn.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    const option=select.options[Number(btn.dataset.optionIndex)];
+    if(!option || option.disabled)return;
+    const changed=select.value!==option.value;
+    select.value=option.value;
+    refreshScrapellaSelect(select);
+    closeScrapellaSelect();
+    if(changed){
+      select.dispatchEvent(new Event('input',{bubbles:true}));
+      select.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+  }));
+}
+function enhanceScrapellaSelect(select){
+  if(!select || select._scrapellaSelect || select.multiple || Number(select.size)>1)return;
+  const wrapper=document.createElement('span');
+  wrapper.className='scrapella-select-control';
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='scrapella-select-button';
+  button.setAttribute('aria-haspopup','listbox');
+  button.setAttribute('aria-expanded','false');
+  button.innerHTML=`<strong>${escapeHtml(scrapellaSelectLabel(select))}</strong><b aria-hidden="true">⌄</b>`;
+  select.parentNode.insertBefore(wrapper,select);
+  wrapper.appendChild(select);
+  wrapper.appendChild(button);
+  select.classList.add('scrapella-native-select');
+  select._scrapellaSelect={wrapper,button};
+  button.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openScrapellaSelect(select);});
+  button.addEventListener('keydown',e=>{
+    if(['Enter',' ','ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();openScrapellaSelect(select);}
+    else if(e.key==='Escape')closeScrapellaSelect();
+  });
+  select.addEventListener('change',()=>refreshScrapellaSelect(select));
+  refreshScrapellaSelect(select);
+}
+function enhanceAllScrapellaSelects(root=document){
+  if(root?.matches?.('select')) enhanceScrapellaSelect(root);
+  root?.querySelectorAll?.('select').forEach(enhanceScrapellaSelect);
+}
+document.addEventListener('click',e=>{
+  if(scrapellaSelectPortal && !scrapellaSelectPortal.contains(e.target) && !scrapellaSelectActive?.button?.contains(e.target)) closeScrapellaSelect();
+});
+window.addEventListener('resize',()=>closeScrapellaSelect());
+window.addEventListener('scroll',()=>closeScrapellaSelect(),true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeScrapellaSelect();});
+const scrapellaSelectObserver=new MutationObserver(records=>{
+  records.forEach(record=>record.addedNodes.forEach(node=>{
+    if(node.nodeType===Node.ELEMENT_NODE) enhanceAllScrapellaSelects(node);
+  }));
+});
+if(document.body){
+  enhanceAllScrapellaSelects(document);
+  scrapellaSelectObserver.observe(document.body,{childList:true,subtree:true});
+}else{
+  document.addEventListener('DOMContentLoaded',()=>{
+    enhanceAllScrapellaSelects(document);
+    scrapellaSelectObserver.observe(document.body,{childList:true,subtree:true});
+  },{once:true});
 }
 
 function plainTextHtml(text) {
@@ -2322,8 +2475,11 @@ function connectLiveEvents() {
   }
   const source = new EventSource('/api/events');
   liveEventSource = source;
-  source.addEventListener('notification', () => {
+  source.addEventListener('notification', e => {
+    let payload={};
+    try{payload=JSON.parse(e.data || '{}');}catch{}
     refreshNotificationCount();
+    showNativeSocialNotification(payload).catch(()=>{});
   });
   source.addEventListener('entries', e => {
     try { scheduleRealtimeEntryRefresh(JSON.parse(e.data || '{}')); } catch {}
@@ -5218,6 +5374,9 @@ let universeOfficialState = {};
 let universeStateSaveTimer = null;
 let universeReplayTimer = null;
 let universeReplayOverlay = null;
+let universeConstellationYear = '';
+let universeConstellationMonth = '';
+let universeConstellationTarget = '';
 function universeEntryImage(entry) {
   const canvasPhoto = (entry?.canvasItems || []).find(item => item?.type === 'photo' && item?.src);
   if (canvasPhoto?.src) return canvasPhoto.src;
@@ -5278,27 +5437,94 @@ function renderMemoryUniverseDetail(entry) {
   wireProfileLinks(host);
   $('#memoryConstellationNodes')?.querySelectorAll('[data-universe-entry]').forEach(node=>node.classList.toggle('selected',node.dataset.universeEntry===entry.id));
 }
+function wireMemoryConstellationPan(){
+  const viewport=$('#memoryConstellation');
+  if(!viewport || viewport.dataset.panWired==='1')return;
+  viewport.dataset.panWired='1';
+  let dragging=false,startX=0,startY=0,startLeft=0,startTop=0,moved=false;
+  viewport.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='touch' || e.target.closest('button'))return;
+    dragging=true;moved=false;
+    startX=e.clientX;startY=e.clientY;
+    startLeft=viewport.scrollLeft;startTop=viewport.scrollTop;
+    viewport.classList.add('dragging');
+    try{viewport.setPointerCapture(e.pointerId);}catch{}
+  });
+  viewport.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    const dx=e.clientX-startX,dy=e.clientY-startY;
+    if(Math.hypot(dx,dy)>3)moved=true;
+    viewport.scrollLeft=startLeft-dx;
+    viewport.scrollTop=startTop-dy;
+    e.preventDefault();
+  });
+  const end=e=>{
+    if(!dragging)return;
+    dragging=false;
+    viewport.classList.remove('dragging');
+    try{viewport.releasePointerCapture(e.pointerId);}catch{}
+  };
+  viewport.addEventListener('pointerup',end);
+  viewport.addEventListener('pointercancel',end);
+}
 function renderMemoryConstellation(ordered) {
   const nodesHost = $('#memoryConstellationNodes');
   const linesHost = $('#memoryConstellationLines');
+  const filtersHost = $('#memoryConstellationFilters');
+  const viewport = $('#memoryConstellation');
   if (!nodesHost || !linesHost) return;
-  if (!ordered.length) {
-    nodesHost.innerHTML = '<div class="universe-empty constellation-empty"><span>✧</span><strong>No stars yet.</strong><p>Add a memory and it will appear here.</p></div>';
+
+  const valid=ordered.filter(entry=>/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date||'')));
+  const years=[...new Set(valid.map(entry=>String(entry.date).slice(0,4)))].sort((a,b)=>b.localeCompare(a));
+  if(!universeConstellationYear || (universeConstellationYear!=='all' && !years.includes(universeConstellationYear))){
+    universeConstellationYear=years[0] || 'all';
+  }
+  const yearEntries=universeConstellationYear==='all'
+    ? valid
+    : valid.filter(entry=>String(entry.date).slice(0,4)===universeConstellationYear);
+  const availableMonths=[...new Set(yearEntries.map(entry=>String(entry.date).slice(5,7)))].sort((a,b)=>Number(b)-Number(a));
+  if(!universeConstellationMonth || (universeConstellationMonth!=='all' && !availableMonths.includes(universeConstellationMonth))){
+    universeConstellationMonth=availableMonths[0] || 'all';
+  }
+  const filtered=yearEntries.filter(entry=>universeConstellationMonth==='all' || String(entry.date).slice(5,7)===universeConstellationMonth);
+  const sample=filtered.slice(-16);
+
+  if(filtersHost){
+    const monthName=value=>value==='all'?'All months':new Intl.DateTimeFormat(undefined,{month:'long'}).format(new Date(2026,Math.max(0,Number(value)-1),1));
+    filtersHost.innerHTML=`
+      <label><span>Year</span><select id="memoryConstellationYearSelect">${['all',...years].map(value=>`<option value="${value}"${value===universeConstellationYear?' selected':''}>${value==='all'?'All years':value}</option>`).join('')}</select></label>
+      <label><span>Month</span><select id="memoryConstellationMonthSelect">${['all',...availableMonths].map(value=>`<option value="${value}"${value===universeConstellationMonth?' selected':''}>${escapeHtml(monthName(value))}</option>`).join('')}</select></label>
+      <small>Showing ${sample.length}${filtered.length>sample.length?' latest':''} of ${filtered.length} in this period</small>`;
+    enhanceAllScrapellaSelects(filtersHost);
+    $('#memoryConstellationYearSelect')?.addEventListener('change',e=>{
+      universeConstellationYear=e.target.value || 'all';
+      universeConstellationMonth='all';
+      renderMemoryConstellation(ordered);
+    });
+    $('#memoryConstellationMonthSelect')?.addEventListener('change',e=>{
+      universeConstellationMonth=e.target.value || 'all';
+      renderMemoryConstellation(ordered);
+    });
+  }
+
+  if (!sample.length) {
+    nodesHost.innerHTML = '<div class="universe-empty constellation-empty"><span>✧</span><strong>No memories in this period.</strong><p>Choose another month or year.</p></div>';
     linesHost.innerHTML = '';
     renderMemoryUniverseDetail(null);
+    wireMemoryConstellationPan();
     return;
   }
-  const sample = ordered.slice(-24);
-  const people = [...new Set(sample.map(entry=>entry.author).filter(Boolean))].slice(0,8).map(tag=>authorProfiles?.[tag] || {tag,displayName:tag,avatar:''});
+
+  const people = [...new Set(sample.map(entry=>entry.author).filter(Boolean))].slice(0,6).map(tag=>authorProfiles?.[tag] || {tag,displayName:tag,avatar:''});
   const personPositions = new Map();
   people.forEach((person,index)=>{
     const angle=-Math.PI/2+(index/Math.max(1,people.length))*Math.PI*2;
-    personPositions.set(person.tag,{x:50+Math.cos(angle)*22,y:50+Math.sin(angle)*24});
+    personPositions.set(person.tag,{x:50+Math.cos(angle)*21,y:50+Math.sin(angle)*25});
   });
   const points=sample.map((entry,index)=>{
     const angle=-Math.PI/2+(index/Math.max(1,sample.length))*Math.PI*2;
-    const jitter=((String(entry.id||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0)%9)-4)*.5;
-    return {entry,x:Math.max(7,Math.min(93,50+Math.cos(angle)*(41+jitter))),y:Math.max(9,Math.min(91,50+Math.sin(angle)*(38+jitter)))};
+    const jitter=((String(entry.id||'').split('').reduce((a,c)=>a+c.charCodeAt(0),0)%7)-3)*.45;
+    return {entry,x:Math.max(7,Math.min(93,50+Math.cos(angle)*(42+jitter))),y:Math.max(8,Math.min(92,50+Math.sin(angle)*(39+jitter)))};
   });
   const lines=[];
   points.forEach(point=>{
@@ -5307,7 +5533,7 @@ function renderMemoryConstellation(ordered) {
     if(p)lines.push(`<line class="constellation-line person-line" x1="${(p.x*10).toFixed(1)}" y1="${(p.y*6.5).toFixed(1)}" x2="${(point.x*10).toFixed(1)}" y2="${(point.y*6.5).toFixed(1)}" />`);
   });
   linesHost.innerHTML=lines.join('');
-  const center=`<div class="constellation-book-node" style="left:50%;top:50%"><span>♡</span><strong>${escapeHtml(universeContextProfile?.displayName ? universeContextProfile.displayName + '’s universe' : 'Memory Universe')}</strong><small>${ordered.length} memories</small></div>`;
+  const center=`<div class="constellation-book-node" style="left:50%;top:50%"><span>♡</span><strong>${escapeHtml(universeContextProfile?.displayName ? universeContextProfile.displayName + '’s universe' : 'Memory Universe')}</strong><small>${filtered.length} in period</small></div>`;
   const personNodes=people.map(person=>{
     const p=personPositions.get(person.tag);
     return `<button class="constellation-person-node" type="button" data-universe-person="${escapeHtml(person.tag||'')}" style="left:${p.x}%;top:${p.y}%">${avatarHtml(person,'universe-person-avatar')}<small>${escapeHtml(person.displayName||person.tag)}</small></button>`;
@@ -5325,10 +5551,22 @@ function renderMemoryConstellation(ordered) {
     if(entry)renderMemoryUniverseDetail(entry);
   }));
   nodesHost.querySelectorAll('[data-universe-person]').forEach(btn=>btn.addEventListener('click',()=>{
-    const list=ordered.filter(entry=>entry.author===btn.dataset.universePerson);
+    const list=sample.filter(entry=>entry.author===btn.dataset.universePerson);
     if(list.length)renderMemoryUniverseDetail(list[list.length-1]);
   }));
-  renderMemoryUniverseDetail(entries.find(item=>item.id===universeSelectedEntryId) || sample[sample.length-1]);
+  renderMemoryUniverseDetail(sample.find(item=>item.id===universeSelectedEntryId) || sample[sample.length-1]);
+  wireMemoryConstellationPan();
+
+  if(viewport){
+    const periodKey=`${universeConstellationTarget}:${universeConstellationYear}:${universeConstellationMonth}`;
+    requestAnimationFrame(()=>{
+      if(viewport.dataset.periodKey!==periodKey){
+        viewport.dataset.periodKey=periodKey;
+        viewport.scrollLeft=Math.max(0,(viewport.scrollWidth-viewport.clientWidth)/2);
+        viewport.scrollTop=Math.max(0,(viewport.scrollHeight-viewport.clientHeight)/2);
+      }
+    });
+  }
 }
 function renderMemoryEchoes(ordered) {
   const host=$('#memoryEchoesGrid');
@@ -5444,6 +5682,11 @@ async function loadMemoryUniverse(tag = me?.tag, { override = universeOwnerOverr
   const clean=String(tag || me?.tag || '').replace(/^@/,'').toLowerCase();
   if(!clean)return false;
   const self=clean===me?.tag;
+  if(universeConstellationTarget!==clean){
+    universeConstellationTarget=clean;
+    universeConstellationYear='';
+    universeConstellationMonth='';
+  }
   const query=new URLSearchParams({tag:clean});
   if(self && override)query.set('override','1');
   const data=await api(`/api/memory-universe?${query.toString()}`);
@@ -6668,6 +6911,7 @@ function applyCanvasPageSettings() {
   canvas.classList.add(`canvas-size-${editingCanvasSize}`);
   canvas.classList.toggle('canvas-lined', editingCanvasLined);
   $('#canvasPageSize').value = editingCanvasSize;
+  refreshScrapellaSelect($('#canvasPageSize'));
   $('#canvasLined').checked = editingCanvasLined;
   const meta = canvasSizeMeta(editingCanvasSize);
   $('#canvasSizeHint').textContent = `${meta.label} · ${meta.width} × ${meta.height} workspace`;
@@ -7291,14 +7535,33 @@ async function ensureNativeChatNotifications() {
           vibration:true,
           sound:'default'
         }).catch(()=>{});
+        await local.createChannel({
+          id:'activity',
+          name:'Comments & mentions',
+          description:'Scrapella comments and mentions',
+          importance:5,
+          visibility:1,
+          vibration:true,
+          sound:'default'
+        }).catch(()=>{});
       }
       if (local.addListener) {
         await local.addListener('localNotificationActionPerformed', async event => {
-          const chatId=String(event?.notification?.extra?.chatId || '');
-          if (!chatId) return;
-          showView('messages');
-          await loadChats().catch(()=>{});
-          if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
+          const extra=event?.notification?.extra || {};
+          const chatId=String(extra.chatId || '');
+          const scrapbookId=String(extra.scrapbookId || '');
+          const entryId=String(extra.entryId || '');
+          if (chatId) {
+            showView('messages');
+            await loadChats().catch(()=>{});
+            if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
+            return;
+          }
+          if(scrapbookId && entryId){
+            await openNotificationMemory(scrapbookId,entryId).catch(()=>{});
+            return;
+          }
+          await loadNotificationHub({markRead:true}).catch(()=>{});
         });
       }
       nativeChatNotificationsReady = permission?.display === 'granted';
@@ -7405,10 +7668,64 @@ async function showNativeChatNotification(payload = {}) {
         title:String(title).slice(0,90),
         body:String(body).slice(0,180),
         channelId:nativePlatform()==='android' ? 'messages' : undefined,
+        smallIcon:nativePlatform()==='android' ? 'ic_stat_scrapella' : undefined,
+        iconColor:nativePlatform()==='android' ? '#6e3d46' : undefined,
         extra:{chatId:payload.chatId}
       }]
     });
   } catch {}
+}
+
+
+const nativeSocialNotificationSeen=new Set();
+async function showNativeSocialNotification(payload = {}) {
+  if(!isNativeScrapellaApp() || payload?.from===me?.tag)return;
+  const type=String(payload?.type || '');
+  if(!['comment','comment_mention','profile_mention'].includes(type))return;
+  if(config.nativePushEnabled)return;
+  const local=nativePlugin('LocalNotifications');
+  if(!local)return;
+  await ensureNativeChatNotifications();
+  try{
+    const data=await api('/api/notifications');
+    const items=Array.isArray(data?.items)?data.items:[];
+    const item=items.find(candidate=>{
+      if(candidate.type!==type)return false;
+      if(payload.from && candidate.actor?.tag!==payload.from)return false;
+      if(payload.entryId && candidate.entryId!==payload.entryId)return false;
+      return true;
+    }) || items.find(candidate=>candidate.type===type);
+    if(!item)return;
+    const key=String(item.id || `${type}:${item.createdAt||Date.now()}`);
+    if(nativeSocialNotificationSeen.has(key))return;
+    nativeSocialNotificationSeen.add(key);
+    if(nativeSocialNotificationSeen.size>120){
+      const first=nativeSocialNotificationSeen.values().next().value;
+      nativeSocialNotificationSeen.delete(first);
+    }
+    const name=item.actor?.displayName || item.actor?.tag || 'Someone';
+    const title=type==='comment'
+      ? `${name} commented${item.scrapbookName ? ' in '+item.scrapbookName : ''}`
+      : type==='profile_mention'
+        ? `${name} mentioned you`
+        : `${name} mentioned you in a comment`;
+    const body=String(item.excerpt || (type==='comment' ? 'Open Scrapella to read the comment.' : 'Open Scrapella to see the mention.')).trim();
+    await local.schedule({
+      notifications:[{
+        id:nativeNotificationId(key),
+        title:String(title).slice(0,90),
+        body:String(body).slice(0,180),
+        channelId:nativePlatform()==='android' ? 'activity' : undefined,
+        smallIcon:nativePlatform()==='android' ? 'ic_stat_scrapella' : undefined,
+        iconColor:nativePlatform()==='android' ? '#6e3d46' : undefined,
+        extra:{
+          notificationType:type,
+          scrapbookId:item.scrapbookId || payload.scrapbookId || '',
+          entryId:item.entryId || payload.entryId || ''
+        }
+      }]
+    });
+  }catch{}
 }
 
 async function updateNotificationStatus() {
