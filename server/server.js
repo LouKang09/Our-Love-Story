@@ -691,7 +691,8 @@ function memoryUniverseBooksForViewer(social, target, viewer, { ownerOverride = 
     if (book.type === 'personal') {
       if (book.owner !== target) return false;
       const privacy = personalPrivacy(book);
-      if (viewer === target) return ownerOverride || privacy === 'followers';
+      if (ownerOverride) return true;
+      if (viewer === target) return privacy === 'followers';
       if (privacy === 'followers') return following;
       if (privacy === 'partner') return partner;
       return false;
@@ -1473,10 +1474,11 @@ async function handleApi(req, res, url) {
     const target = slugTag(url.searchParams.get('tag') || user);
     if (!target || !(await accountExists(target))) return json(res, 404, { error:'That Memory Universe no longer exists.' });
     const isSelf = target === user;
-    const ownerOverrideActive = isSelf && url.searchParams.get('override') === '1';
+    const viewerIsOwner = isPlatformOwner(social,user);
+    const ownerOverrideActive = viewerIsOwner && !isSelf && url.searchParams.get('override') === '1';
     const books = memoryUniverseBooksForViewer(social,target,user,{ ownerOverride:ownerOverrideActive });
     const bookIds = new Set(books.map(book => book.id));
-    const canSeeExtended = isSelf || isFollowing(social,user,target);
+    const canSeeExtended = isSelf || ownerOverrideActive || isFollowing(social,user,target);
     const allEntries = await readEntries();
     const visibleEntries = allEntries
       .filter(entry => bookIds.has(entry.scrapbookId))
@@ -1506,7 +1508,7 @@ async function handleApi(req, res, url) {
       isFollowing:isSelf || isFollowing(social,user,target),
       isPartner:!isSelf && isActivePartner(social,user,target),
       canSeeExtended,
-      ownerOverrideAvailable:isSelf,
+      ownerOverrideAvailable:viewerIsOwner && !isSelf,
       ownerOverrideActive,
       books:books.map(book => ({
         ...decorateBook(social,book,user),
@@ -1514,7 +1516,7 @@ async function handleApi(req, res, url) {
       })),
       entries:visibleEntries,
       profiles,
-      state:isSelf ? (social.memoryUniverseState?.[target] || {}) : {}
+      state:(isSelf || ownerOverrideActive) ? (social.memoryUniverseState?.[target] || {}) : {}
     });
   }
 
