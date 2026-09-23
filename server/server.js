@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
@@ -355,6 +356,113 @@ async function backupJsonDataOnce() {
   await backupNamedJsonDataOnce('pre-bulk-personal-privacy-20260920');
   await backupNamedJsonDataOnce('pre-group-admin-chat-reactions-20260920');
   await backupNamedJsonDataOnce('pre-comment-replies-audio-chat-20260920');
+}
+
+const CATHOLIC_READING_CACHE = new Map();
+
+function fetchExternalText(url, timeoutMs = 10000) {
+  return new Promise((resolve,reject) => {
+    const req=https.get(url,{
+      headers:{
+        'User-Agent':'Scrapella/2.3 (+https://scrapella.up.railway.app)',
+        'Accept':'text/html,application/xhtml+xml'
+      }
+    },res=>{
+      if(res.statusCode>=300 && res.statusCode<400 && res.headers.location){
+        res.resume();
+        return resolve(fetchExternalText(new URL(res.headers.location,url).toString(),timeoutMs));
+      }
+      if(res.statusCode!==200){
+        res.resume();
+        return reject(new Error(`Reading source returned HTTP ${res.statusCode || 0}.`));
+      }
+      let size=0;
+      const chunks=[];
+      res.on('data',chunk=>{
+        size+=chunk.length;
+        if(size>2*1024*1024){
+          req.destroy(new Error('Reading source response was too large.'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));
+    });
+    req.setTimeout(timeoutMs,()=>req.destroy(new Error('Reading source timed out.')));
+    req.on('error',reject);
+  });
+}
+function decodeReadingHtml(text) {
+  return String(text||'')
+    .replace(/&nbsp;|&#160;/gi,' ')
+    .replace(/&amp;/gi,'&')
+    .replace(/&quot;/gi,'"')
+    .replace(/&#39;|&apos;/gi,"'")
+    .replace(/&ndash;|&#8211;/gi,'–')
+    .replace(/&mdash;|&#8212;/gi,'—')
+    .replace(/&#(d+);/g,(_,n)=>String.fromCodePoint(Number(n)||32));
+}
+function catholicReadingLines(html) {
+  const plain=decodeReadingHtml(
+    String(html||'')
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ')
+      .replace(/<br\s*\/?\s*>/gi,'\n')
+      .replace(/<\/(?:p|div|h[1-6]|li|section|article|a|header)>/gi,'\n')
+      .replace(/<[^>]+>/g,' ')
+  );
+  return plain.split(/\r?\n/)
+    .map(line=>line.replace(/\s+/g,' ').trim())
+    .filter(Boolean);
+}
+function extractCatholicReadingReference(lines,label) {
+  const normalized=String(label||'').toLowerCase();
+  const index=lines.findIndex(line=>line.toLowerCase()===normalized);
+  if(index<0)return '';
+  for(let i=index+1;i<Math.min(lines.length,index+8);i++){
+    const line=lines[i];
+    if(/^(reading\s+[12]|responsorial psalm|gospel|alleluia)$/i.test(line))break;
+    if(/^(?:[1-3]\s*)?[A-Za-z][A-Za-z .’'()-]+\s+\d+[\d:;,–—\-\sA-Za-z]*$/u.test(line))return line.slice(0,120);
+  }
+  return '';
+}
+async function getCatholicReadings(dateText) {
+  const date=String(dateText||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Object.assign(new Error('Use a valid date.'),{status:400});
+  const [year,month,day]=date.split('-').map(Number);
+  const test=new Date(Date.UTC(year,month-1,day));
+  if(test.getUTCFullYear()!==year || test.getUTCMonth()!==month-1 || test.getUTCDate()!==day){
+    throw Object.assign(new Error('Use a valid date.'),{status:400});
+  }
+  const cached=CATHOLIC_READING_CACHE.get(date);
+  if(cached && Date.now()-cached.cachedAt<12*60*60*1000)return cached.value;
+  const yy=String(year).slice(-2);
+  const source=`https://bible.usccb.org/bible/readings/${String(month).padStart(2,'0')}${String(day).padStart(2,'0')}${yy}.cfm`;
+  const html=await fetchExternalText(source);
+  const lines=catholicReadingLines(html);
+  const lectionaryIndex=lines.findIndex(line=>/^Lectionary:/i.test(line));
+  let celebration='';
+  if(lectionaryIndex>0){
+    for(let i=lectionaryIndex-1;i>=0;i--){
+      if(!/^Daily Readings$/i.test(lines[i]) && !/^September|^October|^November|^December|^January|^February|^March|^April|^May|^June|^July|^August/i.test(lines[i])){
+        celebration=lines[i].slice(0,180);
+        break;
+      }
+    }
+  }
+  const value={
+    date,
+    celebration,
+    reading1:extractCatholicReadingReference(lines,'Reading 1'),
+    psalm:extractCatholicReadingReference(lines,'Responsorial Psalm'),
+    reading2:extractCatholicReadingReference(lines,'Reading 2'),
+    gospel:extractCatholicReadingReference(lines,'Gospel'),
+    translation:'NABRE',
+    source
+  };
+  if(!value.reading1 || !value.psalm || !value.gospel)throw new Error('Could not identify today’s USCCB reading references.');
+  CATHOLIC_READING_CACHE.set(date,{cachedAt:Date.now(),value});
+  return value;
 }
 
 async function scryptHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -1516,7 +1624,9 @@ async function handleApi(req, res, url) {
       })),
       entries:visibleEntries,
       profiles,
-      state:(isSelf || ownerOverrideActive) ? (social.memoryUniverseState?.[target] || {}) : {}
+      state:(isSelf || ownerOverrideActive)
+        ? (social.memoryUniverseState?.[target] || {})
+        : (social.memoryUniverseState?.[target]?.livingTheme ? { livingTheme:social.memoryUniverseState[target].livingTheme } : {})
     });
   }
 
@@ -1680,6 +1790,46 @@ async function handleApi(req, res, url) {
       unreadCount: snapshot.unreadCount,
       pendingInviteCount: snapshot.pendingInviteCount
     });
+  }
+
+  if (pathname === '/api/catholic-readings' && req.method === 'GET') {
+    try {
+      const readings=await getCatholicReadings(url.searchParams.get('date') || '');
+      return json(res,200,{ readings });
+    } catch (err) {
+      return json(res,err?.status || 502,{ error:err?.message || 'Could not load the Catholic daily readings.' });
+    }
+  }
+
+  if (pathname === '/api/password' && req.method === 'PUT') {
+    const body=await readBody(req,64*1024);
+    const currentPassword=String(body.currentPassword || '');
+    const newPassword=String(body.newPassword || '');
+    const confirmPassword=String(body.confirmPassword || '');
+    if(newPassword.length<8)return json(res,400,{error:'Use a new password with at least 8 characters.'});
+    if(newPassword!==confirmPassword)return json(res,400,{error:'The new passwords do not match.'});
+    if(currentPassword===newPassword)return json(res,400,{error:'Choose a new password different from your current password.'});
+    const credential=await getCredential(user);
+    if(!credential || !(await verifyCredential(credential,currentPassword))){
+      return json(res,401,{error:'Your current password is incorrect.'});
+    }
+    const accounts=await readAccounts();
+    const index=accounts.findIndex(account=>account.tag===user && account.disabled!==true);
+    const now=new Date().toISOString();
+    const next={
+      ...(index>=0 ? accounts[index] : {tag:user,createdAt:now}),
+      tag:user,
+      type:'scrypt',
+      passwordHash:await scryptHash(newPassword),
+      hash:undefined,
+      updatedAt:now,
+      disabled:false
+    };
+    delete next.hash;
+    if(index>=0)accounts[index]=next;
+    else accounts.push(next);
+    await writeAccounts(accounts);
+    return json(res,200,{ok:true});
   }
 
   if (pathname === '/api/preferences' && req.method === 'PUT') {
