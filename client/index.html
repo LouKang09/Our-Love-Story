@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260923-social-refresh-select-constellation5" />
+  <link rel="stylesheet" href="/styles.css?v=20260923-profile-book-share-pinch6" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -126,7 +126,7 @@
             <button id="bookModeBtn">Book</button>
             <button id="streamModeBtn">Memory Stream</button>
             <button id="universeModeBtn" type="button">Memory Universe</button>
-            <button id="connectionsModeBtn">People</button>
+            <button id="connectionsModeBtn">Profiles</button>
             <button id="messagesModeBtn" class="messages-mode-btn">Messages <span id="messagesBadge" class="messages-badge hidden">0</span></button>
           </div>
           <button id="newEntryBtn" class="primary">＋ New memory</button>
@@ -254,6 +254,16 @@
           <article id="rightPage" class="paper-page right-page"></article>
           <button id="mobileNextBtn" class="mobile-page-arrow mobile-page-arrow-next" type="button" aria-label="Next page">→</button>
         </div>
+        <section id="bookSharingPanel" class="book-sharing-panel hidden" aria-label="Who shares this book">
+        <div class="connections-head">
+          <div><p class="eyebrow">WHO SHARES THIS BOOK</p><h2 id="connectionsTitle">Your people</h2><p id="connectionsSubtitle" class="muted"></p></div>
+          <form id="inviteForm" class="invite-form"><input id="inviteTag" placeholder="@friendtag" autocomplete="off" required /><div id="inviteSuggestions" class="invite-suggestions hidden" role="listbox"></div><button class="primary invite-submit" type="submit">Invite</button></form>
+        </div>
+        <div id="peopleMap" class="people-map"></div>
+        <div id="personalPrivacyPanel" class="personal-privacy-panel hidden"></div>
+        <div id="unbindPanel" class="unbind-panel hidden"></div>
+        </section>
+
       </section>
 
       <section id="streamView" class="stream-view hidden">
@@ -290,8 +300,10 @@
           <div class="constellation-layout">
             <div id="memoryConstellation" class="memory-constellation" aria-label="Interactive draggable memory constellation">
               <div id="memoryConstellationScene" class="memory-constellation-scene">
-                <svg id="memoryConstellationLines" class="memory-constellation-lines" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true"></svg>
-                <div id="memoryConstellationNodes" class="memory-constellation-nodes"></div>
+                <div id="memoryConstellationWorld" class="memory-constellation-world">
+                  <svg id="memoryConstellationLines" class="memory-constellation-lines" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true"></svg>
+                  <div id="memoryConstellationNodes" class="memory-constellation-nodes"></div>
+                </div>
               </div>
             </div>
             <aside id="memoryUniverseDetail" class="memory-universe-detail">
@@ -351,17 +363,12 @@
       </section>
 
       <section id="connectionsView" class="connections-view hidden">
-        <div class="connections-head">
-          <div><p class="eyebrow">WHO SHARES THIS BOOK</p><h2 id="connectionsTitle">Your people</h2><p id="connectionsSubtitle" class="muted"></p></div>
-          <form id="inviteForm" class="invite-form"><input id="inviteTag" placeholder="@friendtag" autocomplete="off" required /><div id="inviteSuggestions" class="invite-suggestions hidden" role="listbox"></div><button class="primary invite-submit" type="submit">Invite</button></form>
+        <div class="connections-head profiles-directory-head">
+          <div><p class="eyebrow">SCRAPBOOK PROFILES</p><h2>Profiles</h2><p class="muted">Open a Scrapbook Profile to view their scrapbooks, Memory Universe, messages, followers and following, with Owner Override only when it is available to you.</p></div>
         </div>
-        <div id="peopleMap" class="people-map"></div>
-        <div id="personalPrivacyPanel" class="personal-privacy-panel hidden"></div>
-        <div id="unbindPanel" class="unbind-panel hidden"></div>
-
         <section class="follow-panel">
           <div class="follow-panel-head">
-            <div><p class="eyebrow">FOLLOW PEOPLE</p><h3>Find another journal keeper</h3><p class="muted">Following someone can unlock their Personal scrapbook when they choose Followers Only.</p></div>
+            <div><p class="eyebrow">PROFILE DIRECTORY</p><h3>Find a scrapbook profile</h3><p class="muted">Search by @tag, open a profile, then follow or message from the profile itself.</p></div>
             <div id="followStats" class="follow-stats"></div>
           </div>
           <form id="discoverForm" class="discover-form"><input id="discoverTag" placeholder="Search @tag" autocomplete="off" required /><button class="primary" type="submit">Search</button></form>
@@ -647,7 +654,7 @@
             <option value="partner">Partner Only</option>
           </select>
         </label>
-        <p id="scrapbookHelper" class="helper">After creating it, invite people from the People view using their @tag.</p>
+        <p id="scrapbookHelper" class="helper">After creating it, manage who shares the scrapbook from Book using their @tag.</p>
         <button class="primary wide" type="submit">Create scrapbook</button>
         <p id="scrapbookError" class="form-error"></p>
       </form>
@@ -745,6 +752,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260923-social-refresh-select-constellation5" defer></script>
+  <script src="/app.js?v=20260923-profile-book-share-pinch6" defer></script>
 </body>
 </html>
