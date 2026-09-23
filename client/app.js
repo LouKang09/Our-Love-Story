@@ -702,7 +702,7 @@ async function refreshNativePhoneContext(){
   }
 }
 journalApp?.addEventListener('touchstart',e=>{
-  if(!isNativeScrapellaApp()||!isPhoneUI()||phonePullRefreshing||!phoneAtScrollTop()||e.touches.length!==1){phonePullStartY=null;return;}
+  if(!isPhoneUI()||phonePullRefreshing||!phoneAtScrollTop()||e.touches.length!==1){phonePullStartY=null;return;}
   phonePullStartY=e.touches[0].clientY;phonePullDistance=0;
 },{passive:true});
 journalApp?.addEventListener('touchmove',e=>{
@@ -1327,7 +1327,8 @@ function canvasItemStyle(item) {
   const w = Math.max(12, Math.min(96, Number(item.w) || 35));
   const h = Math.max(8, Math.min(90, Number(item.h) || 20));
   const z = Math.max(1, Math.min(999, Number(item.z) || 1));
-  return `left:${x}%;top:${y}%;width:${w}%;height:${h}%;z-index:${z}`;
+  const rotation=((Number(item.rotation)||0)%360+360)%360;
+  return `left:${x}%;top:${y}%;width:${w}%;height:${h}%;z-index:${z};--item-rotation:${rotation}deg;--drag-x:0px;--drag-y:0px;transform:translate3d(var(--drag-x),var(--drag-y),0) rotate(var(--item-rotation))`;
 }
 function savedCanvasHtml(entry) {
   const items = Array.isArray(entry?.canvasItems) ? [...entry.canvasItems].sort((a,b)=>(a.z||0)-(b.z||0)) : [];
@@ -1362,7 +1363,8 @@ function entryContentHtml(entry) {
 }
 function authorHtml(entry) {
   const p = authorProfiles[entry.author] || activeScrapbook?.profiles?.find(x => x.tag === entry.author) || { tag: entry.author, displayName: entry.author };
-  return `<span class="author-line">${avatarHtml(p, 'tiny-avatar')}<span>${escapeHtml(p.displayName || p.tag)} <small>@${escapeHtml(p.tag || entry.author)}</small></span></span>`;
+  const tag=p.tag || entry.author || '';
+  return `<button class="author-line profile-author-link" type="button" data-profile-tag="${escapeHtml(tag)}">${avatarHtml(p, 'tiny-avatar')}<span><strong>${escapeHtml(p.displayName || p.tag)}</strong> <small>@${escapeHtml(tag)}</small></span></button>`;
 }
 function commentProfile(comment) {
   return authorProfiles[comment?.author] || { tag:comment?.author || '', displayName:comment?.author || 'Someone' };
@@ -5265,7 +5267,7 @@ function renderMemoryUniverseDetail(entry) {
     <div class="universe-detail-copy">
       <p class="eyebrow">${escapeHtml(universeDateLabel(entry.date))}</p>
       <h3>${escapeHtml(entry.title || 'Untitled memory')}</h3>
-      <div class="universe-detail-author">${avatarHtml(author,'universe-detail-avatar')}<span><strong>${escapeHtml(author.displayName || author.tag || 'Someone')}</strong><small>@${escapeHtml(author.tag || '')}</small></span></div>
+      <button class="universe-detail-author universe-profile-link" type="button" data-profile-tag="${escapeHtml(author.tag || '')}">${avatarHtml(author,'universe-detail-avatar')}<span><strong>${escapeHtml(author.displayName || author.tag || 'Someone')}</strong><small>@${escapeHtml(author.tag || '')}</small></span></button>
       <p>${escapeHtml(universeExcerpt(entry,240))}</p>
       <div class="universe-detail-meta"><span>${comments} ${comments === 1 ? 'comment' : 'comments'}</span><span>${image ? 'Visual memory' : 'Written memory'}</span></div>
       <div class="universe-detail-actions"><button class="primary universe-open-memory" type="button">Open memory</button><button class="ghost universe-replay-here" type="button">▶ Replay from here</button></div>
@@ -5273,6 +5275,7 @@ function renderMemoryUniverseDetail(entry) {
   </article>`;
   host.querySelector('.universe-open-memory')?.addEventListener('click',()=>openUniverseMemory(entry.id));
   host.querySelector('.universe-replay-here')?.addEventListener('click',()=>startMemoryReplay(entry.id));
+  wireProfileLinks(host);
   $('#memoryConstellationNodes')?.querySelectorAll('[data-universe-entry]').forEach(node=>node.classList.toggle('selected',node.dataset.universeEntry===entry.id));
 }
 function renderMemoryConstellation(ordered) {
@@ -5368,7 +5371,8 @@ function renderMemoryPerspectives(ordered) {
   host.innerHTML=shared.map(([date,group])=>`<article class="perspective-card"><header><small>${escapeHtml(universeDateLabel(date))}</small><strong>${group.length} memories · ${new Set(group.map(e=>e.author)).size} perspectives</strong></header><div class="perspective-memory-list">${group.slice(0,4).map(entry=>`<button type="button" data-universe-entry="${escapeHtml(entry.id)}"><strong>${escapeHtml(entry.title||'Untitled memory')}</strong><span>${escapeHtml(universeAuthor(entry).displayName||entry.author||'Someone')}</span><p>${escapeHtml(universeExcerpt(entry,90))}</p></button>`).join('')}</div></article>`).join('');
   host.querySelectorAll('[data-universe-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.universeEntry)));
 }
-let universeLabMode = 'layers';
+const OFFICIAL_UNIVERSE_MODES = ['voiceMemory','letters','prompts','anniversaries','box','themes','peopleMemory','vault','family','inherited','secret','faith','wall','capsules','museum'];
+let universeLabMode = 'voiceMemory';
 let universeVoiceRecorder = null;
 let universeVoiceStream = null;
 let universeVoiceChunks = [];
@@ -5478,8 +5482,7 @@ function universeMemorySelectOptions(selectedId = '') {
 }
 
 function universeLabSetMode(mode) {
-  const allowed = ['layers','trails','interview','voice','voiceMemory','letters','collaborative','prompts','anniversaries','rituals','box','themes','peopleMemory','versions','vault','family','inherited','qr','secret','unfinished','faith','wall','capsules','heirlooms','museum','archive'];
-  universeLabMode = allowed.includes(mode) ? mode : 'layers';
+  universeLabMode = OFFICIAL_UNIVERSE_MODES.includes(mode) ? mode : OFFICIAL_UNIVERSE_MODES[0];
   document.querySelectorAll('[data-universe-lab]').forEach(btn => btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode));
   renderUniverseLabStage();
 }
@@ -5494,10 +5497,13 @@ function applyUniverseReadOnlyState() {
 function renderUniverseLabs() {
   const stage = $('#universeLabStage');
   if (!stage) return;
+  if (!OFFICIAL_UNIVERSE_MODES.includes(universeLabMode)) universeLabMode = OFFICIAL_UNIVERSE_MODES[0];
   document.querySelectorAll('[data-universe-lab]').forEach(btn => {
-    btn.hidden = false;
-    btn.onclick = () => universeLabSetMode(btn.dataset.universeLab || 'layers');
-    btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode);
+    const mode=btn.dataset.universeLab || '';
+    const official=OFFICIAL_UNIVERSE_MODES.includes(mode);
+    btn.hidden = !official;
+    btn.onclick = official ? (() => universeLabSetMode(mode)) : null;
+    btn.classList.toggle('active',official && mode===universeLabMode);
   });
   renderUniverseLabStage();
   requestAnimationFrame(applyUniverseReadOnlyState);
@@ -5518,7 +5524,7 @@ function renderUniverseLabStage() {
     stage.innerHTML = '<div class="universe-empty wide"><span>♡</span><strong>Open a Memory Universe first.</strong></div>';
     return;
   }
-  const entryOptionalModes = new Set(['archive','rituals','box','themes','family','faith']);
+  const entryOptionalModes = new Set(['box','themes','family','faith','wall','secret']);
   if (!entries.length && !entryOptionalModes.has(universeLabMode)) {
     stage.innerHTML = '<div class="universe-empty wide"><span>✧</span><strong>Add a memory to use this feature.</strong><p>Once your Memory Universe has a page, these tools can begin connecting it.</p></div>';
     return;
@@ -6291,7 +6297,7 @@ function renderMemoryUniverse() {
   renderMemoryConstellation(ordered);
   if(universeCanSeeExtended){
     renderMemoryEchoes(ordered);
-    renderMemoryPerspectives(ordered);
+    $('#memoryPerspectivesGrid').innerHTML='';
     renderUniverseLabs();
   }else{
     $('#memoryEchoesGrid').innerHTML='';
@@ -6505,6 +6511,7 @@ function clampCanvasItem(item) {
   item.x = Math.max(0, Math.min(100 - item.w, Number(item.x) || 0));
   item.y = Math.max(0, Math.min(100 - item.h, Number(item.y) || 0));
   item.z = Math.max(1, Math.min(999, Number(item.z) || 1));
+  item.rotation = ((Number(item.rotation) || 0) % 360 + 360) % 360;
   return item;
 }
 function legacyEntryToCanvas(entry) {
@@ -6595,6 +6602,24 @@ function canvasPlainText() {
     .join('\n\n')
     .slice(0,20000);
 }
+
+function canvasTextItemPlainValue(item){
+  const div=document.createElement('div');
+  div.innerHTML=String(item?.html || '');
+  return String(div.innerText || div.textContent || '').replace(/\u00a0/g,' ').trim();
+}
+function validateCanvasTextBoxes(){
+  const empty=editingCanvasItems.find(item=>item.type==='text' && !canvasTextItemPlainValue(item));
+  if(!empty)return true;
+  selectedCanvasItemId=empty.id;
+  renderCanvasEditor();
+  const content=$('#scrapCanvas')?.querySelector(`[data-canvas-id="${CSS.escape(empty.id)}"] .canvas-text-content`);
+  content?.focus();
+  $('#editorError').textContent='Every text box must contain text before you save this memory.';
+  showToast('Fill in every text box before saving.');
+  return false;
+}
+
 function currentDraft() {
   const textItems = editingCanvasItems.filter(item=>item.type==='text');
   const photoItems = editingCanvasItems.filter(item=>item.type==='photo');
@@ -6621,6 +6646,7 @@ function canvasItemHtml(item) {
   if (item.type === 'photo') {
     return `<div class="canvas-item canvas-photo-item${selected}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)}">
       <button class="canvas-remove-item" type="button" title="Remove photo">×</button>
+      <button class="canvas-rotate-handle" type="button" title="Rotate photo" aria-label="Rotate photo">↻</button>
       <img src="${escapeHtml(item.src)}" alt="Scrapbook photo" draggable="false" />
       ${item.caption ? `<div class="canvas-photo-caption">${escapeHtml(item.caption)}</div>` : ''}
       <span class="canvas-resize-handle" aria-hidden="true"></span>
@@ -6629,6 +6655,7 @@ function canvasItemHtml(item) {
   const size=Math.max(7,Math.min(42,Number(item.size)||18));
   return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'};${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
     <button class="canvas-remove-item" type="button" title="Remove text box">×</button>
+    <button class="canvas-rotate-handle" type="button" title="Rotate text box" aria-label="Rotate text box">↻</button>
     <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here…" style="text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'}">${String(item.html || '')}</div>
     <div class="canvas-drag-handle" title="Drag text box">＋ Move</div>
     <span class="canvas-resize-handle" aria-hidden="true"></span>
@@ -6871,27 +6898,35 @@ function wireCanvasItems() {
     }
 
     el.addEventListener('pointerdown',e=>{
-      if(e.target.closest('.canvas-remove-item,.canvas-resize-handle,.canvas-text-content'))return;
+      if(e.target.closest('.canvas-remove-item,.canvas-resize-handle,.canvas-rotate-handle,.canvas-text-content'))return;
       if(item.type==='text'&&!e.target.closest('.canvas-drag-handle'))return;
       bringItemFront();
       const r=rect();
       const sx=e.clientX,sy=e.clientY,ox=item.x,oy=item.y;
+      let nextX=ox,nextY=oy;
       try{el.setPointerCapture(e.pointerId);}catch{}
       el.classList.add('dragging');
       const move=ev=>{
         if(canvasGesturePinching)return;
-        const dx=(ev.clientX-sx)/r.width*100,dy=(ev.clientY-sy)/r.height*100;
-        item.x=Math.max(0,Math.min(100-item.w,ox+dx));
-        item.y=Math.max(0,Math.min(100-item.h,oy+dy));
-        el.style.left=`${item.x}%`;
-        el.style.top=`${item.y}%`;
+        const rawDx=ev.clientX-sx,rawDy=ev.clientY-sy;
+        const dx=rawDx/r.width*100,dy=rawDy/r.height*100;
+        nextX=Math.max(0,Math.min(100-item.w,ox+dx));
+        nextY=Math.max(0,Math.min(100-item.h,oy+dy));
+        const visualDx=(nextX-ox)/100*r.width;
+        const visualDy=(nextY-oy)/100*r.height;
+        el.style.setProperty('--drag-x',`${visualDx}px`);
+        el.style.setProperty('--drag-y',`${visualDy}px`);
       };
       const up=()=>{
+        item.x=nextX;item.y=nextY;
         el.removeEventListener('pointermove',move);
         el.removeEventListener('pointerup',up);
         el.removeEventListener('pointercancel',up);
         el.classList.remove('dragging');
-        renderCanvasEditor();
+        el.style.setProperty('--drag-x','0px');
+        el.style.setProperty('--drag-y','0px');
+        el.style.left=`${item.x}%`;
+        el.style.top=`${item.y}%`;
       };
       el.addEventListener('pointermove',move);
       el.addEventListener('pointerup',up);
@@ -6908,6 +6943,34 @@ function wireCanvasItems() {
       editingCanvasItems=editingCanvasItems.filter(x=>x.id!==id);
       if(selectedCanvasItemId===id)selectedCanvasItemId=null;
       renderCanvasEditor();
+    });
+
+
+    const rotateHandle=el.querySelector('.canvas-rotate-handle');
+    rotateHandle?.addEventListener('pointerdown',e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      bringItemFront();
+      const box=el.getBoundingClientRect();
+      const cx=box.left+box.width/2,cy=box.top+box.height/2;
+      const startAngle=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI;
+      const startRotation=Number(item.rotation)||0;
+      try{rotateHandle.setPointerCapture(e.pointerId);}catch{}
+      el.classList.add('rotating');
+      const move=ev=>{
+        const angle=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI;
+        item.rotation=((startRotation+(angle-startAngle))%360+360)%360;
+        el.style.setProperty('--item-rotation',`${item.rotation}deg`);
+      };
+      const up=()=>{
+        rotateHandle.removeEventListener('pointermove',move);
+        rotateHandle.removeEventListener('pointerup',up);
+        rotateHandle.removeEventListener('pointercancel',up);
+        el.classList.remove('rotating');
+      };
+      rotateHandle.addEventListener('pointermove',move);
+      rotateHandle.addEventListener('pointerup',up);
+      rotateHandle.addEventListener('pointercancel',up);
     });
 
     const handle=el.querySelector('.canvas-resize-handle');
@@ -6973,6 +7036,7 @@ function wireCanvasItems() {
         let longDragging=false;
         let cancelled=false;
 
+        let nextX=ox,nextY=oy;
         const timer=setTimeout(()=>{
           if(cancelled)return;
           longDragging=true;
@@ -6982,7 +7046,7 @@ function wireCanvasItems() {
           try{window.getSelection()?.removeAllRanges();}catch{}
           try{content.setPointerCapture(pointerId);}catch{}
           el.classList.add('dragging','long-dragging');
-        },420);
+        },160);
 
         const move=ev=>{
           const travel=Math.hypot(ev.clientX-sx,ev.clientY-sy);
@@ -6995,10 +7059,10 @@ function wireCanvasItems() {
           }
           const dx=(ev.clientX-sx)/r.width*100;
           const dy=(ev.clientY-sy)/r.height*100;
-          item.x=Math.max(0,Math.min(100-item.w,ox+dx));
-          item.y=Math.max(0,Math.min(100-item.h,oy+dy));
-          el.style.left=`${item.x}%`;
-          el.style.top=`${item.y}%`;
+          nextX=Math.max(0,Math.min(100-item.w,ox+dx));
+          nextY=Math.max(0,Math.min(100-item.h,oy+dy));
+          el.style.setProperty('--drag-x',`${(nextX-ox)/100*r.width}px`);
+          el.style.setProperty('--drag-y',`${(nextY-oy)/100*r.height}px`);
           ev.preventDefault();
         };
 
@@ -7009,8 +7073,12 @@ function wireCanvasItems() {
           content.removeEventListener('pointerup',finish);
           content.removeEventListener('pointercancel',finish);
           if(longDragging){
+            item.x=nextX;item.y=nextY;
             el.classList.remove('dragging','long-dragging');
-            renderCanvasEditor();
+            el.style.setProperty('--drag-x','0px');
+            el.style.setProperty('--drag-y','0px');
+            el.style.left=`${item.x}%`;
+            el.style.top=`${item.y}%`;
             setTimeout(()=>{
               const current=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(id)}"] .canvas-text-content`);
               if(current)delete current.dataset.longDragged;
@@ -8647,6 +8715,7 @@ $('#photoInput').addEventListener('change', async e => {
 });
 entryForm.addEventListener('submit', async e => {
   e.preventDefault(); $('#editorError').textContent = '';
+  if(!validateCanvasTextBoxes())return;
   try {
     const draft = currentDraft();
     const bookId = activeScrapbook?.id || '';
