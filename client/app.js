@@ -7519,6 +7519,28 @@ async function saveReminderSettings(enabled, reminderTime) {
 let nativeChatNotificationsReady = false;
 let nativePushRegistrationReady = false;
 let nativePushToken = '';
+let nativeAppInfoPromise=null;
+function versionAtLeast(value,minimum){
+  const a=String(value||'0').split('.').map(v=>Number.parseInt(v,10)||0);
+  const b=String(minimum||'0').split('.').map(v=>Number.parseInt(v,10)||0);
+  for(let i=0;i<Math.max(a.length,b.length);i++){
+    if((a[i]||0)>(b[i]||0))return true;
+    if((a[i]||0)<(b[i]||0))return false;
+  }
+  return true;
+}
+async function nativeNotificationIconOptions(){
+  if(!isNativeScrapellaApp() || nativePlatform()!=='android')return {};
+  try{
+    const appPlugin=nativePlugin('App');
+    if(!appPlugin?.getInfo)return {};
+    nativeAppInfoPromise ||= appPlugin.getInfo().catch(()=>null);
+    const info=await nativeAppInfoPromise;
+    return versionAtLeast(info?.version,'2.3.1')
+      ? {smallIcon:'ic_stat_scrapella',iconColor:'#6e3d46'}
+      : {};
+  }catch{return {};}
+}
 function nativeNotificationId(value='') {
   const text=String(value||Date.now());
   let hash=0;
@@ -7673,14 +7695,14 @@ async function showNativeChatNotification(payload = {}) {
     const title=chat?.type === 'group' ? `${sender} · new message` : `${sender} sent you a message`;
     const body=String(chat?.lastMessage?.text || chat?.lastMessageText || '').trim()
       || (chat?.lastMessage?.audio ? '🎙 Voice message' : chat?.lastMessage?.image || chat?.lastMessage?.images?.length ? '📷 Photo' : 'Open Scrapella to read it.');
+    const iconOptions=await nativeNotificationIconOptions();
     await local.schedule({
       notifications:[{
         id:nativeNotificationId(payload.messageId || payload.chatId + Date.now()),
         title:String(title).slice(0,90),
         body:String(body).slice(0,180),
         channelId:nativePlatform()==='android' ? 'messages' : undefined,
-        smallIcon:nativePlatform()==='android' ? 'ic_stat_scrapella' : undefined,
-        iconColor:nativePlatform()==='android' ? '#6e3d46' : undefined,
+        ...iconOptions,
         extra:{chatId:payload.chatId}
       }]
     });
@@ -7733,14 +7755,14 @@ async function showNativeSocialNotification(payload = {}) {
         ? `${name} mentioned you`
         : `${name} mentioned you in a comment`;
     const body=String(item.excerpt || (type==='comment' ? 'Open Scrapella to read the comment.' : 'Open Scrapella to see the mention.')).trim();
+    const iconOptions=await nativeNotificationIconOptions();
     await local.schedule({
       notifications:[{
         id:nativeNotificationId(key),
         title:String(title).slice(0,90),
         body:String(body).slice(0,180),
         channelId:nativePlatform()==='android' ? 'activity' : undefined,
-        smallIcon:nativePlatform()==='android' ? 'ic_stat_scrapella' : undefined,
-        iconColor:nativePlatform()==='android' ? '#6e3d46' : undefined,
+        ...iconOptions,
         extra:{
           notificationType:type,
           scrapbookId:item.scrapbookId || payload.scrapbookId || '',
