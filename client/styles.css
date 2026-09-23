@@ -13701,3 +13701,244 @@ html[data-theme="night"] #memoryUniverseView .secret-project-card.sealed{
 html[data-theme="night"] #memoryUniverseView .freedom-wall-canvas{
   background:transparent!important;
 }
+
+
+/* ===== 2026-09-23 UNIVERSAL SELECTS + WIDE CONSTELLATION ===== */
+
+/* Uniform Scrapella dropdowns: all native selects stay functional for forms,
+   but users interact with the same custom menu style as Voice Memories. */
+.scrapella-select-control{
+  position:relative;
+  display:block;
+  width:100%;
+  min-width:0;
+}
+.scrapella-native-select{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  margin:0!important;
+  padding:0!important;
+  opacity:0!important;
+  pointer-events:none!important;
+  clip-path:inset(50%)!important;
+}
+.scrapella-select-button{
+  width:100%;
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:9px 11px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:var(--paper);
+  color:var(--ink);
+  text-align:left;
+  cursor:pointer;
+  box-sizing:border-box;
+  font:600 11px/1.35 ui-sans-serif,system-ui,sans-serif;
+}
+.scrapella-select-button strong{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font:inherit;
+}
+.scrapella-select-button b{
+  flex:0 0 auto;
+  color:var(--rose-dark);
+  font-size:14px;
+  transition:transform .16s ease;
+}
+.scrapella-select-button[aria-expanded="true"] b{transform:rotate(180deg)}
+.scrapella-select-button:focus-visible{
+  outline:2px solid var(--rose);
+  outline-offset:2px;
+}
+.scrapella-select-button:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.scrapella-select-menu{
+  position:fixed;
+  z-index:5000;
+  max-height:min(320px,52vh);
+  overflow:auto;
+  overscroll-behavior:contain;
+  padding:6px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:var(--paper);
+  color:var(--ink);
+  box-shadow:0 18px 44px rgba(32,22,26,.24);
+  -webkit-overflow-scrolling:touch;
+}
+.scrapella-select-menu button{
+  width:100%;
+  min-height:39px;
+  display:flex;
+  align-items:center;
+  padding:9px 10px;
+  border:0;
+  border-radius:9px;
+  background:transparent;
+  color:var(--ink);
+  text-align:left;
+  cursor:pointer;
+}
+.scrapella-select-menu button strong{
+  font:700 10px/1.3 ui-sans-serif,system-ui,sans-serif;
+}
+.scrapella-select-menu button:hover,
+.scrapella-select-menu button:active,
+.scrapella-select-menu button.active{
+  background:var(--rose-soft);
+}
+.scrapella-select-menu button:disabled{opacity:.45;cursor:not-allowed}
+html[data-theme="night"] .scrapella-select-button,
+html[data-theme="night"] .scrapella-select-menu{
+  border-color:#4f3e44!important;
+  background:#211a1d!important;
+  color:#f5ece9!important;
+}
+html[data-theme="night"] .scrapella-select-menu button{color:#f5ece9!important}
+html[data-theme="night"] .scrapella-select-menu button:hover,
+html[data-theme="night"] .scrapella-select-menu button:active,
+html[data-theme="night"] .scrapella-select-menu button.active{
+  background:#3b2d32!important;
+}
+
+/* Pull-to-refresh feedback across all mobile categories. */
+@media(max-width:800px){
+  .scrapella-pull-refresh{
+    top:calc(env(safe-area-inset-top,0px) + 16px)!important;
+    transform:translate(-50%,calc(-12px + 58px * var(--pull))) scale(calc(.84 + .16 * var(--pull)))!important;
+    transition:opacity .12s ease,transform .08s linear!important;
+  }
+  .scrapella-pull-refresh.visible{
+    opacity:calc(.45 + .55 * var(--pull))!important;
+  }
+  .scrapella-pull-refresh span{
+    transform:rotate(calc(300deg * var(--pull)));
+  }
+  .scrapella-pull-refresh.refreshing{
+    opacity:1!important;
+    transform:translate(-50%,48px) scale(1)!important;
+  }
+}
+
+/* Memory Constellation is now a wide draggable world instead of a cramped box. */
+.constellation-panel-head{
+  align-items:flex-start;
+}
+.constellation-filters{
+  flex:0 0 min(500px,48%);
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  align-items:end;
+}
+.constellation-filters label{
+  display:grid;
+  gap:5px;
+  color:var(--muted);
+  font:800 8px/1 ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.constellation-filters>small{
+  grid-column:1/-1;
+  color:var(--muted);
+  font:700 8px/1.3 ui-sans-serif,system-ui,sans-serif;
+}
+.constellation-layout{
+  grid-template-columns:minmax(0,2.25fr) minmax(280px,.6fr)!important;
+}
+.memory-constellation{
+  min-height:650px;
+  overflow:auto!important;
+  cursor:grab;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  touch-action:pan-x pan-y;
+  -webkit-overflow-scrolling:touch;
+}
+.memory-constellation.dragging{
+  cursor:grabbing;
+  user-select:none;
+}
+.memory-constellation-scene{
+  position:relative;
+  width:max(100%,1280px);
+  min-width:1280px;
+  height:690px;
+}
+.memory-constellation-lines,
+.memory-constellation-nodes{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+}
+.memory-constellation-nodes{
+  z-index:2;
+}
+.memory-constellation-lines{
+  z-index:1;
+}
+@media(max-width:800px){
+  .constellation-panel-head{
+    display:grid!important;
+    gap:12px!important;
+  }
+  .constellation-filters{
+    width:100%;
+    flex:auto;
+    grid-template-columns:1fr 1fr;
+  }
+  .constellation-layout{
+    grid-template-columns:1fr!important;
+  }
+  .memory-constellation{
+    min-height:520px!important;
+    height:64svh;
+    max-height:640px;
+  }
+  .memory-constellation-scene{
+    width:1120px;
+    min-width:1120px;
+    height:620px;
+  }
+  .memory-universe-detail{
+    min-height:0!important;
+  }
+}
+
+/* Freedom Wall keeps its original cheerful sticky-note colors in night mode. */
+html[data-theme="night"] #memoryUniverseView .freedom-wall-canvas{
+  filter:none!important;
+  border-color:rgba(120,84,72,.16)!important;
+  background:
+    linear-gradient(rgba(255,255,255,.18),rgba(255,255,255,.18)),
+    repeating-linear-gradient(90deg,#d4b894 0,#d4b894 110px,#ccb088 111px,#ccb088 113px)!important;
+}
+html[data-theme="night"] #memoryUniverseView .freedom-note{
+  color:#443638!important;
+  border-color:transparent!important;
+  background:#fff0a8!important;
+  box-shadow:0 8px 16px rgba(68,49,39,.14)!important;
+}
+html[data-theme="night"] #memoryUniverseView .freedom-note:nth-child(5n+2){background:#f6ced8!important}
+html[data-theme="night"] #memoryUniverseView .freedom-note:nth-child(5n+3){background:#cae8dd!important}
+html[data-theme="night"] #memoryUniverseView .freedom-note:nth-child(5n+4){background:#d5def5!important}
+html[data-theme="night"] #memoryUniverseView .freedom-note:nth-child(5n+5){background:#f2d9bc!important}
+html[data-theme="night"] #memoryUniverseView .freedom-note strong{color:#493c39!important}
+html[data-theme="night"] #memoryUniverseView .freedom-note small,
+html[data-theme="night"] #memoryUniverseView .freedom-note time{color:#806964!important}
+html[data-theme="night"] #memoryUniverseView .freedom-note>p{color:#443638!important}
+html[data-theme="night"] #memoryUniverseView .freedom-note header>button:first-child{
+  color:#493c39!important;
+}
