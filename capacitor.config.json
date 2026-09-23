@@ -22,6 +22,11 @@
         "sound",
         "alert"
       ]
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_scrapella",
+      "iconColor": "#6e3d46",
+      "sound": "default"
     }
   }
 }
