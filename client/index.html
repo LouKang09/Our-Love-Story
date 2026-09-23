@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260923-profile-book-share-pinch6" />
+  <link rel="stylesheet" href="/styles.css?v=20260923-journal-security-realtime7" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -685,6 +685,28 @@
         <label>About you<textarea id="profileBio" rows="4" maxlength="220" placeholder="A tiny note about you... Tag someone with @theirtag"></textarea></label>
         <p class="helper profile-bio-helper">Tip: use <strong>@tag</strong> in your About text to mention someone. They will receive a notification when the tag is newly added.</p>
 
+        <section class="profile-password-settings">
+          <div class="profile-password-settings-head">
+            <strong>Change password</strong>
+            <p>Confirm your current password, then choose a new password with at least 8 characters.</p>
+          </div>
+          <div class="profile-password-grid">
+            <label class="current-password-row">Current password
+              <span class="password-field"><input id="currentPassword" type="password" autocomplete="current-password" placeholder="Current password" /><button class="password-visibility" type="button" data-password-target="currentPassword" aria-label="Show password">Show</button></span>
+            </label>
+            <label>New password
+              <span class="password-field"><input id="newPassword" type="password" autocomplete="new-password" placeholder="New password" /><button class="password-visibility" type="button" data-password-target="newPassword" aria-label="Show password">Show</button></span>
+            </label>
+            <label>Confirm new password
+              <span class="password-field"><input id="confirmNewPassword" type="password" autocomplete="new-password" placeholder="Repeat new password" /><button class="password-visibility" type="button" data-password-target="confirmNewPassword" aria-label="Show password">Show</button></span>
+            </label>
+          </div>
+          <div class="profile-password-actions">
+            <button id="changePasswordBtn" class="ghost" type="button">Change password</button>
+            <p id="passwordChangeStatus" class="helper" aria-live="polite"></p>
+          </div>
+        </section>
+
         <div id="mobileThemeSlot" class="mobile-theme-slot"></div>
 
         <section class="app-permission-settings">
@@ -752,6 +774,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260923-profile-book-share-pinch6" defer></script>
+  <script src="/app.js?v=20260923-journal-security-realtime7" defer></script>
 </body>
 </html>
