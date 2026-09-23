@@ -6380,13 +6380,21 @@ function applyUniverseLivingThemePreview() {
   const theme=allowed.has(state?.theme)?state.theme:'travel';
   view.dataset.livingTheme=theme;
 }
-function renderUniverseThemesLab() {
-  const stage=$('#universeLabStage');if(!stage)return;const state=loadUniversePreview('livingTheme',{theme:'travel'});
+function renderUniverseThemesLab(){
+  const stage=$('#universeLabStage');if(!stage)return;
+  const state=loadUniversePreview('livingTheme',{theme:'travel'});
+  const canEdit=(universeTargetTag || me?.tag)===me?.tag;
   const themes={travel:{name:'Travel Journal',icon:'✈',line:'Passport stamps, route lines, tickets and place chapters.',action:'Browse by places and journeys'},childhood:{name:'Childhood Album',icon:'☁',line:'Soft paper, doodles, school labels and playful keepsakes.',action:'Browse by school year and age'},letters:{name:'Love Letters',icon:'♡',line:'Envelope folds, handwritten notes and sealed-letter transitions.',action:'Browse letters and relationship milestones'},school:{name:'School Years',icon:'✎',line:'Notebook paper, class years, subjects and graduation milestones.',action:'Browse by school year and graduation'},family:{name:'Family Archive',icon:'⌂',line:'Generations, heirlooms, family tree and archival captions.',action:'Browse people and generations'},faith:{name:'Faith Journey',icon:'✝',line:'Liturgical seasons, prayer reflections and spiritual milestones.',action:'Browse reflections and spiritual milestones'}};
   const selected=themes[state.theme]||themes.travel;
   applyUniverseLivingThemePreview();
-  stage.innerHTML=`<div class="theme-lab"><aside class="theme-picker"><p class="eyebrow">LIVING SCRAPBOOK THEMES</p><h4>A theme should change how the scrapbook behaves, not only its color.</h4>${Object.entries(themes).map(([key,t])=>`<button class="${key===state.theme?'active':''}" type="button" data-theme-preview="${key}"><span>${t.icon}</span><div><strong>${t.name}</strong><small>${t.line}</small></div></button>`).join('')}</aside><section class="living-theme-preview theme-${escapeHtml(state.theme)}"><div class="theme-scene-head"><span>${selected.icon}</span><small>${escapeHtml(selected.name.toUpperCase())}</small></div><div class="theme-scene-page"><p class="eyebrow">${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</p><h3>${escapeHtml(entries.at(-1)?.title||'A chapter worth keeping')}</h3><p>${escapeHtml(universeExcerpt(entries.at(-1),190))}</p><div class="theme-scene-decoration"></div></div><div class="theme-behavior-card"><strong>${escapeHtml(selected.action)}</strong><span>${escapeHtml(selected.line)}</span></div><p class="theme-behavior-copy">The selected theme now changes the whole Memory Universe background and atmosphere. Your scrapbook pages stay untouched.</p></section></div>`;
-  stage.querySelectorAll('[data-theme-preview]').forEach(btn=>btn.addEventListener('click',()=>{saveUniversePreview('livingTheme',{theme:btn.dataset.themePreview});applyUniverseLivingThemePreview();renderUniverseThemesLab();}));
+  stage.innerHTML=`<div class="theme-lab"><aside class="theme-picker"><p class="eyebrow">LIVING SCRAPBOOK THEMES</p><h4>A theme should change how the scrapbook behaves, not only its color.</h4>${Object.entries(themes).map(([key,t])=>`<button class="${key===state.theme?'active':''}" type="button" data-theme-preview="${key}" ${canEdit?'':'disabled'}><span>${t.icon}</span><div><strong>${t.name}</strong><small>${t.line}</small></div></button>`).join('')}${canEdit?'':`<p class="theme-readonly-note">You are viewing <strong>@${escapeHtml(universeTargetTag || '')}</strong>’s Living Theme. Only the owner of this Memory Universe can change it.</p>`}</aside><section class="living-theme-preview theme-${escapeHtml(state.theme)}"><div class="theme-scene-head"><span>${selected.icon}</span><small>${escapeHtml(selected.name.toUpperCase())}</small></div><div class="theme-scene-page"><p class="eyebrow">${escapeHtml(activeScrapbook?.name||'SCRAPBOOK')}</p><h3>${escapeHtml(entries.at(-1)?.title||'A chapter worth keeping')}</h3><p>${escapeHtml(universeExcerpt(entries.at(-1),190))}</p><div class="theme-scene-decoration"></div></div><div class="theme-behavior-card"><strong>${escapeHtml(selected.action)}</strong><span>${escapeHtml(selected.line)}</span></div><p class="theme-behavior-copy">${canEdit?'Choose a theme for your Memory Universe. Your scrapbook pages stay untouched.':'This is the theme this user chose for their Memory Universe.'}</p></section></div>`;
+  if(canEdit){
+    stage.querySelectorAll('[data-theme-preview]').forEach(btn=>btn.addEventListener('click',()=>{
+      saveUniversePreview('livingTheme',{theme:btn.dataset.themePreview});
+      applyUniverseLivingThemePreview();
+      renderUniverseThemesLab();
+    }));
+  }
 }
 
 function renderUniversePeopleMemoryLab() {
@@ -6600,11 +6608,149 @@ function renderUniverseUnfinishedLab() {
   stage.querySelectorAll('[data-unfinished-entry]').forEach(btn=>btn.addEventListener('click',()=>openUniverseMemory(btn.dataset.unfinishedEntry)));
 }
 
-function renderUniverseFaithLab() {
+function localDateKey(date=new Date()){
+  const y=date.getFullYear();
+  const m=String(date.getMonth()+1).padStart(2,'0');
+  const d=String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+function faithSavedDateLabel(value){
+  const d=new Date(String(value||'')+'T12:00:00');
+  return Number.isNaN(d.getTime()) ? String(value||'') : new Intl.DateTimeFormat(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}).format(d);
+}
+function faithHistoryHtml(all){
+  const rows=Object.entries(all||{}).filter(([,item])=>item && typeof item==='object' && (item.reflection||item.prayer||item.action))
+    .sort((x,y)=>String(y[0]).localeCompare(String(x[0])));
+  if(!rows.length)return '<div class="faith-history-empty">No saved reflections yet.</div>';
+  return rows.map(([date,item],index)=>{
+    const oldWord=item.word ? `<div><small>WORD / PHRASE</small><p>${escapeHtml(item.word)}</p></div>` : '';
+    return `<details class="faith-history-item" ${index===0?'open':''}>
+      <summary><span><strong>${escapeHtml(faithSavedDateLabel(date))}</strong><small>${escapeHtml(item.celebration||'Daily reflection')}</small></span><b>⌄</b></summary>
+      <div class="faith-history-body">
+        <div class="faith-history-readings">
+          <span><small>First Reading</small><strong>${escapeHtml(item.reading1||'—')}</strong></span>
+          <span><small>Psalm</small><strong>${escapeHtml(item.psalm||'—')}</strong></span>
+          <span><small>Second Reading</small><strong>${escapeHtml(item.reading2||'No second reading')}</strong></span>
+          <span><small>Gospel</small><strong>${escapeHtml(item.gospel||'—')}</strong></span>
+        </div>
+        ${oldWord}
+        <div><small>REFLECTION</small><p>${escapeHtml(item.reflection||'')}</p></div>
+        <div><small>PRAYER</small><p>${escapeHtml(item.prayer||'')}</p></div>
+        <div><small>ONE ACTION TODAY</small><p>${escapeHtml(item.action||'')}</p></div>
+      </div>
+    </details>`;
+  }).join('');
+}
+async function loadFaithReadings(date){
+  const data=await api(`/api/catholic-readings?date=${encodeURIComponent(date)}`);
+  return data.readings || {};
+}
+
+function renderUniverseFaithLab(){
   const stage=$('#universeLabStage');if(!stage)return;
-  const all=loadUniversePreview('faithJournal',{}),today=new Date().toISOString().slice(0,10),item=all[today]||{};
-  stage.innerHTML=`<div class="faith-journal"><header class="faith-journal-head"><span>✝</span><div><p class="eyebrow">CATHOLIC DAILY READING REFLECTION</p><h4>${escapeHtml(new Intl.DateTimeFormat(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'}).format(new Date()))}</h4><p>A quiet place for Scripture references, reflection, prayer, and one thing to carry into the day.</p></div></header><form id="faithJournalForm" class="faith-journal-page"><div class="faith-reading-grid"><label>First Reading<input name="reading1" maxlength="80" value="${escapeHtml(item.reading1||'')}" placeholder="e.g. Isaiah 55:10–11" /></label><label>Psalm<input name="psalm" maxlength="80" value="${escapeHtml(item.psalm||'')}" placeholder="e.g. Psalm 34" /></label><label>Second Reading <small>(if applicable)</small><input name="reading2" maxlength="80" value="${escapeHtml(item.reading2||'')}" placeholder="Reference" /></label><label>Gospel<input name="gospel" maxlength="80" value="${escapeHtml(item.gospel||'')}" placeholder="e.g. Matthew 6:7–15" /></label></div><label><span>Word or phrase that stayed with me</span><input name="word" maxlength="180" value="${escapeHtml(item.word||'')}" placeholder="A phrase from today’s readings…" /></label><label><span>Reflection</span><textarea name="reflection" rows="7" maxlength="2400" placeholder="What is God inviting me to notice today?">${escapeHtml(item.reflection||'')}</textarea></label><div class="faith-two"><label><span>Prayer</span><textarea name="prayer" rows="4" maxlength="1000" placeholder="Lord…">${escapeHtml(item.prayer||'')}</textarea></label><label><span>One action today</span><textarea name="action" rows="4" maxlength="700" placeholder="Today I will…">${escapeHtml(item.action||'')}</textarea></label></div><button class="primary" type="submit">Save today’s reflection</button><small class="helper">Enter the Catholic reading references you are reflecting on. Scrapella stores your references, reflection, prayer, and action in Memory Universe.</small></form></div>`;
-  $('#faithJournalForm')?.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);all[today]={reading1:String(f.get('reading1')||'').trim(),psalm:String(f.get('psalm')||'').trim(),reading2:String(f.get('reading2')||'').trim(),gospel:String(f.get('gospel')||'').trim(),word:String(f.get('word')||'').trim(),reflection:String(f.get('reflection')||'').trim(),prayer:String(f.get('prayer')||'').trim(),action:String(f.get('action')||'').trim(),savedAt:new Date().toISOString()};saveUniversePreview('faithJournal',all);showToast('Today’s Catholic reflection saved in feature.');});
+  const all=loadUniversePreview('faithJournal',{});
+  const today=localDateKey();
+  const item=all[today]||{};
+  const savedRefs=Boolean(item.reading1 && item.psalm && item.gospel);
+  const canEdit=(universeTargetTag || me?.tag)===me?.tag;
+  stage.innerHTML=`<div class="faith-journal">
+    <header class="faith-journal-head"><span>✝</span><div><p class="eyebrow">CATHOLIC DAILY READING REFLECTION</p><h4>${escapeHtml(new Intl.DateTimeFormat(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'}).format(new Date()))}</h4><p id="faithCelebration">${escapeHtml(item.celebration||'Loading today’s USCCB readings…')}</p></div></header>
+    <form id="faithJournalForm" class="faith-journal-page" data-readings-ready="${savedRefs?'1':'0'}">
+      <div class="faith-reading-grid">
+        <label>First Reading<input name="reading1" value="${escapeHtml(item.reading1||'Loading…')}" readonly aria-readonly="true" /></label>
+        <label>Psalm<input name="psalm" value="${escapeHtml(item.psalm||'Loading…')}" readonly aria-readonly="true" /></label>
+        <label>Second Reading <small>(if applicable)</small><input name="reading2" value="${escapeHtml(item.reading2||'Loading…')}" readonly aria-readonly="true" /></label>
+        <label>Gospel<input name="gospel" value="${escapeHtml(item.gospel||'Loading…')}" readonly aria-readonly="true" /></label>
+      </div>
+      <div class="faith-reading-source"><span id="faithReadingStatus">${savedRefs?'Refreshing references from USCCB…':'Loading today’s NABRE references from USCCB…'}</span><button id="faithRetryReadings" class="ghost hidden" type="button">Retry readings</button></div>
+      <div class="faith-response-grid">
+        <label><span>Reflection</span><textarea name="reflection" rows="5" maxlength="2400" required placeholder="What is God inviting me to notice today?">${escapeHtml(item.reflection||'')}</textarea></label>
+        <label><span>Prayer</span><textarea name="prayer" rows="5" maxlength="1000" required placeholder="Lord…">${escapeHtml(item.prayer||'')}</textarea></label>
+        <label><span>One action today</span><textarea name="action" rows="5" maxlength="700" required placeholder="Today I will…">${escapeHtml(item.action||'')}</textarea></label>
+      </div>
+      <button id="faithSaveBtn" class="primary" type="submit" ${(!canEdit || !savedRefs)?'disabled':''}>Save today’s reflection</button>
+      <small class="helper">The reading references are filled automatically from the USCCB daily readings (NABRE). You only write your reflection, prayer, and one action for today.</small>
+    </form>
+    <section class="faith-history"><div class="faith-history-head"><div><p class="eyebrow">SAVED REFLECTIONS</p><h4>Your reflection journal</h4></div><span>${Object.keys(all||{}).length}</span></div><div id="faithHistoryList">${faithHistoryHtml(all)}</div></section>
+  </div>`;
+  const form=$('#faithJournalForm');
+  const status=$('#faithReadingStatus');
+  const retry=$('#faithRetryReadings');
+  const saveBtn=$('#faithSaveBtn');
+
+  const fillReadings=readings=>{
+    form.elements.reading1.value=readings.reading1||'';
+    form.elements.psalm.value=readings.psalm||'';
+    form.elements.reading2.value=readings.reading2||'No second reading today';
+    form.elements.gospel.value=readings.gospel||'';
+    form.dataset.readingsReady=(readings.reading1&&readings.psalm&&readings.gospel)?'1':'0';
+    $('#faithCelebration').textContent=readings.celebration || 'Today’s Catholic readings';
+    status.textContent='NABRE references loaded from USCCB.';
+    retry.classList.add('hidden');
+    saveBtn.disabled=!canEdit || form.dataset.readingsReady!=='1';
+    form.dataset.readingSource=readings.source||'';
+    form.dataset.readingTranslation=readings.translation||'NABRE';
+  };
+  const load=async()=>{
+    retry.classList.add('hidden');
+    status.textContent='Loading today’s NABRE references from USCCB…';
+    try{
+      fillReadings(await loadFaithReadings(today));
+    }catch(err){
+      if(savedRefs){
+        form.elements.reading1.value=item.reading1||'';
+        form.elements.psalm.value=item.psalm||'';
+        form.elements.reading2.value=item.reading2||'No second reading today';
+        form.elements.gospel.value=item.gospel||'';
+        form.dataset.readingsReady='1';
+        status.textContent='Using the references saved with today’s reflection. USCCB could not be refreshed.';
+        saveBtn.disabled=!canEdit;
+      }else{
+        form.elements.reading1.value='';
+        form.elements.psalm.value='';
+        form.elements.reading2.value='';
+        form.elements.gospel.value='';
+        form.dataset.readingsReady='0';
+        status.textContent=err?.message || 'Could not load today’s readings.';
+        saveBtn.disabled=true;
+      }
+      retry.classList.remove('hidden');
+    }
+  };
+  retry?.addEventListener('click',load);
+  load();
+
+  form?.addEventListener('submit',e=>{
+    e.preventDefault();
+    if(!canEdit)return;
+    const f=new FormData(e.currentTarget);
+    const reflection=String(f.get('reflection')||'').trim();
+    const prayer=String(f.get('prayer')||'').trim();
+    const action=String(f.get('action')||'').trim();
+    if(!reflection || !prayer || !action){
+      showToast('Reflection, prayer, and one action today are required.');
+      return;
+    }
+    if(form.dataset.readingsReady!=='1'){
+      showToast('Today’s readings are still loading. Please retry the readings first.');
+      return;
+    }
+    const second=String(f.get('reading2')||'').trim();
+    all[today]={
+      reading1:String(f.get('reading1')||'').trim(),
+      psalm:String(f.get('psalm')||'').trim(),
+      reading2:second==='No second reading today'?'':second,
+      gospel:String(f.get('gospel')||'').trim(),
+      reflection,prayer,action,
+      celebration:$('#faithCelebration')?.textContent?.trim()||'',
+      translation:form.dataset.readingTranslation||'NABRE',
+      source:form.dataset.readingSource||item.source||'',
+      savedAt:new Date().toISOString()
+    };
+    saveUniversePreview('faithJournal',all);
+    showToast('Today’s Catholic reflection saved.');
+    renderUniverseFaithLab();
+  });
 }
 
 async function renderUniverseFreedomWallLab() {
@@ -8883,6 +9029,10 @@ $('#profileBtn').addEventListener('click', () => {
   $('#profileTagStatus').textContent = 'You can change your @tag as long as nobody else is using it.';
   $('#profileTagStatus').classList.remove('tag-ok','tag-bad');
   $('#profileBio').value = me.bio || '';
+  if ($('#currentPassword')) $('#currentPassword').value = '';
+  if ($('#newPassword')) $('#newPassword').value = '';
+  if ($('#confirmNewPassword')) $('#confirmNewPassword').value = '';
+  if ($('#passwordChangeStatus')) { $('#passwordChangeStatus').textContent = ''; $('#passwordChangeStatus').className = 'helper'; }
   $('#dailyReminderEnabled').checked = me.notifications?.enabled === true;
   $('#dailyReminderTime').value = me.notifications?.reminderTime || '20:00';
   $('#profileAvatarLarge').outerHTML = avatarHtml(me, 'large-avatar').replace('class="avatar large-avatar"', 'id="profileAvatarLarge" class="avatar large-avatar"');
@@ -8892,6 +9042,40 @@ $('#profileBtn').addEventListener('click', () => {
   profileDialog.showModal();
 });
 $('#closeProfileDialog').addEventListener('click', () => profileDialog.close());
+$('#changePasswordBtn')?.addEventListener('click', async () => {
+  const currentPassword=$('#currentPassword')?.value || '';
+  const newPassword=$('#newPassword')?.value || '';
+  const confirmPassword=$('#confirmNewPassword')?.value || '';
+  const status=$('#passwordChangeStatus');
+  const btn=$('#changePasswordBtn');
+  if(status){status.textContent='';status.className='helper';}
+  if(!currentPassword || !newPassword || !confirmPassword){
+    if(status){status.textContent='Fill in all password fields.';status.classList.add('password-status-error');}
+    return;
+  }
+  if(newPassword.length<8){
+    if(status){status.textContent='Use at least 8 characters for the new password.';status.classList.add('password-status-error');}
+    return;
+  }
+  if(newPassword!==confirmPassword){
+    if(status){status.textContent='The new passwords do not match.';status.classList.add('password-status-error');}
+    return;
+  }
+  btn.disabled=true;
+  if(status)status.textContent='Updating password…';
+  try{
+    await api('/api/password',{method:'PUT',body:JSON.stringify({currentPassword,newPassword,confirmPassword})});
+    $('#currentPassword').value='';
+    $('#newPassword').value='';
+    $('#confirmNewPassword').value='';
+    if(status){status.textContent='Password changed successfully.';status.className='helper password-status-ok';}
+    showToast('Password changed successfully.');
+  }catch(err){
+    if(status){status.textContent=err?.message || 'Could not change password.';status.className='helper password-status-error';}
+  }finally{
+    btn.disabled=false;
+  }
+});
 $('#dailyReminderEnabled').addEventListener('change', updateNotificationStatus);
 $('#profilePhotoInput').addEventListener('change', async e => {
   const file = e.target.files?.[0]; if (!file) return;
