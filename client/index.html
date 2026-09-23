@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260923-memoryuniverse-approved2" />
+  <link rel="stylesheet" href="/styles.css?v=20260923-notify-refresh-select-constellation1" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -283,14 +283,16 @@
         <div id="memoryUniverseStats" class="memory-universe-stats universe-extended-section"></div>
 
         <section class="universe-panel constellation-panel">
-          <div class="universe-panel-head">
-            <div><p class="eyebrow">MEMORY CONSTELLATION</p><h3>See the shape of this chapter.</h3><p>Memories orbit the scrapbook and connect to the people who created them. Select a memory to explore it.</p></div>
-            <span class="universe-hint">Drag your eyes, not a feed.</span>
+          <div class="universe-panel-head constellation-panel-head">
+            <div><p class="eyebrow">MEMORY CONSTELLATION</p><h3>See the shape of this chapter.</h3><p>Choose a year and month, then drag across the constellation to explore a smaller set of connected memories.</p></div>
+            <div id="memoryConstellationFilters" class="constellation-filters" aria-label="Constellation period filters"></div>
           </div>
           <div class="constellation-layout">
-            <div id="memoryConstellation" class="memory-constellation" aria-label="Interactive memory constellation">
-              <svg id="memoryConstellationLines" class="memory-constellation-lines" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true"></svg>
-              <div id="memoryConstellationNodes" class="memory-constellation-nodes"></div>
+            <div id="memoryConstellation" class="memory-constellation" aria-label="Interactive draggable memory constellation">
+              <div id="memoryConstellationScene" class="memory-constellation-scene">
+                <svg id="memoryConstellationLines" class="memory-constellation-lines" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div id="memoryConstellationNodes" class="memory-constellation-nodes"></div>
+              </div>
             </div>
             <aside id="memoryUniverseDetail" class="memory-universe-detail">
               <div class="universe-detail-empty">
@@ -327,34 +329,22 @@
           </div>
 
           <div class="universe-lab-tabs" role="tablist" aria-label="Memory Universe features">
-            <button class="active" type="button" data-universe-lab="layers">Memory Layers</button>
-            <button type="button" data-universe-lab="trails">Memory Trails</button>
-            <button type="button" data-universe-lab="interview">Memory Interview</button>
-            <button type="button" data-universe-lab="voice">Voice Portraits</button>
-            <button type="button" data-universe-lab="voiceMemory">Voice Memories</button>
+            <button class="active" type="button" data-universe-lab="voiceMemory">Voice Memories</button>
             <button type="button" data-universe-lab="letters">Letter To</button>
-            <button type="button" data-universe-lab="collaborative">Collaborative Pages</button>
             <button type="button" data-universe-lab="prompts">Memory Prompts</button>
             <button type="button" data-universe-lab="anniversaries">Anniversary Resurfacing</button>
-            <button type="button" data-universe-lab="rituals">Private Rituals</button>
             <button type="button" data-universe-lab="box">Memory Box</button>
             <button type="button" data-universe-lab="themes">Living Theme</button>
             <button type="button" data-universe-lab="peopleMemory">People in My Memory</button>
-            <button type="button" data-universe-lab="versions">Memory Versions</button>
             <button type="button" data-universe-lab="vault">Personal Vault</button>
             <button type="button" data-universe-lab="family">Family History</button>
             <button type="button" data-universe-lab="inherited">Inherited Memory</button>
-            <button type="button" data-universe-lab="qr">QR Keepsakes</button>
             <button type="button" data-universe-lab="secret">Secret Contributors</button>
-            <button type="button" data-universe-lab="unfinished">Unfinished Memories</button>
             <button type="button" data-universe-lab="faith">Catholic Reflection Journal</button>
             <button type="button" data-universe-lab="wall">Freedom Wall</button>
             <button type="button" data-universe-lab="capsules">Future Capsules</button>
-            <button type="button" data-universe-lab="heirlooms">Digital Heirlooms</button>
             <button type="button" data-universe-lab="museum">Life Museum</button>
-            <button type="button" data-universe-lab="archive">Archive</button>
           </div>
-          <p class="universe-overlap-note">Also connected inside Memory Universe: <strong>Memory Echoes</strong> is the Then &amp; Now section above. Anniversary Resurfacing builds on that same idea, while Memory Versions expands Memory Layers.</p>
 
           <div id="universeLabStage" class="universe-lab-stage" aria-live="polite"></div>
         </section>
@@ -755,6 +745,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260923-memoryuniverse-approved2" defer></script>
+  <script src="/app.js?v=20260923-notify-refresh-select-constellation1" defer></script>
 </body>
 </html>
