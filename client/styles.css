@@ -12956,8 +12956,8 @@ html.native-app .universe-replay-here{
 html.native-app .universe-overlap-note{display:none!important}
 html.native-app .universe-lab-tabs button[hidden]{display:none!important}
 html.native-app .universe-hero .eyebrow:after{
-  content:" · MOBILE BETA";
-  opacity:.65;
+  content:"";
+  display:none;
 }
 html.native-app .memory-universe-view{
   width:calc(100vw - 14px);
@@ -13469,4 +13469,235 @@ html[data-theme="night"] #memoryUniverseView .lab-memory-picker-menu{
   color:#f4e9e6!important;
   border-color:#4b3b40!important;
   background:#201a1c!important
+}
+
+
+/* ===== 2026-09-23 APPROVED MEMORY UNIVERSE + CANVAS MOTION ===== */
+
+/* Keep the official release to the previously approved mobile-beta set. */
+#memoryUniverseView .memory-universe-stats,
+#memoryUniverseView .universe-perspectives-panel,
+#memoryUniverseView .universe-overlap-note,
+#memoryUniverseView .universe-hero-actions,
+#memoryUniverseView .universe-replay-here{
+  display:none!important;
+}
+#memoryUniverseView .universe-lab-tabs button[hidden]{
+  display:none!important;
+}
+
+/* Author names and @tags are profile navigation, not decorative text. */
+.profile-author-link,
+.universe-profile-link{
+  appearance:none;
+  -webkit-appearance:none;
+  border:0;
+  padding:0;
+  margin:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  text-align:left;
+  cursor:pointer;
+}
+.profile-author-link:hover strong,
+.profile-author-link:focus-visible strong,
+.universe-profile-link:hover strong,
+.universe-profile-link:focus-visible strong{
+  text-decoration:underline;
+}
+.profile-author-link:focus-visible,
+.universe-profile-link:focus-visible{
+  outline:2px solid var(--rose);
+  outline-offset:3px;
+  border-radius:8px;
+}
+
+/* Pull-to-refresh now has motion throughout every mobile section. */
+@media(max-width:800px){
+  #journalApp{
+    overscroll-behavior-y:contain;
+  }
+  .scrapella-pull-refresh{
+    min-width:128px;
+    justify-content:center;
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+  }
+  .scrapella-pull-refresh span{
+    display:inline-grid;
+    place-items:center;
+    width:22px;
+    height:22px;
+    border-radius:50%;
+    transform:rotate(calc(260deg * var(--pull)));
+    transition:transform .08s linear;
+  }
+  .scrapella-pull-refresh.visible:not(.refreshing){
+    animation:scrapellaPullFloat .8s ease-in-out infinite alternate;
+  }
+  .scrapella-pull-refresh.refreshing span{
+    animation:scrapellaPullSpin .62s linear infinite;
+  }
+}
+@keyframes scrapellaPullFloat{
+  from{margin-top:0}
+  to{margin-top:4px}
+}
+
+/* Scrapbook canvas: GPU-composited dragging + rotation. */
+.canvas-item,
+.saved-canvas-item{
+  transform-origin:center center;
+}
+.canvas-item{
+  will-change:transform,left,top,width,height;
+  transition:none!important;
+}
+.canvas-item.dragging,
+.canvas-item.rotating,
+.canvas-item.resizing{
+  transition:none!important;
+}
+.canvas-rotate-handle{
+  position:absolute;
+  z-index:10;
+  left:-11px;
+  top:-11px;
+  width:29px;
+  height:29px;
+  display:grid;
+  place-items:center;
+  border:3px solid #fff;
+  border-radius:50%;
+  background:var(--rose-dark);
+  color:#fff;
+  box-shadow:0 4px 12px rgba(55,32,35,.28);
+  cursor:grab;
+  touch-action:none;
+  user-select:none;
+  font:800 15px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.canvas-rotate-handle:active,
+.canvas-item.rotating .canvas-rotate-handle{
+  cursor:grabbing;
+}
+.canvas-item.dragging{
+  will-change:transform;
+}
+.canvas-item.dragging img,
+.canvas-item.dragging .canvas-text-content{
+  pointer-events:none;
+}
+
+/* Night mode must win over all Living Theme light backgrounds. */
+html[data-theme="night"] #memoryUniverseView{
+  --paper:#2b2326;
+  --paper-2:#31272a;
+  --ink:#f5ece9;
+  --muted:#b8a6a3;
+  --line:#4f3e44;
+  --rose-soft:#3b2d32;
+  --rose-dark:#e2a9b8;
+  color:var(--ink)!important;
+  background:#1d1719!important;
+}
+html[data-theme="night"] #memoryUniverseView[data-living-theme]{
+  --living-surface:#2b2326!important;
+  --living-surface-2:#352a2e!important;
+  --living-line:#514047!important;
+  --living-muted:#b8a6a3!important;
+  color:var(--ink)!important;
+  background:
+    radial-gradient(circle at 84% 3%,color-mix(in srgb,var(--universe-accent) 12%,transparent),transparent 28%),
+    linear-gradient(180deg,#211a1d 0,#1d1719 620px)!important;
+}
+html[data-theme="night"] #memoryUniverseView[data-living-theme] .universe-hero,
+html[data-theme="night"] #memoryUniverseView[data-living-theme] .universe-panel,
+html[data-theme="night"] #memoryUniverseView[data-living-theme] .memory-universe-detail,
+html[data-theme="night"] #memoryUniverseView[data-living-theme] .lab-workbench,
+html[data-theme="night"] #memoryUniverseView[data-living-theme] .lab-compose-card,
+html[data-theme="night"] #memoryUniverseView[data-living-theme] .theme-picker,
+html[data-theme="night"] #memoryUniverseView[data-living-theme] .living-theme-preview{
+  color:var(--ink)!important;
+  border-color:var(--living-line)!important;
+  background:#2b2326!important;
+}
+html[data-theme="night"] #memoryUniverseView[data-living-theme="school"] .universe-panel{
+  background:
+    repeating-linear-gradient(to bottom,transparent 0,transparent 29px,rgba(255,255,255,.035) 30px),
+    #2b2326!important;
+}
+html[data-theme="night"] #memoryUniverseView .universe-panel h2,
+html[data-theme="night"] #memoryUniverseView .universe-panel h3,
+html[data-theme="night"] #memoryUniverseView .universe-panel h4,
+html[data-theme="night"] #memoryUniverseView .universe-hero h2,
+html[data-theme="night"] #memoryUniverseView .lab-workbench h4,
+html[data-theme="night"] #memoryUniverseView .lab-compose-card h4{
+  color:#f7efec!important;
+}
+html[data-theme="night"] #memoryUniverseView p,
+html[data-theme="night"] #memoryUniverseView small,
+html[data-theme="night"] #memoryUniverseView .helper,
+html[data-theme="night"] #memoryUniverseView .universe-hint{
+  color:#b9a7a4!important;
+}
+html[data-theme="night"] #memoryUniverseView .eyebrow{
+  color:#c8b993!important;
+}
+html[data-theme="night"] #memoryUniverseView .memory-echo-card,
+html[data-theme="night"] #memoryUniverseView .universe-mini-memory,
+html[data-theme="night"] #memoryUniverseView .voice-memory-card,
+html[data-theme="night"] #memoryUniverseView .letter-preview-list article,
+html[data-theme="night"] #memoryUniverseView .memory-box-grid article,
+html[data-theme="night"] #memoryUniverseView .people-memory-map button,
+html[data-theme="night"] #memoryUniverseView .vault-grid article,
+html[data-theme="night"] #memoryUniverseView .family-tree-branches article,
+html[data-theme="night"] #memoryUniverseView .inheritance-list article,
+html[data-theme="night"] #memoryUniverseView .secret-project-card,
+html[data-theme="night"] #memoryUniverseView .faith-journal-page,
+html[data-theme="night"] #memoryUniverseView .freedom-note,
+html[data-theme="night"] #memoryUniverseView .capsule-card,
+html[data-theme="night"] #memoryUniverseView .life-museum-card{
+  color:var(--ink)!important;
+  border-color:#4d3c42!important;
+  background:#2a2225!important;
+}
+html[data-theme="night"] #memoryUniverseView .memory-echo-label,
+html[data-theme="night"] #memoryUniverseView .universe-mini-memory,
+html[data-theme="night"] #memoryUniverseView .lab-memory-picker-button,
+html[data-theme="night"] #memoryUniverseView .lab-memory-picker-menu,
+html[data-theme="night"] #memoryUniverseView input,
+html[data-theme="night"] #memoryUniverseView textarea,
+html[data-theme="night"] #memoryUniverseView select{
+  color:var(--ink)!important;
+}
+html[data-theme="night"] #memoryUniverseView input,
+html[data-theme="night"] #memoryUniverseView textarea,
+html[data-theme="night"] #memoryUniverseView select,
+html[data-theme="night"] #memoryUniverseView .lab-memory-picker-button,
+html[data-theme="night"] #memoryUniverseView .lab-memory-picker-menu{
+  border-color:#4f3e44!important;
+  background:#211a1d!important;
+}
+html[data-theme="night"] #memoryUniverseView .memory-constellation{
+  border-color:#4c3b40!important;
+  background:
+    radial-gradient(circle at 50% 50%,color-mix(in srgb,var(--universe-accent,#a76477) 11%,transparent),transparent 25%),
+    #1a1517!important;
+}
+html[data-theme="night"] #memoryUniverseView .constellation-book-node,
+html[data-theme="night"] #memoryUniverseView .constellation-memory-node .universe-memory-thumb{
+  background:#302629!important;
+  border-color:#5a464d!important;
+}
+html[data-theme="night"] #memoryUniverseView .theme-behavior-card{
+  background:#33292c!important;
+  color:var(--ink)!important;
+}
+html[data-theme="night"] #memoryUniverseView .secret-project-card.sealed{
+  background:linear-gradient(145deg,#34272c,#2b2326)!important;
+}
+html[data-theme="night"] #memoryUniverseView .freedom-wall-canvas{
+  background:transparent!important;
 }
