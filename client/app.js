@@ -5466,6 +5466,7 @@ let universeCanSeeExtended = true;
 let universeOwnerOverride = false;
 let universeOwnerOverrideAvailable = false;
 let universeHiddenCategories = [];
+let universeReflectionReligion = 'general';
 let universeOfficialState = {};
 let universeStateSaveTimer = null;
 let universeReplayTimer = null;
@@ -5879,6 +5880,7 @@ async function loadMemoryUniverse(tag = me?.tag, { override = universeOwnerOverr
   universeOwnerOverride=data.ownerOverrideActive===true;
   universeOwnerOverrideAvailable=data.ownerOverrideAvailable===true;
   universeHiddenCategories=Array.isArray(data.hiddenCategories)?data.hiddenCategories:[];
+  universeReflectionReligion=data.reflectionReligion || 'general';
   universeOfficialState=data.state && typeof data.state==='object' ? data.state : {};
   entries=Array.isArray(data.entries)?data.entries:[];
   authorProfiles=data.profiles && typeof data.profiles==='object' ? data.profiles : {};
@@ -6805,8 +6807,8 @@ function renderUniverseFaithLab(){
   const today=localDateKey();
   const item=all[today]||{};
   const canEdit=(universeTargetTag || me?.tag)===me?.tag;
-  const storedReligion=item.religion || ((item.reading1||item.gospel)?'catholic':'general');
-  const inferred=canEdit ? (me?.reflectionReligion || storedReligion) : storedReligion;
+  const storedReligion=item.religion || ((item.reading1||item.gospel)?'catholic':'');
+  const inferred=canEdit ? (me?.reflectionReligion || storedReligion || 'general') : (storedReligion || universeReflectionReligion || 'general');
   const religion=REFLECTION_RELIGIONS.some(([key])=>key===inferred)?inferred:'general';
   const savedRefs=Boolean(item.reading1 && item.psalm && item.gospel);
   const catholic=religion==='catholic';
