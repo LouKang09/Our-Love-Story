@@ -768,7 +768,9 @@ async function sendNativeUserPush(social,{to,title,body,tag='scrapbook-social',u
             android:{
               priority:'high',
               notification:{
-                channel_id:'messages',
+                channel_id:String(tag||'').startsWith('chat-') || String(tag||'').startsWith('mention-chat') ? 'messages' : 'activity',
+                icon:'ic_stat_scrapella',
+                color:'#6e3d46',
                 sound:'default',
                 default_vibrate_timings:true,
                 visibility:'PRIVATE'
