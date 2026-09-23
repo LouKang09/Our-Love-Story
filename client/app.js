@@ -7698,16 +7698,28 @@ async function showNativeSocialNotification(payload = {}) {
   if(!local)return;
   await ensureNativeChatNotifications();
   try{
-    const data=await api('/api/notifications');
-    const items=Array.isArray(data?.items)?data.items:[];
-    const item=items.find(candidate=>{
-      if(candidate.type!==type)return false;
-      if(payload.from && candidate.actor?.tag!==payload.from)return false;
-      if(payload.entryId && candidate.entryId!==payload.entryId)return false;
-      return true;
-    }) || items.find(candidate=>candidate.type===type);
-    if(!item)return;
-    const key=String(item.id || `${type}:${item.createdAt||Date.now()}`);
+    let item={
+      id:payload.notificationId || '',
+      type,
+      actor:payload.actor || (payload.from ? {tag:payload.from,displayName:payload.from} : null),
+      scrapbookId:payload.scrapbookId || null,
+      entryId:payload.entryId || null,
+      scrapbookName:payload.scrapbookName || '',
+      excerpt:payload.excerpt || '',
+      createdAt:payload.createdAt || ''
+    };
+    if(!item.id || (!item.excerpt && !item.actor?.tag)){
+      await new Promise(resolve=>setTimeout(resolve,220));
+      const data=await api('/api/notifications');
+      const items=Array.isArray(data?.items)?data.items:[];
+      item=items.find(candidate=>{
+        if(candidate.type!==type)return false;
+        if(payload.from && candidate.actor?.tag!==payload.from)return false;
+        if(payload.entryId && candidate.entryId!==payload.entryId)return false;
+        return true;
+      }) || item;
+    }
+    const key=String(item.id || payload.notificationId || `${type}:${item.createdAt||Date.now()}`);
     if(nativeSocialNotificationSeen.has(key))return;
     nativeSocialNotificationSeen.add(key);
     if(nativeSocialNotificationSeen.size>120){
