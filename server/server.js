@@ -566,7 +566,17 @@ async function catholicVerseText(ref){
   if(!parsed||!parsed.verses.length)return {reference:ref,translation:'CPDV',verses:[]};
   const bible=await cpdvBible();
   const book=bible.byName.get(String(parsed.book).toLowerCase());
-  const chapter=book?.chapters?.find(item=>Number(item.chapter)===parsed.chapter);
+  let sourceChapter=parsed.chapter;
+  // CPDV follows Vulgate Psalm numbering. USCCB/NABRE references use the
+  // modern Hebrew numbering, so map the common shifted range before lookup.
+  if(book?.name==='Psalms'){
+    if(parsed.chapter===9 || parsed.chapter===10)sourceChapter=9;
+    else if(parsed.chapter>=11 && parsed.chapter<=113)sourceChapter=parsed.chapter-1;
+    else if(parsed.chapter===114 || parsed.chapter===115)sourceChapter=113;
+    else if(parsed.chapter>=117 && parsed.chapter<=146)sourceChapter=parsed.chapter-1;
+    else if(parsed.chapter===147)sourceChapter=146;
+  }
+  const chapter=book?.chapters?.find(item=>Number(item.chapter)===sourceChapter);
   const byVerse=new Map((chapter?.verses||[]).map(item=>[Number(item.verse),item]));
   const verses=parsed.verses.map(number=>byVerse.get(number)).filter(Boolean).map(item=>({
     verse:Number(item.verse),
