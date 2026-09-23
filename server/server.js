@@ -1747,6 +1747,9 @@ async function handleApi(req, res, url) {
       hiddenCategories:Array.isArray(social.profiles?.[target]?.hiddenUniverseCategories)
         ? social.profiles[target].hiddenUniverseCategories
         : [],
+      reflectionReligion:['general','catholic','christian','muslim','jewish','hindu','buddhist','other'].includes(String(social.profiles?.[target]?.reflectionReligion||''))
+        ? String(social.profiles[target].reflectionReligion)
+        : 'general',
       books:books.map(book => ({
         ...decorateBook(social,book,user),
         universeAccess:book.type === 'personal' ? personalPrivacy(book) : (book.type === 'group' ? 'group-member' : 'partner')
