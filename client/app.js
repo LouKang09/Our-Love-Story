@@ -3024,7 +3024,7 @@ function closeProfileImageViewer() {
 journalApp?.addEventListener('click',e=>{
   const img=e.target?.closest?.('img');
   if(!img || img.closest('#profileImageViewer') || img.classList.contains('brand-header-logo'))return;
-  if(img.matches('.avatar,.person-profile-avatar,.mobile-book-context-avatar,.home-profile-avatar,.person-list-avatar,.notification-avatar,.chat-list-avatar,.chat-stack-avatar,.universe-person-avatar,.universe-detail-avatar,.memory-replay-avatar,.people-memory-avatar'))return;
+  if(img.closest('[data-profile-tag],.avatar,.comment-author,.person-list-row,.mobile-book-profile-link,.universe-profile-link'))return;
   const src=img.currentSrc || img.src;
   if(!src)return;
   e.preventDefault();
