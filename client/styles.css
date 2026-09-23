@@ -14020,3 +14020,338 @@ html[data-theme="night"] .canvas-guide-vertical,html[data-theme="night"] .canvas
 }
 .memory-share-capture-card.memory-share-dark .saved-text-item{color:#f4ece9!important;background:rgba(255,255,255,.035)!important}
 #inheritedPreviewForm,#inheritedPreviewForm .lab-field{overflow:visible!important}
+
+
+/* ===== 2026-09-23 JOURNAL + PROFILE SECURITY + REALTIME PULL POLISH ===== */
+
+/* Profile About stays a tidy fixed height and only resizes sideways on desktop. */
+#profileBio{
+  width:min(72%,520px)!important;
+  min-width:260px;
+  max-width:100%;
+  height:96px!important;
+  min-height:96px!important;
+  max-height:96px!important;
+  resize:horizontal!important;
+  box-sizing:border-box;
+}
+.profile-password-settings{
+  display:grid;
+  gap:10px;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:rgba(255,255,255,.34);
+}
+.profile-password-settings-head{
+  display:grid;
+  gap:3px;
+}
+.profile-password-settings-head strong{
+  color:var(--ink);
+  font:800 11px/1.2 ui-sans-serif,system-ui,sans-serif;
+}
+.profile-password-settings-head p{
+  margin:0;
+  color:var(--muted);
+  font-size:9px;
+  line-height:1.45;
+}
+.profile-password-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px;
+}
+.profile-password-grid .current-password-row{
+  grid-column:1/-1;
+}
+.profile-password-settings .password-field{
+  width:100%;
+}
+.profile-password-settings .password-field input{
+  width:100%;
+  min-width:0;
+}
+.profile-password-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.profile-password-actions .helper{
+  margin:0;
+}
+.password-status-ok{color:#356b4b!important;font-weight:700}
+.password-status-error{color:#9b3e4d!important;font-weight:700}
+html[data-theme="night"] .profile-password-settings{
+  background:#2a2225!important;
+  border-color:#4d3d42!important;
+}
+html[data-theme="night"] .password-status-ok{color:#9dd8b0!important}
+html[data-theme="night"] .password-status-error{color:#f2a6b4!important}
+
+/* Living Theme visitors see the owner's selection but cannot alter it. */
+.theme-picker button:disabled{
+  cursor:not-allowed;
+  opacity:.66;
+}
+.theme-picker button.active:disabled{
+  opacity:1;
+}
+.theme-readonly-note{
+  margin:3px 0 0;
+  padding:10px 11px;
+  border:1px solid rgba(135,83,96,.14);
+  border-radius:11px;
+  color:var(--muted);
+  background:rgba(255,255,255,.34);
+  font:600 9px/1.45 ui-sans-serif,system-ui,sans-serif;
+}
+.theme-readonly-note strong{color:var(--ink)}
+html[data-theme="night"] .theme-readonly-note{
+  background:#251e21;
+  border-color:#4d3d42;
+}
+
+/* Catholic Reflection Journal */
+.faith-reading-source{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:9px 11px;
+  border:1px dashed rgba(121,101,76,.22);
+  border-radius:10px;
+  color:#756451;
+  background:rgba(255,253,247,.48);
+  font:650 8px/1.45 ui-sans-serif,system-ui,sans-serif;
+}
+.faith-reading-source button{
+  flex:0 0 auto;
+  padding:6px 9px;
+  font-size:8px;
+}
+.faith-response-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  align-items:stretch;
+}
+.faith-response-grid label{
+  min-width:0;
+}
+.faith-response-grid textarea{
+  width:100%;
+  height:132px!important;
+  min-height:132px!important;
+  resize:vertical;
+}
+.faith-reading-grid input[readonly]{
+  cursor:default;
+  font-weight:700;
+}
+.faith-history{
+  display:grid;
+  gap:11px;
+  padding:0 26px 26px;
+  background:#f4efe4;
+}
+.faith-history-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding-top:4px;
+}
+.faith-history-head h4{
+  margin:3px 0 0;
+  color:#4b4136;
+  font:700 18px/1.15 Georgia,serif;
+}
+.faith-history-head>span{
+  min-width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(121,101,76,.18);
+  border-radius:999px;
+  color:#756451;
+  background:rgba(255,253,247,.68);
+  font:800 9px ui-sans-serif,system-ui,sans-serif;
+}
+.faith-history-empty{
+  padding:16px;
+  border:1px dashed rgba(121,101,76,.2);
+  border-radius:12px;
+  color:#817263;
+  text-align:center;
+  font-size:9px;
+}
+.faith-history-item{
+  overflow:hidden;
+  border:1px solid rgba(121,101,76,.17);
+  border-radius:13px;
+  background:rgba(255,253,247,.68);
+}
+.faith-history-item summary{
+  list-style:none;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 13px;
+  cursor:pointer;
+}
+.faith-history-item summary::-webkit-details-marker{display:none}
+.faith-history-item summary>span{
+  min-width:0;
+  display:grid;
+  gap:2px;
+}
+.faith-history-item summary strong{
+  color:#4b4136;
+  font:800 10px/1.3 ui-sans-serif,system-ui,sans-serif;
+}
+.faith-history-item summary small{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#817263;
+  font:600 8px/1.3 ui-sans-serif,system-ui,sans-serif;
+}
+.faith-history-item summary>b{
+  color:#8e7757;
+  transition:transform .16s ease;
+}
+.faith-history-item[open] summary>b{transform:rotate(180deg)}
+.faith-history-body{
+  display:grid;
+  gap:11px;
+  padding:0 13px 14px;
+  border-top:1px solid rgba(121,101,76,.12);
+}
+.faith-history-body>div:not(.faith-history-readings){
+  padding-top:10px;
+}
+.faith-history-body small{
+  color:#8e7757;
+  font:800 7px/1.2 ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.08em;
+}
+.faith-history-body p{
+  margin:4px 0 0;
+  color:#51463b;
+  font:500 9px/1.55 ui-sans-serif,system-ui,sans-serif;
+  white-space:pre-wrap;
+}
+.faith-history-readings{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  padding-top:10px;
+}
+.faith-history-readings span{
+  display:grid;
+  gap:3px;
+  padding:9px;
+  border-radius:9px;
+  background:rgba(232,220,199,.48);
+}
+.faith-history-readings strong{
+  color:#51463b;
+  font:700 8px/1.35 ui-sans-serif,system-ui,sans-serif;
+}
+
+/* Replace brightness filtering with a genuinely readable night palette. */
+html[data-theme="night"] .faith-journal{
+  filter:none!important;
+  border-color:#4a3c37!important;
+  background:#211c19!important;
+}
+html[data-theme="night"] .faith-journal-head{
+  background:linear-gradient(135deg,#352e28,#27221e)!important;
+}
+html[data-theme="night"] .faith-journal-head h4,
+html[data-theme="night"] .faith-history-head h4{
+  color:#f3e8d8!important;
+}
+html[data-theme="night"] .faith-journal-head p:not(.eyebrow),
+html[data-theme="night"] .faith-journal-page label,
+html[data-theme="night"] .faith-reading-source,
+html[data-theme="night"] .faith-history-item summary small{
+  color:#cbbcac!important;
+}
+html[data-theme="night"] .faith-journal-head>span{
+  color:#ddc397!important;
+  border-color:#665644!important;
+}
+html[data-theme="night"] .faith-journal-page{
+  background:
+    repeating-linear-gradient(to bottom,rgba(255,255,255,.015) 0,rgba(255,255,255,.015) 31px,rgba(218,191,154,.06) 32px),
+    #211c19!important;
+}
+html[data-theme="night"] .faith-journal-page input,
+html[data-theme="night"] .faith-journal-page textarea{
+  color:#f4ece2!important;
+  background:#2d2722!important;
+  border-color:#51463b!important;
+}
+html[data-theme="night"] .faith-reading-grid input[readonly]{
+  color:#f0dfc8!important;
+  background:#302922!important;
+}
+html[data-theme="night"] .faith-reading-source{
+  background:#29231f!important;
+  border-color:#51463b!important;
+}
+html[data-theme="night"] .faith-history{
+  background:#211c19!important;
+}
+html[data-theme="night"] .faith-history-head>span,
+html[data-theme="night"] .faith-history-item,
+html[data-theme="night"] .faith-history-empty{
+  color:#cbbcac!important;
+  background:#29231f!important;
+  border-color:#51463b!important;
+}
+html[data-theme="night"] .faith-history-item summary strong,
+html[data-theme="night"] .faith-history-body p,
+html[data-theme="night"] .faith-history-readings strong{
+  color:#f1e6d8!important;
+}
+html[data-theme="night"] .faith-history-body{
+  border-color:#443a31!important;
+}
+html[data-theme="night"] .faith-history-readings span{
+  background:#332b24!important;
+}
+html[data-theme="night"] .faith-history-body small,
+html[data-theme="night"] .faith-history-item summary>b{
+  color:#d6b989!important;
+}
+
+/* Pull-to-refresh now visibly drags Scrapella downward instead of only moving the badge. */
+@media(max-width:800px){
+  body.scrapella-pull-active #journalApp{
+    transform:translate3d(0,var(--scrapella-pull-shift,0px),0)!important;
+    transition:none!important;
+    will-change:transform;
+  }
+  body.scrapella-pull-settling #journalApp{
+    transition:transform .18s cubic-bezier(.2,.8,.2,1)!important;
+  }
+}
+@media(max-width:700px){
+  .faith-response-grid{grid-template-columns:1fr}
+  .faith-reading-source{align-items:flex-start;flex-direction:column}
+  .profile-password-grid{grid-template-columns:1fr}
+  .profile-password-grid .current-password-row{grid-column:auto}
+}
+@media(max-width:800px){
+  #profileBio{
+    width:100%!important;
+    min-width:100%!important;
+    max-width:100%!important;
+    resize:none!important;
+  }
+}
