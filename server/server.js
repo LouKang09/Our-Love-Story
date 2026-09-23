@@ -562,7 +562,8 @@ function cleanCanvasItem(item) {
     y: Math.max(0, Math.min(94, Number(item.y) || 0)),
     w: Math.max(type === 'text' ? 18 : 14, Math.min(96, Number(item.w) || (type === 'text' ? 55 : 34))),
     h: Math.max(type === 'text' ? 8 : 10, Math.min(90, Number(item.h) || (type === 'text' ? 18 : 26))),
-    z: Math.max(1, Math.min(999, Math.round(Number(item.z) || 1)))
+    z: Math.max(1, Math.min(999, Math.round(Number(item.z) || 1))),
+    rotation: ((Number(item.rotation) || 0) % 360 + 360) % 360
   };
   if (common.x + common.w > 100) common.x = Math.max(0, 100 - common.w);
   if (common.y + common.h > 100) common.y = Math.max(0, 100 - common.h);
