@@ -13942,3 +13942,81 @@ html[data-theme="night"] #memoryUniverseView .freedom-note>p{color:#443638!impor
 html[data-theme="night"] #memoryUniverseView .freedom-note header>button:first-child{
   color:#493c39!important;
 }
+
+
+/* ===== 2026-09-23 PROFILE + BOOK FLOW + PINCH + SHARE POLISH ===== */
+@media(max-width:800px){
+  html.native-app .chat-message.mine .chat-message-meta{
+    width:max-content!important;
+    max-width:100%!important;
+    margin-left:auto!important;
+    margin-right:0!important;
+    padding-right:0!important;
+    text-align:right!important;
+  }
+}
+@media(max-width:800px){
+  #coverStage>.mobile-book-shelf{
+    width:min(680px,calc(100% - 4px));
+    margin:0 auto 14px;
+    display:grid!important;
+    position:relative;
+    z-index:12;
+  }
+  #mobileBookPickerSlot{display:block!important;width:100%;min-width:0}
+  #mobileBookPickerSlot>.scrapella-select-control{display:block!important;width:100%!important}
+  #mobileBookPickerSlot .scrapella-select-button{min-height:48px;border-radius:13px;font-size:12px}
+  #coverStage>.mobile-book-shelf + #introBook{margin-top:4px}
+}
+html[data-theme="night"] #coverStage>.mobile-book-shelf{background:#2d2427!important;border-color:#4f3e44!important}
+.book-sharing-panel{
+  width:min(1180px,100%);
+  margin:22px auto 0;
+  padding:22px;
+  border:1px solid var(--line);
+  border-radius:20px;
+  background:rgba(255,250,241,.58);
+  box-shadow:0 14px 34px rgba(60,39,36,.06);
+}
+.book-sharing-panel>.connections-head{margin:0 0 18px}
+.book-sharing-panel #peopleMap{margin-top:10px}
+html[data-theme="night"] .book-sharing-panel{color:var(--ink)!important;background:#2b2326!important;border-color:#4b3b40!important}
+.profiles-directory-head{margin-bottom:16px}
+.memory-constellation{touch-action:none!important}
+.memory-constellation-scene{position:relative!important;width:1280px!important;min-width:1280px!important;height:690px!important}
+.memory-constellation-world{position:absolute;left:0;top:0;width:1280px;height:690px;transform-origin:0 0;will-change:transform}
+.memory-constellation.pinching{cursor:zoom-in!important}
+@media(max-width:800px){
+  .memory-constellation-scene{width:1120px!important;min-width:1120px!important;height:620px!important}
+  .memory-constellation-world{width:1120px;height:620px}
+}
+.canvas-straight-guide{--guide-x:50%;--guide-y:50%;position:absolute;inset:0;z-index:998;pointer-events:none;opacity:0;transition:opacity .08s ease}
+.canvas-straight-guide.show{opacity:1}
+.canvas-guide-vertical,.canvas-guide-horizontal{position:absolute;display:block;background:rgba(151,76,98,.68);box-shadow:0 0 0 1px rgba(255,255,255,.34)}
+.canvas-guide-vertical{left:var(--guide-x);top:0;bottom:0;width:1px}
+.canvas-guide-horizontal{top:var(--guide-y);left:0;right:0;height:1px}
+html[data-theme="night"] .canvas-guide-vertical,html[data-theme="night"] .canvas-guide-horizontal{background:rgba(244,176,197,.82);box-shadow:0 0 0 1px rgba(35,25,29,.58)}
+.memory-share-capture-card{
+  border-radius:28px!important;
+  color:#392b2d!important;
+  border:1px solid rgba(105,77,70,.16)!important;
+  background:linear-gradient(145deg,#fbf6ee 0%,#f3e8df 54%,#efe2da 100%)!important;
+  box-shadow:none!important;
+}
+.memory-share-capture-card::before,.memory-share-capture-card::after{content:none!important;display:none!important}
+.memory-share-capture-card.memory-share-dark{
+  color:#f7efec!important;
+  border-color:#4d3c42!important;
+  background:linear-gradient(145deg,#30262a 0%,#241c20 58%,#1d1719 100%)!important;
+}
+.memory-share-capture-card.memory-share-dark .entry-date,
+.memory-share-capture-card.memory-share-dark h2,
+.memory-share-capture-card.memory-share-dark .entry-meta,
+.memory-share-capture-card.memory-share-dark .entry-meta *{color:#f7efec!important}
+.memory-share-capture-card.memory-share-dark .entry-time{color:#d8c4c8!important;border-color:#554148!important;background:#34282d!important}
+.memory-share-capture-card.memory-share-dark .saved-canvas{color:#f4ece9!important;border-color:#554148!important;background:#2a2125!important}
+.memory-share-capture-card.memory-share-dark .saved-canvas.canvas-lined{
+  background:repeating-linear-gradient(to bottom,transparent 0,transparent 5.3cqw,rgba(231,190,201,.15) 5.3cqw,rgba(231,190,201,.15) calc(5.3cqw + 1px)),#2a2125!important;
+}
+.memory-share-capture-card.memory-share-dark .saved-text-item{color:#f4ece9!important;background:rgba(255,255,255,.035)!important}
+#inheritedPreviewForm,#inheritedPreviewForm .lab-field{overflow:visible!important}
