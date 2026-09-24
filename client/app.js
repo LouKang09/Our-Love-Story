@@ -675,6 +675,16 @@ function phoneMainScrollTop(scroller=phonePullScroller){
 function phoneAtScrollTop(scroller=phonePullScroller){
   return phoneMainScrollTop(scroller)<=6;
 }
+function phonePullTopBoundary(){
+  const topbar=$('#journalApp>.topbar');
+  const rect=topbar?.getBoundingClientRect?.();
+  return Math.max(0,Number(rect?.bottom||0));
+}
+function positionPhonePullIndicator(el){
+  if(!el)return;
+  const boundary=phonePullTopBoundary();
+  if(boundary>0)el.style.top=`${Math.round(boundary+10)}px`;
+}
 function phonePullIndicator(){
   let el=document.querySelector('.scrapella-pull-refresh');
   if(!el){
@@ -683,6 +693,7 @@ function phonePullIndicator(){
     el.innerHTML='<span>↻</span><b>Pull to refresh</b>';
     document.body.appendChild(el);
   }
+  positionPhonePullIndicator(el);
   return el;
 }
 async function refreshNativePhoneContext(){
@@ -768,10 +779,12 @@ function phonePullReset({force=false}={}){
 document.addEventListener('touchstart',e=>{
   if(e.target.closest?.('.memory-constellation,.scrapella-select-menu,.chat-messages,.scrap-canvas-stage')){phonePullReset();return;}
   if(!isPhoneUI()||phonePullRefreshing||e.touches.length!==1){phonePullReset();return;}
+  const touchY=e.touches[0].clientY;
+  if(touchY<=phonePullTopBoundary()+4){phonePullReset();return;}
   const nearest=nearestPhoneScroller(e.target);
   phonePullScroller=(nearest && Number(nearest.scrollTop||0)>6) ? nearest : null;
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
-  phonePullStartY=e.touches[0].clientY;
+  phonePullStartY=touchY;
   phonePullDistance=0;
   document.body.classList.remove('scrapella-pull-settling');
 },{passive:true,capture:true});
@@ -5550,10 +5563,12 @@ function wireMemoryConstellationPan(){
   const baseHeight=Number(world.dataset.baseHeight)||world.offsetHeight||(isPhoneUI()?620:690);
   world.dataset.baseWidth=String(baseWidth);
   world.dataset.baseHeight=String(baseHeight);
-  let scale=clamp(Number(viewport.dataset.zoom)||1,.65,2.2);
+  const minScale=isPhoneUI()?0.35:0.48;
+  const maxScale=2.2;
+  let scale=clamp(Number(viewport.dataset.zoom)||1,minScale,maxScale);
 
   const applyScale=next=>{
-    scale=clamp(next,.65,2.2);
+    scale=clamp(next,minScale,maxScale);
     viewport.dataset.zoom=String(scale);
     world.style.transform=`scale(${scale})`;
     scene.style.width=`${baseWidth*scale}px`;
@@ -5603,7 +5618,7 @@ function wireMemoryConstellationPan(){
       const [a,b]=[...pointers.values()].slice(0,2);
       const mid=relativePoint(a,b);
       const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
-      const nextScale=clamp(pinch.scale*(distance/pinch.distance),.65,2.2);
+      const nextScale=clamp(pinch.scale*(distance/pinch.distance),minScale,maxScale);
       applyScale(nextScale);
       viewport.scrollLeft=Math.max(0,pinch.contentX*scale-mid.x);
       viewport.scrollTop=Math.max(0,pinch.contentY*scale-mid.y);
@@ -5990,9 +6005,96 @@ function finalizeUniverseControls(stage=$('#universeLabStage')){
   });
 }
 
+let universeCategoryActionPopover=null;
+let universeCategoryActionOutsideHandler=null;
+function closeUniverseCategoryActionPopover(){
+  if(universeCategoryActionPopover){
+    universeCategoryActionPopover.remove();
+    universeCategoryActionPopover=null;
+  }
+  if(universeCategoryActionOutsideHandler){
+    document.removeEventListener('pointerdown',universeCategoryActionOutsideHandler,true);
+    universeCategoryActionOutsideHandler=null;
+  }
+}
+function showUniverseCategoryActionPopover(mode,anchor,point=null){
+  if((universeTargetTag || me?.tag)!==me?.tag || !OFFICIAL_UNIVERSE_MODES.includes(mode))return;
+  closeUniverseCategoryActionPopover();
+  const pop=document.createElement('div');
+  pop.className='universe-category-action-popover';
+  pop.setAttribute('role','menu');
+  pop.innerHTML=`<button type="button" role="menuitem" data-hide-universe-popover><span aria-hidden="true">⊘</span> Hide</button>`;
+  document.body.appendChild(pop);
+  universeCategoryActionPopover=pop;
+  requestAnimationFrame(()=>{
+    const anchorRect=anchor?.getBoundingClientRect?.() || {left:window.innerWidth/2,top:window.innerHeight/2,bottom:window.innerHeight/2,width:0};
+    const rect=pop.getBoundingClientRect();
+    const px=Number(point?.x);
+    const py=Number(point?.y);
+    let left=Number.isFinite(px)?px-rect.width/2:anchorRect.left+(anchorRect.width-rect.width)/2;
+    let top=Number.isFinite(py)?py+10:anchorRect.bottom+7;
+    left=Math.max(8,Math.min(window.innerWidth-rect.width-8,left));
+    if(top+rect.height>window.innerHeight-8)top=Math.max(8,anchorRect.top-rect.height-7);
+    pop.style.left=`${left}px`;
+    pop.style.top=`${top}px`;
+  });
+  pop.querySelector('[data-hide-universe-popover]')?.addEventListener('click',async e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    closeUniverseCategoryActionPopover();
+    await hideUniverseCategory(mode);
+  });
+  setTimeout(()=>{
+    if(universeCategoryActionPopover!==pop)return;
+    universeCategoryActionOutsideHandler=e=>{
+      if(!pop.contains(e.target) && e.target!==anchor)closeUniverseCategoryActionPopover();
+    };
+    document.addEventListener('pointerdown',universeCategoryActionOutsideHandler,true);
+  },0);
+}
+function wireUniverseCategoryLongPress(btn,mode,enabled){
+  btn.onpointerdown=null;
+  btn.onpointermove=null;
+  btn.onpointerup=null;
+  btn.onpointercancel=null;
+  btn.oncontextmenu=null;
+  if(!enabled)return;
+  let timer=null,startX=0,startY=0,longPressed=false;
+  btn.onpointerdown=e=>{
+    if(e.pointerType==='mouse' && e.button!==0)return;
+    startX=e.clientX;
+    startY=e.clientY;
+    longPressed=false;
+    clearTimeout(timer);
+    const point={x:e.clientX,y:e.clientY};
+    timer=setTimeout(()=>{
+      longPressed=true;
+      btn._suppressUniverseClick=true;
+      showUniverseCategoryActionPopover(mode,btn,point);
+      if(navigator.vibrate)navigator.vibrate(18);
+    },430);
+  };
+  btn.onpointermove=e=>{
+    if(Math.hypot(e.clientX-startX,e.clientY-startY)>13)clearTimeout(timer);
+  };
+  const finish=()=>{
+    clearTimeout(timer);
+    if(longPressed)setTimeout(()=>{btn._suppressUniverseClick=false;},520);
+  };
+  btn.onpointerup=finish;
+  btn.onpointercancel=finish;
+  btn.oncontextmenu=e=>{
+    e.preventDefault();
+    btn._suppressUniverseClick=true;
+    showUniverseCategoryActionPopover(mode,btn,{x:e.clientX,y:e.clientY});
+    setTimeout(()=>{btn._suppressUniverseClick=false;},520);
+  };
+}
+
 function renderUniverseLabs(){
   const stage = $('#universeLabStage');
   if (!stage) return;
+  closeUniverseCategoryActionPopover();
   const visible=visibleUniverseModes();
   if (!visible.includes(universeLabMode)) universeLabMode = visible[0] || '';
   const self=(universeTargetTag || me?.tag)===me?.tag;
@@ -6003,13 +6105,16 @@ function renderUniverseLabs(){
     const official=OFFICIAL_UNIVERSE_MODES.includes(mode);
     const hidden=universeHiddenCategories.includes(mode);
     item.hidden=!official || hidden;
-    btn.onclick=official && !hidden ? (()=>universeLabSetMode(mode)) : null;
+    btn.onclick=official && !hidden ? (e=>{
+      if(btn._suppressUniverseClick){
+        e?.preventDefault?.();
+        btn._suppressUniverseClick=false;
+        return;
+      }
+      universeLabSetMode(mode);
+    }) : null;
     btn.classList.toggle('active',official && !hidden && mode===universeLabMode);
-    const hideBtn=item.querySelector('[data-hide-universe-category]');
-    if(hideBtn){
-      hideBtn.hidden=!self || hidden;
-      hideBtn.onclick=self && !hidden ? (e=>{e.preventDefault();e.stopPropagation();hideUniverseCategory(mode);}) : null;
-    }
+    wireUniverseCategoryLongPress(btn,mode,self && official && !hidden);
   });
   if(!visible.length){
     stage.innerHTML='<div class="universe-empty wide"><span>◌</span><strong>All Memory Universe categories are hidden.</strong><p>Open your Profile settings to show categories again.</p></div>';
