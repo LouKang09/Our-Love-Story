@@ -14702,3 +14702,17 @@ html[data-theme="night"] .universe-category-guide-btn{
 .memory-constellation[data-vertical-page-scroll="1"]{
   touch-action:pan-y!important;
 }
+
+
+/* ===== 2026-09-25 VISIBLE PULL-TO-REFRESH ===== */
+@media(max-width:800px){
+  .scrapella-pull-refresh{
+    z-index:5205!important;
+    top:var(--scrapella-pull-top,calc(env(safe-area-inset-top,0px) + 74px))!important;
+    isolation:isolate;
+    box-shadow:0 12px 34px rgba(0,0,0,.24)!important;
+  }
+  .scrapella-pull-refresh.visible{
+    visibility:visible!important;
+  }
+}

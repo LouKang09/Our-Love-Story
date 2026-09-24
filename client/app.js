@@ -685,7 +685,10 @@ function phonePullTopBoundary(){
 function positionPhonePullIndicator(el){
   if(!el)return;
   const boundary=phonePullTopBoundary();
-  if(boundary>0)el.style.top=`${Math.round(boundary+10)}px`;
+  const top=Math.round((boundary>0?boundary:0)+10);
+  el.style.setProperty('--scrapella-pull-top',`${top}px`);
+  el.style.setProperty('top',`${top}px`,'important');
+  el.style.setProperty('z-index','5205','important');
 }
 function phonePullIndicator(){
   let el=document.querySelector('.scrapella-pull-refresh');
@@ -788,6 +791,7 @@ document.addEventListener('touchstart',e=>{
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
   phonePullStartY=touchY;
   phonePullDistance=0;
+  positionPhonePullIndicator(phonePullIndicator());
   document.body.classList.remove('scrapella-pull-settling');
 },{passive:true,capture:true});
 document.addEventListener('touchmove',e=>{
