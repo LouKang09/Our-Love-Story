@@ -682,24 +682,27 @@ function phonePullTopBoundary(){
   const rect=topbar?.getBoundingClientRect?.();
   return Math.max(0,Number(rect?.bottom||0));
 }
-function positionPhonePullIndicator(el){
-  if(!el)return;
-  const boundary=phonePullTopBoundary();
-  const top=Math.round((boundary>0?boundary:0)+10);
-  el.style.setProperty('--scrapella-pull-top',`${top}px`);
-  el.style.setProperty('top',`${top}px`,'important');
-  el.style.setProperty('z-index','5205','important');
-}
 function phonePullIndicator(){
-  let el=document.querySelector('.scrapella-pull-refresh');
+  const topbar=$('#journalApp>.topbar');
+  let el=topbar?.querySelector('.scrapella-pull-refresh') || document.querySelector('.scrapella-pull-refresh');
   if(!el){
     el=document.createElement('div');
     el.className='scrapella-pull-refresh';
     el.innerHTML='<span>↻</span><b>Pull to refresh</b>';
-    document.body.appendChild(el);
   }
-  positionPhonePullIndicator(el);
+  if(topbar && el.parentElement!==topbar)topbar.appendChild(el);
   return el;
+}
+function syncPhonePullIdleHint(){
+  if(!isPhoneUI() || !me?.tag)return;
+  const el=phonePullIndicator();
+  const atTop=phoneAtScrollTop();
+  el.classList.toggle('idle-visible',atTop && !phonePullRefreshing);
+  if(atTop && !phonePullRefreshing){
+    el.style.setProperty('--pull','0');
+    const label=el.querySelector('b');
+    if(label)label.textContent='Pull to refresh';
+  }
 }
 async function refreshNativePhoneContext(){
   if(phonePullRefreshing || !me?.tag)return;
@@ -778,6 +781,7 @@ function phonePullReset({force=false}={}){
     setTimeout(()=>{
       document.body.classList.remove('scrapella-pull-active','scrapella-pull-settling');
       journalApp?.style.setProperty('--scrapella-pull-shift','0px');
+      syncPhonePullIdleHint();
     },190);
   }
 }
@@ -791,7 +795,7 @@ document.addEventListener('touchstart',e=>{
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
   phonePullStartY=touchY;
   phonePullDistance=0;
-  positionPhonePullIndicator(phonePullIndicator());
+  phonePullIndicator().classList.add('idle-visible');
   document.body.classList.remove('scrapella-pull-settling');
 },{passive:true,capture:true});
 document.addEventListener('touchmove',e=>{
@@ -821,6 +825,9 @@ document.addEventListener('touchend',()=>{
   }
 },{passive:true,capture:true});
 document.addEventListener('touchcancel',()=>phonePullReset({force:true}),{passive:true,capture:true});
+journalApp?.addEventListener('scroll',()=>requestAnimationFrame(syncPhonePullIdleHint),{passive:true});
+window.addEventListener('scroll',()=>requestAnimationFrame(syncPhonePullIdleHint),{passive:true});
+requestAnimationFrame(()=>syncPhonePullIdleHint());
 
 function compactPhoneCount(value) {
   const count = Math.max(0, Number(value) || 0);
@@ -7353,6 +7360,7 @@ function startMemoryReplay(startEntryId='') {
 function showView(mode) {
   const previousMode = currentMode;
   currentMode = mode;
+  requestAnimationFrame(()=>requestAnimationFrame(syncPhonePullIdleHint));
   if (isNativeScrapellaApp() && isPhoneUI() && previousMode !== mode) {
     requestAnimationFrame(() => {
       try { journalApp.scrollTo({ top:0, left:0, behavior:'auto' }); }

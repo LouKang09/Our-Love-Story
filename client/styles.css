@@ -14716,3 +14716,48 @@ html[data-theme="night"] .universe-category-guide-btn{
     visibility:visible!important;
   }
 }
+
+
+/* ===== 2026-09-25 HEADER-ATTACHED PULL-TO-REFRESH ===== */
+@media(max-width:800px){
+  #journalApp>.topbar{
+    overflow:visible!important;
+  }
+  #journalApp>.topbar .scrapella-pull-refresh{
+    position:absolute!important;
+    z-index:4!important;
+    left:50%!important;
+    top:calc(100% + 10px)!important;
+    right:auto!important;
+    bottom:auto!important;
+    min-width:136px!important;
+    transform:translate(-50%,calc(-6px + 28px * var(--pull))) scale(calc(.94 + .06 * var(--pull)))!important;
+    opacity:0!important;
+    visibility:hidden!important;
+    pointer-events:none!important;
+    background:rgba(49,38,42,.96)!important;
+    color:#f7efec!important;
+    border:1px solid rgba(255,255,255,.14)!important;
+    box-shadow:0 10px 30px rgba(0,0,0,.32)!important;
+    backdrop-filter:blur(12px)!important;
+    -webkit-backdrop-filter:blur(12px)!important;
+  }
+  #journalApp>.topbar .scrapella-pull-refresh.idle-visible{
+    opacity:.82!important;
+    visibility:visible!important;
+  }
+  #journalApp>.topbar .scrapella-pull-refresh.visible,
+  #journalApp>.topbar .scrapella-pull-refresh.refreshing{
+    opacity:1!important;
+    visibility:visible!important;
+  }
+  #journalApp>.topbar .scrapella-pull-refresh span{
+    color:#f2a6bb!important;
+  }
+  html[data-theme="day"] #journalApp>.topbar .scrapella-pull-refresh{
+    background:rgba(255,250,246,.97)!important;
+    color:#49383d!important;
+    border-color:rgba(80,55,61,.15)!important;
+    box-shadow:0 10px 26px rgba(72,48,55,.18)!important;
+  }
+}
