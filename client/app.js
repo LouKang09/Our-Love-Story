@@ -5651,7 +5651,7 @@ function wireMemoryConstellationPan(){
 
     const fitsVertically=scaledHeight<=viewportHeight+1;
     viewport.dataset.verticalPageScroll=fitsVertically?'1':'0';
-    viewport.style.touchAction=fitsVertically?'pan-y':'none';
+    viewport.style.setProperty('touch-action',fitsVertically?'pan-y':'none','important');
 
     if(preserveCenter){
       const nextLeft=worldOffsetX+(oldCenterX*scale)-(viewport.clientWidth/2);

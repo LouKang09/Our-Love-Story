@@ -14698,3 +14698,7 @@ html[data-theme="night"] .universe-category-guide-btn{
 .memory-constellation-scene{
   max-width:none!important;
 }
+
+.memory-constellation[data-vertical-page-scroll="1"]{
+  touch-action:pan-y!important;
+}
