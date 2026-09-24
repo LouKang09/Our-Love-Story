@@ -14643,3 +14643,58 @@ html[data-theme="night"] .reflection-history-source p{
     align-items:flex-start;
   }
 }
+
+
+/* ===== 2026-09-24 MEMORY UNIVERSE CONTEXT GUIDE + CENTERED CONSTELLATION ===== */
+.universe-category-guide-bar{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  margin:8px 0 12px;
+}
+.universe-category-guide-bar.hidden{display:none!important}
+.universe-category-guide-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:32px;
+  padding:7px 11px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:rgba(255,255,255,.44);
+  color:var(--ink);
+  box-shadow:none;
+  font:800 8px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.universe-category-guide-btn span{
+  color:var(--rose-dark);
+  font-size:13px;
+}
+.universe-category-guide-btn:hover,
+.universe-category-guide-btn:focus-visible{
+  background:var(--rose-soft);
+  border-color:rgba(151,76,98,.24);
+  outline:none;
+}
+html[data-theme="night"] .universe-category-guide-btn{
+  background:#2d2528;
+  border-color:#4a3b40;
+  color:#f2e7e9;
+}
+@media(max-width:800px){
+  .universe-category-guide-bar{
+    justify-content:flex-end;
+    margin:7px 0 10px;
+  }
+  .universe-category-guide-btn{
+    min-height:34px;
+    max-width:100%;
+  }
+  .memory-constellation{
+    min-height:0!important;
+  }
+}
+/* JS owns the scaled scene dimensions so transformed blank space does not block the page. */
+.memory-constellation-scene{
+  max-width:none!important;
+}

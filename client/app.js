@@ -76,6 +76,8 @@ let activeGuideSteps = [];
 let guideIndex = 0;
 let guideMandatory = false;
 let guideRunning = false;
+let guideKind = 'global';
+let guideReturnUniverseMode = '';
 let partnerTag = null;
 let activeScrapbook = null;
 let spreadIndex = 0;
@@ -3080,11 +3082,14 @@ function renderGuideStep() {
   $('#guideBackBtn').classList.toggle('hidden', guideIndex === 0);
   const isLast = guideIndex === activeGuideSteps.length - 1;
   const isUpdateOnly = guideMandatory && (Number(guideState.seenVersion) || 0) > 0;
-  $('#guideNextBtn').textContent = isLast ? (isUpdateOnly ? 'Got it' : 'Start journaling') : 'Next';
+  const isUniverseGuide = guideKind === 'universe';
+  $('#guideNextBtn').textContent = isLast ? (isUniverseGuide ? 'Done' : (isUpdateOnly ? 'Got it' : 'Start journaling')) : 'Next';
   $('#guideCloseBtn').classList.toggle('hidden', guideMandatory);
 }
 function startGuide(required = false) {
   if (guideRunning) return;
+  guideKind = 'global';
+  guideReturnUniverseMode = '';
   guideMandatory = required === true;
   const seenVersion = Math.max(0, Number(guideState.seenVersion) || 0);
   activeGuideSteps = guideMandatory && seenVersion > 0
@@ -3107,10 +3112,39 @@ function startGuide(required = false) {
   document.body.classList.add('guide-active');
   renderGuideStep();
 }
+
+function startUniverseCategoryGuide(mode=universeLabMode){
+  if(guideRunning)return;
+  const steps=UNIVERSE_CATEGORY_GUIDES[mode];
+  if(!Array.isArray(steps) || !steps.length)return;
+  guideKind='universe';
+  guideReturnUniverseMode=mode;
+  guideMandatory=false;
+  activeGuideSteps=steps.map(step=>({
+    ...step,
+    eyebrow:`GUIDE · ${String(UNIVERSE_CATEGORY_LABELS[mode]||mode).toUpperCase()}`
+  }));
+  guideIndex=0;
+  guideRunning=true;
+  if(editorDialog.open)editorDialog.close();
+  if(scrapbookDialog.open)scrapbookDialog.close();
+  if(profileDialog.open)profileDialog.close();
+  showView('universe');
+  if(universeLabMode!==mode){
+    universeLabMode=mode;
+    renderUniverseLabs();
+  }
+  $('#guideOverlay').classList.remove('hidden');
+  document.body.classList.add('guide-active');
+  renderGuideStep();
+}
+
 async function finishGuide({ completed = true } = {}) {
   if (!guideRunning) return;
   const wasMandatory = guideMandatory;
-  if (completed) {
+  const finishedKind = guideKind;
+  const returnUniverseMode = guideReturnUniverseMode;
+  if (completed && finishedKind === 'global') {
     try {
       const result = await api('/api/guide/complete', {
         method:'POST',
@@ -3127,12 +3161,24 @@ async function finishGuide({ completed = true } = {}) {
   guideRunning = false;
   guideMandatory = false;
   activeGuideSteps = [];
+  guideKind = 'global';
+  guideReturnUniverseMode = '';
   $('#guideOverlay').classList.add('hidden');
   document.body.classList.remove('guide-active');
   $('#guideSpotlight').style.cssText = '';
   $('#guideCard')?.classList.remove('guide-card-top');
-  showView('home');
-  if (wasMandatory) maybeOpenReminderComposer();
+  if(finishedKind==='universe'){
+    showView('universe');
+    if(returnUniverseMode && universeLabMode!==returnUniverseMode){
+      universeLabMode=returnUniverseMode;
+      renderUniverseLabs();
+    }else{
+      updateUniverseCategoryGuideBar();
+    }
+  }else{
+    showView('home');
+    if (wasMandatory) maybeOpenReminderComposer();
+  }
 }
 $('#guideNextBtn').addEventListener('click', async () => {
   if (guideIndex >= activeGuideSteps.length - 1) {
@@ -5558,6 +5604,8 @@ function wireMemoryConstellationPan(){
   let pan=null;
   let pinch=null;
   let suppressClickUntil=0;
+  let worldOffsetX=0;
+  let worldOffsetY=0;
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
   const baseWidth=Number(world.dataset.baseWidth)||world.offsetWidth||(isPhoneUI()?1120:1280);
   const baseHeight=Number(world.dataset.baseHeight)||world.offsetHeight||(isPhoneUI()?620:690);
@@ -5567,15 +5615,60 @@ function wireMemoryConstellationPan(){
   const maxScale=2.2;
   let scale=clamp(Number(viewport.dataset.zoom)||1,minScale,maxScale);
 
-  const applyScale=next=>{
+  const defaultViewportHeight=()=>{
+    if(isPhoneUI())return Math.min(640,Math.max(360,Math.round(window.innerHeight*.64)));
+    return 650;
+  };
+  const applyScale=(next,{preserveCenter=true}={})=>{
+    const oldScale=scale||1;
+    const oldCenterX=(viewport.scrollLeft+(viewport.clientWidth/2)-worldOffsetX)/oldScale;
+    const oldCenterY=(viewport.scrollTop+(viewport.clientHeight/2)-worldOffsetY)/oldScale;
+
     scale=clamp(next,minScale,maxScale);
     viewport.dataset.zoom=String(scale);
+
+    const scaledWidth=baseWidth*scale;
+    const scaledHeight=baseHeight*scale;
+    const naturalHeight=defaultViewportHeight();
+    const fittedHeight=Math.max(isPhoneUI()?238:340,Math.ceil(scaledHeight+18));
+    const viewportHeight=Math.min(naturalHeight,fittedHeight);
+
+    viewport.style.setProperty('height',`${viewportHeight}px`,'important');
+    viewport.style.setProperty('min-height',`${viewportHeight}px`,'important');
+
+    const viewportWidth=Math.max(1,viewport.clientWidth);
+    const sceneWidth=Math.max(viewportWidth,Math.ceil(scaledWidth));
+    const sceneHeight=Math.max(viewportHeight,Math.ceil(scaledHeight));
+    worldOffsetX=Math.max(0,(sceneWidth-scaledWidth)/2);
+    worldOffsetY=Math.max(0,(sceneHeight-scaledHeight)/2);
+
+    scene.style.setProperty('width',`${sceneWidth}px`,'important');
+    scene.style.setProperty('min-width',`${sceneWidth}px`,'important');
+    scene.style.setProperty('height',`${sceneHeight}px`,'important');
+    world.style.left=`${worldOffsetX}px`;
+    world.style.top=`${worldOffsetY}px`;
     world.style.transform=`scale(${scale})`;
-    scene.style.width=`${baseWidth*scale}px`;
-    scene.style.minWidth=`${baseWidth*scale}px`;
-    scene.style.height=`${baseHeight*scale}px`;
+
+    const fitsVertically=scaledHeight<=viewportHeight+1;
+    viewport.dataset.verticalPageScroll=fitsVertically?'1':'0';
+    viewport.style.touchAction=fitsVertically?'pan-y':'none';
+
+    if(preserveCenter){
+      const nextLeft=worldOffsetX+(oldCenterX*scale)-(viewport.clientWidth/2);
+      const nextTop=worldOffsetY+(oldCenterY*scale)-(viewport.clientHeight/2);
+      const maxLeft=Math.max(0,sceneWidth-viewport.clientWidth);
+      const maxTop=Math.max(0,sceneHeight-viewport.clientHeight);
+      viewport.scrollLeft=clamp(nextLeft,0,maxLeft);
+      viewport.scrollTop=clamp(nextTop,0,maxTop);
+    }
   };
-  applyScale(scale);
+  applyScale(scale,{preserveCenter:false});
+  requestAnimationFrame(()=>{
+    const maxLeft=Math.max(0,scene.scrollWidth-viewport.clientWidth);
+    const maxTop=Math.max(0,scene.scrollHeight-viewport.clientHeight);
+    viewport.scrollLeft=maxLeft/2;
+    viewport.scrollTop=maxTop/2;
+  });
 
   const relativePoint=(a,b=null)=>{
     const rect=viewport.getBoundingClientRect();
@@ -5585,14 +5678,8 @@ function wireMemoryConstellationPan(){
   const beginPinch=()=>{
     if(pointers.size<2)return;
     const [a,b]=[...pointers.values()].slice(0,2);
-    const mid=relativePoint(a,b);
     const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
-    pinch={
-      distance,
-      scale,
-      contentX:(viewport.scrollLeft+mid.x)/scale,
-      contentY:(viewport.scrollTop+mid.y)/scale
-    };
+    pinch={distance,scale};
     pan=null;
     viewport.classList.add('dragging','pinching');
   };
@@ -5616,18 +5703,19 @@ function wireMemoryConstellationPan(){
     if(pointers.size>=2){
       if(!pinch)beginPinch();
       const [a,b]=[...pointers.values()].slice(0,2);
-      const mid=relativePoint(a,b);
       const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
       const nextScale=clamp(pinch.scale*(distance/pinch.distance),minScale,maxScale);
-      applyScale(nextScale);
-      viewport.scrollLeft=Math.max(0,pinch.contentX*scale-mid.x);
-      viewport.scrollTop=Math.max(0,pinch.contentY*scale-mid.y);
+      applyScale(nextScale,{preserveCenter:true});
       suppressClickUntil=Date.now()+280;
       e.preventDefault();
       return;
     }
     if(!pan || pan.pointerId!==e.pointerId)return;
     const dx=e.clientX-pan.x,dy=e.clientY-pan.y;
+    if(viewport.dataset.verticalPageScroll==='1' && Math.abs(dy)>Math.abs(dx)*1.05){
+      viewport.classList.remove('dragging');
+      return;
+    }
     viewport.scrollLeft=pan.left-dx;
     viewport.scrollTop=pan.top-dy;
     if(Math.hypot(dx,dy)>3)suppressClickUntil=Date.now()+180;
@@ -5657,6 +5745,7 @@ function wireMemoryConstellationPan(){
       e.stopPropagation();
     }
   },true);
+  window.addEventListener('resize',()=>applyScale(scale,{preserveCenter:true}),{passive:true});
 }
 function renderMemoryConstellation(ordered) {
   const nodesHost = $('#memoryConstellationNodes');
@@ -5806,6 +5895,77 @@ const UNIVERSE_CATEGORY_LABELS={
   box:'Memory Box',themes:'Living Theme',peopleMemory:'People in My Memory',vault:'Personal Vault',
   family:'Family History',inherited:'Inherited Memory',secret:'Secret Contributors',faith:'Reflection Journal',
   wall:'Freedom Wall',capsules:'Future Capsules',museum:'Life Museum'
+};
+
+const UNIVERSE_CATEGORY_GUIDES={
+  voiceMemory:[
+    {selector:'#universeLabStage',title:'Voice Memories keeps the story behind a page.',text:'Attach a short voice recording to a specific scrapbook memory so you can preserve tone, context, and details that a photo or written caption may miss.'},
+    {selector:'#voiceMemoryPickerBtn',title:'Choose the memory first.',text:'Open the memory picker and select the exact scrapbook page this recording belongs to. The voice clip stays connected to that memory.'},
+    {selector:'.voice-record-controls',title:'Record when you are ready.',text:'Tap Record, speak naturally, then Stop. Scrapella limits a clip to about 45 seconds so each recording stays focused and easy to revisit.'},
+    {selector:'.voice-clip-list',title:'Saved clips stay with the selected memory.',text:'Existing recordings appear here with playback controls. You can switch memories from the picker to review the voice notes attached to each one.'}
+  ],
+  letters:[
+    {selector:'#universeLabStage',title:'Letter To saves words for another time.',text:'Use this when something belongs to a future version of you, a family member, a child, or another meaningful person rather than a normal scrapbook caption.'},
+    {selector:'#letterToForm',title:'Choose who the letter is for and when it opens.',text:'Fill in the recipient, opening date, and the letter itself. The opening date turns the note into something intentionally waiting for its moment.'},
+    {selector:'.letter-preview-list',title:'Sealed letters collect here.',text:'This area shows the letters you have already created and the date each one is meant to open.'}
+  ],
+  prompts:[
+    {selector:'.prompt-card',title:'Memory Prompts gives you one question to start from.',text:'The prompt is meant to surface details you might otherwise forget. There is no streak or public score attached to it.'},
+    {selector:'#memoryPromptForm',title:'Write only as much as the prompt unlocks.',text:'Use the response area and optional working title to capture the thought. You can return and refine it later.'},
+    {selector:'#memoryPromptForm button[type="submit"]',title:'Save the draft when it feels worth keeping.',text:'Saving stores the response in Memory Universe without forcing it to become a normal scrapbook page.'}
+  ],
+  anniversaries:[
+    {selector:'.anniversary-lab',title:'Anniversary Resurfacing reconnects you with older memories.',text:'Scrapella looks for memories that share today’s month and day. If none match today, it shows the closest upcoming anniversaries instead.'},
+    {selector:'.anniversary-cards',title:'Tap a resurfaced memory to reopen it.',text:'Each card links back to the original memory, so resurfacing stays connected to the scrapbook rather than becoming a duplicate post.'}
+  ],
+  box:[
+    {selector:'#memoryBoxForm',title:'Memory Box is for things you want to save before organizing.',text:'Drop in a quick thought, a photo, or both. It is intentionally faster than building a full scrapbook page.'},
+    {selector:'#memoryBoxPhoto',title:'A photo is optional.',text:'Add one image when the visual matters, or keep the item text-only when the thought is enough.'},
+    {selector:'.memory-box-grid',title:'Unsorted keepsakes wait here.',text:'Saved items remain in Memory Universe until you decide what deserves a permanent scrapbook page or remove it.'}
+  ],
+  themes:[
+    {selector:'.theme-picker',title:'Living Theme changes how your Memory Universe feels.',text:'Choose a visual theme that fits the chapter of life you are documenting. Only the owner of the Memory Universe can change it.'},
+    {selector:'.living-theme-preview',title:'Preview the theme before settling on it.',text:'The preview shows how the selected style changes the atmosphere without changing your original scrapbook memories or their content.'}
+  ],
+  peopleMemory:[
+    {selector:'.people-memory-lab',title:'People in My Memory groups memories around the people inside your story.',text:'It helps you see recurring people across scrapbook entries instead of searching memory by memory.'},
+    {selector:'.people-memory-map',title:'Use the people map to jump into a relationship thread.',text:'Each person represents the memories Scrapella can associate with them from the content available in this Memory Universe.'}
+  ],
+  vault:[
+    {selector:'#vaultPreviewForm',title:'Personal Vault is for private material you do not want mixed into normal browsing.',text:'Use it for sensitive notes or keepsakes that belong to your private archive rather than your social scrapbook flow.'},
+    {selector:'.vault-warning',title:'Treat Vault items as intentionally private.',text:'The warning is a reminder that this area is meant for personal material and should be used with the same care as any private journal.'},
+    {selector:'.vault-grid',title:'Your saved Vault items appear here.',text:'Review the items you have stored and remove anything you no longer want kept in this private section.'}
+  ],
+  family:[
+    {selector:'.family-tree-preview',title:'Family History builds a simple generational view.',text:'Use it to connect names, roles, and family relationships so memories can sit inside a larger family story.'},
+    {selector:'#familyPreviewForm',title:'Add relatives one relationship at a time.',text:'Enter the person and their relationship, then save them into the family structure. You can keep expanding the tree as more history is added.'}
+  ],
+  inherited:[
+    {selector:'#inheritedPreviewForm',title:'Inherited Memory records stories or objects passed down to you.',text:'This is for memories whose origin begins with someone else: a story, heirloom, recipe, tradition, or family account you want to preserve.'},
+    {selector:'.inheritance-list',title:'The inheritance list keeps the chain visible.',text:'Saved entries show what was passed down and help preserve who or where the memory came from.'}
+  ],
+  secret:[
+    {selector:'#secretProjectCreateForm',title:'Secret Contributors lets other people prepare a memory for someone.',text:'Create a project for a recipient, set the reveal date, and choose who is allowed to contribute before the surprise opens.'},
+    {selector:'.secret-project-people',title:'Add contributors by @tag.',text:'Contributors can add text or photos to the project. The recipient cannot see the surprise content before the reveal conditions are met.'},
+    {selector:'.secret-project-list',title:'Projects stay organized here until reveal.',text:'Each project shows its recipient, contributors, status, and contributed material once it becomes available.'}
+  ],
+  faith:[
+    {selector:'#reflectionReligionSelect',title:'Reflection Journal adapts to the tradition you select.',text:'Choose the religious or general reflection setting that fits you. The selected tradition is saved to your profile.'},
+    {selector:'#faithJournalForm',title:'Write the reflection, intention, and one action.',text:'These fields turn the reading or sacred text into a personal response rather than only displaying a passage.'},
+    {selector:'.faith-history',title:'Saved reflections become your journal history.',text:'Use the history section to revisit earlier reflections and see how your thoughts, prayers, or intentions changed over time.'}
+  ],
+  wall:[
+    {selector:'#freedomWallForm',title:'Freedom Wall is a shared space for small thoughts.',text:'Post text, a photo with text, or a photo alone. Unlike your private Memory Universe tools, this wall is shared with signed-in Scrapella users.'},
+    {selector:'#freedomWallCanvas',title:'Sticky notes from the community collect on the wall.',text:'Names are clickable, entries are timestamped, and the original colorful sticky-note style is kept in both light and dark mode.'}
+  ],
+  capsules:[
+    {selector:'#memoryCapsuleForm',title:'Future Capsules send an existing memory forward in time.',text:'Choose a memory, set an unlock date, and optionally add a note for the future moment when it becomes available.'},
+    {selector:'.capsule-list',title:'Sealed capsules wait on this shelf.',text:'The shelf shows which capsules are still locked, how long remains, and which ones are ready to open.'}
+  ],
+  museum:[
+    {selector:'.life-museum',title:'Life Museum turns visual memories into a quiet gallery.',text:'Rather than another feed, photographs are arranged like exhibits so you can browse a chapter of life visually.'},
+    {selector:'.museum-gallery',title:'Tap any frame to reopen the original memory.',text:'Each museum frame stays linked to the scrapbook memory it came from, including the title and date.'}
+  ]
 };
 
 let universeLabMode = 'voiceMemory';
@@ -5980,10 +6140,20 @@ function renderHiddenUniverseProfileSettings(){
   host.querySelectorAll('[data-restore-universe]').forEach(btn=>btn.addEventListener('click',()=>restoreUniverseCategory(btn.dataset.restoreUniverse)));
 }
 
+function updateUniverseCategoryGuideBar(){
+  const bar=$('#universeCategoryGuideBar');
+  const button=$('#universeCategoryGuideBtn');
+  const label=$('#universeCategoryGuideLabel');
+  const available=OFFICIAL_UNIVERSE_MODES.includes(universeLabMode) && Array.isArray(UNIVERSE_CATEGORY_GUIDES[universeLabMode]);
+  if(bar)bar.classList.toggle('hidden',!available);
+  if(button)button.disabled=!available;
+  if(label)label.textContent=available?`${UNIVERSE_CATEGORY_LABELS[universeLabMode] || universeLabMode} guide`:'Category guide';
+}
 function universeLabSetMode(mode){
   const visible=visibleUniverseModes();
   universeLabMode = visible.includes(mode) ? mode : (visible[0] || '');
   document.querySelectorAll('[data-universe-lab]').forEach(btn => btn.classList.toggle('active',btn.dataset.universeLab===universeLabMode));
+  updateUniverseCategoryGuideBar();
   renderUniverseLabStage();
 }
 
@@ -6097,6 +6267,7 @@ function renderUniverseLabs(){
   closeUniverseCategoryActionPopover();
   const visible=visibleUniverseModes();
   if (!visible.includes(universeLabMode)) universeLabMode = visible[0] || '';
+  updateUniverseCategoryGuideBar();
   const self=(universeTargetTag || me?.tag)===me?.tag;
   document.querySelectorAll('.universe-lab-tab-item').forEach(item=>{
     const btn=item.querySelector('[data-universe-lab]');
@@ -6117,6 +6288,7 @@ function renderUniverseLabs(){
     wireUniverseCategoryLongPress(btn,mode,self && official && !hidden);
   });
   if(!visible.length){
+    $('#universeCategoryGuideBar')?.classList.add('hidden');
     stage.innerHTML='<div class="universe-empty wide"><span>◌</span><strong>All Memory Universe categories are hidden.</strong><p>Open your Profile settings to show categories again.</p></div>';
     return;
   }
@@ -8583,6 +8755,7 @@ $('#introBook').addEventListener('keydown', e => {
   toggleBookCover();
 });
 $('#guideBtn').addEventListener('click', () => startGuide(false));
+$('#universeCategoryGuideBtn')?.addEventListener('click',()=>startUniverseCategoryGuide(universeLabMode));
 $('#homeModeBtn').addEventListener('click', () => refreshAndShow('home'));
 $('#bookModeBtn').addEventListener('click', async () => {
   try { await prepareMobileBookView(); }
