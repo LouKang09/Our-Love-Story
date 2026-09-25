@@ -991,6 +991,33 @@ function decorateMyDayItem(social, item, viewer) {
         .map(([tag,emoji]) => ({ profile:publicProfileFor(social,tag), emoji, reactedAt:String(reactionAt[tag] || '') }))
         .sort((a,b)=>String(b.reactedAt||'').localeCompare(String(a.reactedAt||'')))
     : [];
+  const recentReactionDetails = own
+    ? recentReactions
+        .filter(event => event.tag && event.tag !== item.author)
+        .map(event => ({
+          profile:publicProfileFor(social,event.tag),
+          emoji:event.emoji,
+          reactedAt:String(event.at || '')
+        }))
+    : [];
+  const storyReplies = own
+    ? (social.chatMessages || [])
+        .filter(message =>
+          !message?.deletedAt &&
+          message?.myDayReply?.storyId === item.id &&
+          message?.author &&
+          message.author !== item.author
+        )
+        .map(message => ({
+          messageId:String(message.id || ''),
+          chatId:String(message.chatId || ''),
+          profile:publicProfileFor(social,message.author),
+          text:String(message.text || '').slice(0,1000),
+          createdAt:String(message.createdAt || '')
+        }))
+        .sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
+        .slice(0,100)
+    : [];
   return {
     id:item.id,
     author:item.author,
@@ -1013,7 +1040,9 @@ function decorateMyDayItem(social, item, viewer) {
     viewerCount:own ? viewerDetails.length : undefined,
     reactionCount:own ? recentReactions.length : undefined,
     viewers:own ? viewerDetails : undefined,
-    reactionPeople:own ? reactionDetails : undefined
+    reactionPeople:own ? reactionDetails : undefined,
+    recentReactionEvents:own ? recentReactionDetails : undefined,
+    storyReplies:own ? storyReplies : undefined
   };
 }
 function myDayGroupsForViewer(social, viewer) {

@@ -856,6 +856,7 @@
         <div class="my-day-composer-preview story-editor-stage">
           <img id="myDayComposerImage" alt="Story preview" />
           <div id="myDayComposerOverlayText" class="my-day-overlay-text story-editable-text hidden" contenteditable="false" role="textbox" aria-label="Story text" data-placeholder="Type or @tag…"></div>
+          <button id="storyTextMoveHandle" class="story-text-move-handle hidden" type="button" aria-label="Move story text">✥</button>
           <button id="storyTextRotateHandle" class="story-text-rotate-handle hidden" type="button" aria-label="Rotate story text">↻</button>
           <div id="storyInlineMentionSuggestions" class="story-inline-mention-suggestions hidden" role="listbox" aria-label="Mention suggestions"></div>
           <div id="storyMusicBadge" class="story-music-badge hidden">♫ <span></span></div>
@@ -931,8 +932,8 @@
       <button id="myDayNextBtn" class="my-day-nav my-day-next" type="button" aria-label="Next story">›</button>
       <div id="myDayOwnerInsights" class="my-day-owner-insights hidden">
         <button id="myDayViewerSummaryBtn" class="my-day-viewer-summary" type="button" aria-expanded="false">
-          <strong id="myDayViewerSummaryCount">No viewers yet</strong>
-          <small id="myDayViewerSummaryNames">Your viewers and reactions will appear here.</small>
+          <span class="my-day-viewer-summary-arrow" aria-hidden="true">⌃</span>
+          <strong id="myDayViewerSummaryCount">0 viewers</strong>
         </button>
         <div id="myDayInsightList" class="my-day-insight-list hidden"></div>
       </div>
@@ -946,6 +947,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260925-story-audience-rotate-hold1" defer></script>
+  <script src="/app.js?v=20260926-story-insights-textmove2" defer></script>
 </body>
 </html>

@@ -45,6 +45,11 @@ let storyTextDragPointerId = null;
 let storyTextRotatePointerId = null;
 let storyTextRotateStartAngle = 0;
 let storyTextRotateStartRotation = 0;
+let storyTextMovePointerId = null;
+let storyTextMoveStartPointerX = 0;
+let storyTextMoveStartPointerY = 0;
+let storyTextMoveStartX = 50;
+let storyTextMoveStartY = 50;
 let pendingStoryAudience = 'followers';
 let myDayAudienceSettings = { closeFriends:[], partner:null };
 let storyCloseFriendsDraft = new Set();
@@ -3928,13 +3933,25 @@ function applyStoryTextPosition(element,x,y,rotation=0){
   element.style.transform='translate(-50%,-50%) rotate('+storyTextRotation(rotation)+'deg)';
 }
 function syncStoryTextRotateHandle(){
-  const handle=$('#storyTextRotateHandle');
+  const rotate=$('#storyTextRotateHandle');
+  const move=$('#storyTextMoveHandle');
   const overlay=$('#myDayComposerOverlayText');
-  if(!handle||!overlay)return;
-  const visible=Boolean(storyComposerText()) && overlay.dataset.editing!=='1';
-  handle.classList.toggle('hidden',!visible);
-  handle.style.left=storyTextCoordinate(pendingStoryTextX,50)+'%';
-  handle.style.top=storyTextCoordinate(pendingStoryTextY,50)+'%';
+  const stage=$('.story-editor-stage');
+  if(!rotate||!move||!overlay||!stage)return;
+  const visible=Boolean(storyComposerText());
+  rotate.classList.toggle('hidden',!visible);
+  move.classList.toggle('hidden',!visible);
+  if(!visible)return;
+  const stageRect=stage.getBoundingClientRect();
+  const textRect=overlay.getBoundingClientRect();
+  const moveLeft=Math.max(12,Math.min(stageRect.width-12,textRect.left-stageRect.left));
+  const moveTop=Math.max(12,Math.min(stageRect.height-12,textRect.top-stageRect.top));
+  const rotateLeft=Math.max(12,Math.min(stageRect.width-12,textRect.right-stageRect.left));
+  const rotateTop=Math.max(12,Math.min(stageRect.height-12,textRect.bottom-stageRect.top));
+  move.style.left=moveLeft+'px';
+  move.style.top=moveTop+'px';
+  rotate.style.left=rotateLeft+'px';
+  rotate.style.top=rotateTop+'px';
 }
 function hideStoryInlineMentionSuggestions(){
   const host=$('#storyInlineMentionSuggestions');
@@ -4236,6 +4253,7 @@ function closeMyDayComposer(){
     storyText.classList.add('hidden');
   }
   $('#storyTextRotateHandle')?.classList.add('hidden');
+  $('#storyTextMoveHandle')?.classList.add('hidden');
   hideStoryInlineMentionSuggestions();
   closeStoryAudiencePanel();
   updateStoryAudienceButton();
@@ -4447,6 +4465,7 @@ function closeMyDayViewer({restore=true}={}){
   document.body.classList.remove('my-day-open');
   if($('#myDayReplyText'))$('#myDayReplyText').value='';
   $('#myDayInsightList')?.classList.add('hidden');
+  $('#myDayViewer')?.classList.remove('story-insights-open');
   if(restore)restoreMyDayReturnContext();
 }
 function moveMyDay(delta){
@@ -4456,34 +4475,85 @@ function renderMyDayInsightList(){
   const current=myDayCurrent(),item=current.item;
   const host=$('#myDayInsightList');
   if(!host||!item)return;
-  const entries=Array.isArray(item.viewers)?item.viewers:[];
-  host.classList.remove('hidden');
-  host.innerHTML=entries.length ? entries.map(entry=>{
+  const viewers=Array.isArray(item.viewers)?item.viewers:[];
+  const replies=Array.isArray(item.storyReplies)?item.storyReplies:[];
+  const reactionEvents=Array.isArray(item.recentReactionEvents)?item.recentReactionEvents:[];
+  const reactionMap=new Map();
+  reactionEvents.forEach(event=>{
+    const tag=String(event?.profile?.tag||'');
+    if(!tag)return;
+    if(!reactionMap.has(tag))reactionMap.set(tag,[]);
+    reactionMap.get(tag).push(event);
+  });
+  const viewerTags=new Set(viewers.map(entry=>entry?.profile?.tag).filter(Boolean));
+  const viewerRows=[...viewers];
+  reactionEvents.forEach(event=>{
+    const tag=event?.profile?.tag;
+    if(tag&&!viewerTags.has(tag)){
+      viewerTags.add(tag);
+      viewerRows.push({profile:event.profile,viewedAt:'',emoji:''});
+    }
+  });
+  const count=Number(item.viewerCount)||viewers.length;
+  const repliesHtml=replies.length ? replies.map(reply=>{
+    const profile=reply.profile||{};
+    return '<button type="button" class="story-insight-reply" data-story-reply-chat="'+escapeHtml(reply.chatId||'')+'" data-story-reply-message="'+escapeHtml(reply.messageId||'')+'">'+
+      avatarHtml(profile,'story-insight-avatar')+
+      '<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>'+escapeHtml(reply.text||'Replied to your story')+'</small></span>'+
+      '<time>'+escapeHtml(myDayTimeLabel(reply.createdAt))+'</time>'+
+      '</button>';
+  }).join('') : '<p class="story-insight-empty">No replies yet.</p>';
+  const viewersHtml=viewerRows.length ? viewerRows.map(entry=>{
     const profile=entry.profile||{};
-    const when=entry.viewedAt;
-    return '<div class="my-day-insight-person">'+avatarHtml(profile,'my-day-insight-avatar')+
-      '<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+
-      (when?' · '+escapeHtml(myDayTimeLabel(when)):'')+'</small></span>'+
-      '<em>'+(entry.emoji?escapeHtml(entry.emoji):'')+'</em>'+
+    const reactions=reactionMap.get(profile.tag)||[];
+    const reactionStrip=reactions.length ? '<span class="story-insight-reaction-strip">'+reactions.map(event=>'<b>'+escapeHtml(event.emoji||'')+'</b>').join('')+'</span>' : '';
+    return '<div class="story-insight-viewer">'+avatarHtml(profile,'story-insight-avatar')+
+      '<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+(entry.viewedAt?' · '+escapeHtml(myDayTimeLabel(entry.viewedAt)):'')+'</small>'+reactionStrip+'</span>'+
       '</div>';
-  }).join('') : '<p class="my-day-insight-empty">No viewers yet.</p>';
+  }).join('') : '<p class="story-insight-empty">No viewers yet.</p>';
+  host.classList.remove('hidden');
+  host.innerHTML='<div class="story-insight-sheet">'+
+    '<header class="story-insight-sheet-head"><div><strong>'+count+' viewer'+(count===1?'':'s')+'</strong><small>Story activity</small></div><button type="button" data-close-story-insights aria-label="Close story activity">×</button></header>'+
+    '<section><h3>Replies</h3>'+repliesHtml+'</section>'+
+    '<section><h3>Viewers & reactions</h3><p class="story-insight-section-note">The reaction row shows the latest 5 reactions kept for this story, including repeated reactions.</p>'+viewersHtml+'</section>'+
+    '</div>';
+  host.querySelector('[data-close-story-insights]')?.addEventListener('click',closeMyDayInsights);
+  host.querySelectorAll('[data-story-reply-chat]').forEach(button=>button.addEventListener('click',async()=>{
+    const chatId=button.dataset.storyReplyChat||'';
+    const messageId=button.dataset.storyReplyMessage||'';
+    closeMyDayInsights();
+    closeMyDayViewer({restore:false});
+    showView('messages');
+    try{
+      await loadChats();
+      if(chatId)await openChat(chatId);
+      if(messageId)requestAnimationFrame(()=>scrollChatToMessage(messageId));
+    }catch(err){showToast(err?.message||'Could not open that reply.');}
+  }));
+}
+function closeMyDayInsights(){
+  const list=$('#myDayInsightList');
+  list?.classList.add('hidden');
+  $('#myDayViewer')?.classList.remove('story-insights-open');
+  setMyDayStoryPaused(false);
+  const summary=$('#myDayViewerSummaryBtn');
+  if(summary)summary.setAttribute('aria-expanded','false');
+}
+function openMyDayInsights(){
+  const current=myDayCurrent();
+  if(current.group?.profile?.tag!==me?.tag)return;
+  renderMyDayInsightList();
+  $('#myDayViewer')?.classList.add('story-insights-open');
+  setMyDayStoryPaused(true);
+  const summary=$('#myDayViewerSummaryBtn');
+  if(summary)summary.setAttribute('aria-expanded','true');
 }
 function renderMyDayOwnerSummary(item){
   const viewers=Array.isArray(item?.viewers)?item.viewers:[];
+  const viewerCount=Number(item?.viewerCount);
+  const total=Number.isFinite(viewerCount)?viewerCount:viewers.length;
   const count=$('#myDayViewerSummaryCount');
-  const names=$('#myDayViewerSummaryNames');
-  if(count)count.textContent=viewers.length
-    ? (viewers.length+' viewer'+(viewers.length===1?'':'s'))
-    : 'No viewers yet';
-  if(names){
-    names.textContent=viewers.length
-      ? viewers.slice(0,3).map(entry=>{
-          const profile=entry.profile||{};
-          const label=String(profile.displayName||profile.tag||'Viewer').split(/\s+/)[0];
-          return label+(entry.emoji?' '+entry.emoji:'');
-        }).join(' · ')
-      : 'Your viewers and reactions will appear here.';
-  }
+  if(count)count.textContent=total+' viewer'+(total===1?'':'s');
   const summary=$('#myDayViewerSummaryBtn');
   const list=$('#myDayInsightList');
   if(summary)summary.setAttribute('aria-expanded',String(Boolean(list&&!list.classList.contains('hidden'))));
@@ -4561,7 +4631,7 @@ function renderMyDayViewer(){
     const list=$('#myDayInsightList');
     if(list&&!list.classList.contains('hidden'))renderMyDayInsightList();
   }else{
-    $('#myDayInsightList')?.classList.add('hidden');
+    closeMyDayInsights();
   }
 }
 function reactToMyDay(storyId,emoji){
@@ -4661,9 +4731,41 @@ const endStoryTextDrag=event=>{
 };
 storyComposerOverlay?.addEventListener('pointerup',endStoryTextDrag);
 storyComposerOverlay?.addEventListener('pointercancel',endStoryTextDrag);
+const storyMoveHandle=$('#storyTextMoveHandle');
+storyMoveHandle?.addEventListener('pointerdown',event=>{
+  event.preventDefault();event.stopPropagation();
+  if(!storyComposerText())return;
+  if(storyComposerOverlay?.dataset.editing==='1')finishStoryTextEditing();
+  storyTextMovePointerId=event.pointerId;
+  storyTextMoveStartPointerX=event.clientX;
+  storyTextMoveStartPointerY=event.clientY;
+  storyTextMoveStartX=pendingStoryTextX;
+  storyTextMoveStartY=pendingStoryTextY;
+  storyComposerOverlay?.classList.add('is-dragging');
+  try{storyMoveHandle.setPointerCapture(event.pointerId);}catch{}
+});
+storyMoveHandle?.addEventListener('pointermove',event=>{
+  if(storyTextMovePointerId!==event.pointerId)return;
+  event.preventDefault();
+  const stage=$('.story-editor-stage');if(!stage)return;
+  const rect=stage.getBoundingClientRect();if(!rect.width||!rect.height)return;
+  pendingStoryTextX=storyTextCoordinate(storyTextMoveStartX+((event.clientX-storyTextMoveStartPointerX)/rect.width)*100,50);
+  pendingStoryTextY=storyTextCoordinate(storyTextMoveStartY+((event.clientY-storyTextMoveStartPointerY)/rect.height)*100,50);
+  syncMyDayComposerText();
+});
+const endStoryTextMove=event=>{
+  if(storyTextMovePointerId!==event.pointerId)return;
+  try{storyMoveHandle?.releasePointerCapture(event.pointerId);}catch{}
+  storyTextMovePointerId=null;
+  storyComposerOverlay?.classList.remove('is-dragging');
+  syncMyDayComposerText();
+};
+storyMoveHandle?.addEventListener('pointerup',endStoryTextMove);
+storyMoveHandle?.addEventListener('pointercancel',endStoryTextMove);
 const storyRotateHandle=$('#storyTextRotateHandle');
 storyRotateHandle?.addEventListener('pointerdown',event=>{
   event.preventDefault();event.stopPropagation();
+  if(storyComposerOverlay?.dataset.editing==='1')finishStoryTextEditing();
   const stage=$('.story-editor-stage');if(!stage)return;
   const rect=stage.getBoundingClientRect();
   const cx=rect.left+(storyTextCoordinate(pendingStoryTextX,50)/100)*rect.width;
@@ -4726,7 +4828,7 @@ $('#myDayNextBtn')?.addEventListener('click',()=>advanceMyDayStory(1));
 const storyViewerMedia=$('.my-day-media');
 storyViewerMedia?.addEventListener('pointerdown',event=>{
   const current=myDayCurrent();
-  if(!current.item || current.group?.profile?.tag===me?.tag || event.target.closest('button,input,textarea,a'))return;
+  if(!current.item || event.target.closest('button,input,textarea,a'))return;
   myDayHoldPointerId=event.pointerId;
   myDayHoldStartX=event.clientX;myDayHoldStartY=event.clientY;myDayHoldLong=false;
   setMyDayStoryPaused(true);
@@ -4766,8 +4868,8 @@ $('#myDayDeleteBtn')?.addEventListener('click',deleteCurrentMyDay);
 $('#myDayViewerSummaryBtn')?.addEventListener('click',()=>{
   const list=$('#myDayInsightList');
   if(!list)return;
-  if(list.classList.contains('hidden'))renderMyDayInsightList();
-  else list.classList.add('hidden');
+  if(list.classList.contains('hidden'))openMyDayInsights();
+  else closeMyDayInsights();
   renderMyDayOwnerSummary(myDayCurrent().item);
 });
 $('#myDayReplyForm')?.addEventListener('submit',e=>{e.preventDefault();replyToMyDay($('#myDayReplyText')?.value);});
