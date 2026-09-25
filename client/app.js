@@ -35,7 +35,10 @@ let myDayItemIndex = 0;
 let pendingMyDayFile = null;
 let pendingMyDayPreviewUrl = '';
 let myDayPosting = false;
-let homeMyDaySwipe = null;
+const MY_DAY_STORY_DURATION_MS = 10000;
+let myDayStoryFrame = 0;
+let myDayStoryStartedAt = 0;
+let myDayTimedStoryId = '';
 let notificationSummary = { count: 0, pendingInvites: 0 };
 let notificationItems = [];
 let chats = [];
@@ -3606,26 +3609,37 @@ async function loadMyDays(){
   if(!$('#myDayViewer')?.classList.contains('hidden'))renderMyDayViewer();
 }
 function renderMyDayTray(){
-  const tray=$('#myDayTray'),list=$('#myDayStoryList'),add=$('#myDayAddBtn'),quickAdd=$('#myDayQuickAddBtn');
+  const tray=$('#myDayTray'),list=$('#myDayStoryList'),add=$('#myDayAddBtn');
   if(!tray||!list||!add)return;
   const visible=currentMode==='home' && Boolean(me?.tag);
   tray.classList.toggle('hidden',!visible);
   if(!visible)return;
-  const own=myDayGroups.find(group=>group.own);
-  add.innerHTML='<span class="my-day-avatar-wrap">'+avatarHtml(me,'my-day-avatar')+'</span><small>'+(own?.items?.length?'Your day':'Add day')+'</small>';
-  add.classList.toggle('has-story',Boolean(own?.items?.length));
-  if(quickAdd){
-    quickAdd.classList.toggle('hidden',!own?.items?.length);
-    quickAdd.setAttribute('aria-label',own?.items?.length ? 'Add another My Day' : 'Add My Day');
-  }
-  const groups=myDayGroups.filter(group=>!group.own);
-  list.innerHTML=groups.length ? groups.map(group=>
-    '<button class="my-day-story-button" type="button" data-myday-tag="'+escapeHtml(group.profile?.tag||'')+'">'+
-      '<span class="my-day-avatar-ring">'+avatarHtml(group.profile||{},'my-day-avatar')+'</span>'+
-      '<small>'+escapeHtml((group.profile?.displayName||group.profile?.tag||'Story').split(' ')[0])+'</small>'+
-    '</button>'
-  ).join('') : '<span class="my-day-empty">My Day posts from people you follow will appear here.</span>';
-  list.querySelectorAll('[data-myday-tag]').forEach(button=>button.addEventListener('click',()=>openMyDayViewer(button.dataset.mydayTag)));
+
+  add.innerHTML=
+    '<span class="my-day-create-visual">'+avatarHtml(me,'my-day-card-avatar')+'<b>＋</b></span>'+
+    '<strong>Create story</strong>';
+
+  const own=myDayGroups.find(group=>group.own && group.items?.length);
+  const groups=[
+    ...(own?[own]:[]),
+    ...myDayGroups.filter(group=>!group.own && group.items?.length)
+  ];
+  list.innerHTML=groups.map(group=>{
+    const items=Array.isArray(group.items)?group.items:[];
+    const latest=items.at(-1);
+    if(!latest)return '';
+    const label=group.own
+      ? 'Your story'
+      : (group.profile?.displayName||group.profile?.tag||'Story').split(' ')[0];
+    const countLabel=items.length>1 ? (items.length+' stories') : myDayTimeLabel(latest.createdAt);
+    return '<button class="my-day-story-card'+(group.own?' own-story':'')+'" type="button" data-myday-tag="'+escapeHtml(group.profile?.tag||'')+'">'+
+      '<img class="my-day-story-cover" src="'+escapeHtml(latest.image||'')+'" alt="" loading="lazy" />'+
+      '<span class="my-day-story-shade"></span>'+
+      '<span class="my-day-story-avatar">'+avatarHtml(group.profile||{},'my-day-card-mini-avatar')+'</span>'+
+      '<span class="my-day-story-copy"><strong>'+escapeHtml(label)+'</strong><small>'+escapeHtml(countLabel)+'</small></span>'+
+    '</button>';
+  }).join('');
+  list.querySelectorAll('[data-myday-tag]').forEach(button=>button.addEventListener('click',()=>openMyDayViewer(button.dataset.mydayTag,0)));
 }
 async function dataUrlOrBase64ToBlob(value,format='jpeg'){
   const raw=String(value||'');
@@ -3679,7 +3693,7 @@ async function openMyDayCamera(){
       try{
         const permission=await checkProfilePermission('camera',{request:true});
         if(permission==='denied'){showToast('Camera permission is needed for My Day.');return;}
-        showToast('Opening My Day camera…');
+        showToast('Opening story camera…');
         const photo=await camera.getPhoto({
           quality:88,
           allowEditing:false,
@@ -3690,7 +3704,7 @@ async function openMyDayCamera(){
         });
         const file=await nativeCameraPhotoToFile(photo);
         prepareMyDayFile(file);
-        showToast('Photo ready — add text or post your My Day.');
+        showToast('Photo ready — add text or share your story.');
         return;
       }catch(err){
         const message=String(err?.message||'');
@@ -3728,7 +3742,7 @@ function setMyDayPostProgress(percent,label,{state='working'}={}){
   box.style.setProperty('--myday-post-progress',String(value/100));
   if(fill)fill.style.width=value+'%';
   if(percentEl)percentEl.textContent=value+'%';
-  if(labelEl)labelEl.textContent=label||'Posting My Day…';
+  if(labelEl)labelEl.textContent=label||'Posting story…';
 }
 function resetMyDayPostProgress(){
   const box=$('#myDayPostProgress');
@@ -3737,7 +3751,7 @@ function resetMyDayPostProgress(){
   box?.style.setProperty('--myday-post-progress','0');
   if($('#myDayPostProgressFill'))$('#myDayPostProgressFill').style.width='0%';
   if($('#myDayPostProgressPercent'))$('#myDayPostProgressPercent').textContent='0%';
-  if($('#myDayPostProgressLabel'))$('#myDayPostProgressLabel').textContent='Preparing My Day…';
+  if($('#myDayPostProgressLabel'))$('#myDayPostProgressLabel').textContent='Preparing story…';
 }
 function myDayUploadRequest(payload,onProgress){
   return new Promise((resolve,reject)=>{
@@ -3809,9 +3823,9 @@ async function postMyDay(){
   if(retake)retake.disabled=true;
   if(close)close.disabled=true;
   try{
-    setMyDayPostProgress(2,'Preparing My Day…');
+    setMyDayPostProgress(2,'Preparing story…');
     const uploaded=await uploadMyDayImageWithProgress(pendingMyDayFile);
-    setMyDayPostProgress(89,'Saving My Day…');
+    setMyDayPostProgress(89,'Saving story…');
     const textButton=$('#myDayTextPosition [data-position].active');
     const posted=await api('/api/my-day',{method:'POST',body:JSON.stringify({
       image:uploaded.src,
@@ -3819,7 +3833,7 @@ async function postMyDay(){
       overlayText:String($('#myDayText')?.value||'').trim(),
       textPosition:textButton?.dataset.position || 'center'
     })});
-    setMyDayPostProgress(100,'My Day posted!',{state:'done'});
+    setMyDayPostProgress(100,'Story posted!',{state:'done'});
     await loadMyDays();
     await new Promise(resolve=>setTimeout(resolve,520));
     myDayPosting=false;
@@ -3828,13 +3842,13 @@ async function postMyDay(){
     const newId=posted?.item?.id;
     const itemIndex=own?.items?.findIndex(item=>item.id===newId)??-1;
     if(own?.items?.length)openMyDayViewer(me?.tag,itemIndex>=0?itemIndex:Math.max(0,own.items.length-1));
-    showToast('My Day posted successfully.');
+    showToast('Story posted successfully.');
   }catch(err){
     myDayPosting=false;
     setMyDayPostProgress(0,'Posting failed · tap Post to retry',{state:'error'});
     showToast(err?.message||'Could not post My Day.');
   }finally{
-    if(button){button.disabled=false;button.textContent='Post to My Day';}
+    if(button){button.disabled=false;button.textContent='Share to story';}
     if(retake)retake.disabled=false;
     if(close)close.disabled=false;
   }
@@ -3844,25 +3858,98 @@ async function markCurrentMyDayViewed(){
   if(!group||!item||group.profile?.tag===me?.tag)return;
   try{await api('/api/my-day/'+encodeURIComponent(item.id)+'/view',{method:'POST',body:'{}'});}catch{}
 }
+function stopMyDayStoryTimer(){
+  if(myDayStoryFrame)cancelAnimationFrame(myDayStoryFrame);
+  myDayStoryFrame=0;
+  myDayStoryStartedAt=0;
+  myDayTimedStoryId='';
+}
+function startMyDayStoryTimer(storyId){
+  stopMyDayStoryTimer();
+  if(!storyId)return;
+  myDayTimedStoryId=storyId;
+  myDayStoryStartedAt=performance.now();
+  const tick=now=>{
+    if($('#myDayViewer')?.classList.contains('hidden') || myDayTimedStoryId!==storyId){
+      stopMyDayStoryTimer();
+      return;
+    }
+    const fraction=Math.max(0,Math.min(1,(now-myDayStoryStartedAt)/MY_DAY_STORY_DURATION_MS));
+    const fill=$('#myDayProgress i.current b');
+    if(fill)fill.style.width=(fraction*100)+'%';
+    if(fraction>=1){
+      myDayStoryFrame=0;
+      advanceMyDayStory(1,{automatic:true});
+      return;
+    }
+    myDayStoryFrame=requestAnimationFrame(tick);
+  };
+  myDayStoryFrame=requestAnimationFrame(tick);
+}
+function ensureMyDayStoryTimer(storyId){
+  if(!storyId)return;
+  if(myDayTimedStoryId===storyId && myDayStoryFrame)return;
+  startMyDayStoryTimer(storyId);
+}
+function advanceMyDayStory(delta,{automatic=false}={}){
+  if(!myDayGroups.length)return closeMyDayViewer();
+  stopMyDayStoryTimer();
+  let groupIndex=myDayGroupIndex;
+  let itemIndex=myDayItemIndex;
+  if(delta>0){
+    const currentItems=myDayGroups[groupIndex]?.items||[];
+    if(itemIndex+1<currentItems.length){
+      itemIndex+=1;
+    }else{
+      groupIndex+=1;
+      while(groupIndex<myDayGroups.length && !(myDayGroups[groupIndex]?.items?.length))groupIndex+=1;
+      if(groupIndex>=myDayGroups.length){
+        closeMyDayViewer();
+        showView('home');
+        return;
+      }
+      itemIndex=0;
+    }
+  }else{
+    if(itemIndex>0){
+      itemIndex-=1;
+    }else{
+      groupIndex-=1;
+      while(groupIndex>=0 && !(myDayGroups[groupIndex]?.items?.length))groupIndex-=1;
+      if(groupIndex<0){
+        startMyDayStoryTimer(myDayCurrent().item?.id);
+        return;
+      }
+      itemIndex=Math.max(0,(myDayGroups[groupIndex].items?.length||1)-1);
+    }
+  }
+  myDayGroupIndex=groupIndex;
+  myDayItemIndex=itemIndex;
+  $('#myDayInsightList')?.classList.add('hidden');
+  renderMyDayViewer();
+  markCurrentMyDayViewed();
+}
 function openMyDayViewer(tag,itemIndex=0){
   const index=myDayGroups.findIndex(group=>group.profile?.tag===tag);if(index<0)return;
-  myDayGroupIndex=index;myDayItemIndex=Math.max(0,Math.min(itemIndex,myDayGroups[index].items.length-1));
+  const items=myDayGroups[index]?.items||[];
+  if(!items.length)return;
+  myDayGroupIndex=index;
+  myDayItemIndex=Math.max(0,Math.min(itemIndex,items.length-1));
   $('#myDayViewer')?.classList.remove('hidden');
   document.body.classList.add('my-day-open');
+  $('#myDayInsightList')?.classList.add('hidden');
   renderMyDayViewer();
   markCurrentMyDayViewed();
 }
 function closeMyDayViewer(){
-  $('#myDayViewer')?.classList.add('hidden');document.body.classList.remove('my-day-open');
+  stopMyDayStoryTimer();
+  $('#myDayViewer')?.classList.add('hidden');
+  document.body.classList.remove('my-day-open');
   if($('#myDayReplyText'))$('#myDayReplyText').value='';
+  $('#myDayInsightList')?.classList.add('hidden');
 }
 function moveMyDay(delta){
-  const group=myDayGroups[myDayGroupIndex];if(!group)return closeMyDayViewer();
-  const nextItem=myDayItemIndex+delta;
-  if(nextItem<0||nextItem>=group.items.length)return;
-  myDayItemIndex=nextItem;
-  renderMyDayViewer();
-  markCurrentMyDayViewed();
+  advanceMyDayStory(delta);
 }
 function renderMyDayInsightList(kind='viewers'){
   const current=myDayCurrent(),item=current.item;
@@ -3885,7 +3972,11 @@ function renderMyDayInsightList(kind='viewers'){
 }
 function renderMyDayViewer(){
   const current=myDayCurrent(),group=current.group,item=current.item;if(!group||!item)return closeMyDayViewer();
-  $('#myDayProgress').innerHTML=group.items.map((_,index)=>'<i class="'+(index<=myDayItemIndex?'active':'')+'"></i>').join('');
+  $('#myDayProgress').innerHTML=group.items.map((_,index)=>{
+    const state=index<myDayItemIndex?'done':index===myDayItemIndex?'current':'pending';
+    const width=index<myDayItemIndex?'100%':'0%';
+    return '<i class="'+state+'"><b style="width:'+width+'"></b></i>';
+  }).join('');
   $('#myDayViewerIdentity').innerHTML=avatarHtml(group.profile||{},'my-day-viewer-avatar')+'<span><strong>'+escapeHtml(group.profile?.displayName||group.profile?.tag||'My Day')+'</strong><small>@'+escapeHtml(group.profile?.tag||'')+' · '+escapeHtml(myDayTimeLabel(item.createdAt))+'</small></span>';
   $('#myDayViewerImage').src=item.image;
   const storyText=$('#myDayViewerOverlayText');
@@ -3904,6 +3995,7 @@ function renderMyDayViewer(){
   reactions.querySelectorAll('[data-myday-reaction]').forEach(button=>button.addEventListener('click',()=>reactToMyDay(item.id,button.dataset.mydayReaction)));
   const own=group.profile?.tag===me?.tag;
   const multiple=(group.items?.length||0)>1;
+  ensureMyDayStoryTimer(item.id);
   const counter=$('#myDayStoryCounter');
   if(counter){
     counter.textContent=multiple ? (String(myDayItemIndex+1)+' of '+String(group.items.length)) : '';
@@ -3963,12 +4055,7 @@ async function deleteCurrentMyDay(){
   catch(err){showToast(err?.message||'Could not delete My Day.');}
 }
 
-$('#myDayAddBtn')?.addEventListener('click',()=>{
-  const own=myDayGroups.find(group=>group.own);
-  if(own?.items?.length)openMyDayViewer(me?.tag);
-  else openMyDayCamera();
-});
-$('#myDayQuickAddBtn')?.addEventListener('click',openMyDayCamera);
+$('#myDayAddBtn')?.addEventListener('click',openMyDayCamera);
 $('#myDayCameraInput')?.addEventListener('change',e=>prepareMyDayFile(e.target.files?.[0]));
 $('#myDayText')?.addEventListener('input',syncMyDayComposerText);
 $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',()=>{
@@ -3979,73 +4066,18 @@ $('#myDayComposerClose')?.addEventListener('click',closeMyDayComposer);
 $('#myDayRetakeBtn')?.addEventListener('click',openMyDayCamera);
 $('#myDayPostBtn')?.addEventListener('click',postMyDay);
 $('#myDayViewerClose')?.addEventListener('click',closeMyDayViewer);
-$('#myDayPrevBtn')?.addEventListener('click',()=>moveMyDay(-1));
-$('#myDayNextBtn')?.addEventListener('click',()=>moveMyDay(1));
+$('#myDayPrevBtn')?.addEventListener('click',()=>advanceMyDayStory(-1));
+$('#myDayNextBtn')?.addEventListener('click',()=>advanceMyDayStory(1));
+$('.my-day-media')?.addEventListener('click',e=>{
+  if(e.target.closest('button,input,textarea,a'))return;
+  const rect=e.currentTarget.getBoundingClientRect();
+  const x=e.clientX-rect.left;
+  advanceMyDayStory(x<rect.width*.34?-1:1);
+});
 $('#myDayDeleteBtn')?.addEventListener('click',deleteCurrentMyDay);
 $('#myDayViewersBtn')?.addEventListener('click',()=>renderMyDayInsightList('viewers'));
 $('#myDayReactorsBtn')?.addEventListener('click',()=>renderMyDayInsightList('reactions'));
 $('#myDayReplyForm')?.addEventListener('submit',e=>{e.preventDefault();replyToMyDay($('#myDayReplyText')?.value);});
-function resetHomeMyDaySwipe({animate=true}={}){
-  if(!homeView)return;
-  homeView.classList.remove('my-day-swipe-active','my-day-swipe-ready','my-day-swipe-launch');
-  if(animate){
-    homeView.classList.add('my-day-swipe-settle');
-    homeView.style.setProperty('--myday-swipe-x','0px');
-    homeView.style.setProperty('--myday-swipe-progress','0');
-    setTimeout(()=>homeView.classList.remove('my-day-swipe-settle'),260);
-  }else{
-    homeView.style.removeProperty('--myday-swipe-x');
-    homeView.style.removeProperty('--myday-swipe-progress');
-  }
-}
-homeView?.addEventListener('touchstart',e=>{
-  if(currentMode!=='home'||e.touches.length!==1||e.target.closest('input,textarea,button,a,select'))return;
-  const touch=e.touches[0];
-  homeMyDaySwipe={x:touch.clientX,y:touch.clientY,time:Date.now(),active:false,cancelled:false,dx:0};
-},{passive:true});
-homeView?.addEventListener('touchmove',e=>{
-  if(!homeMyDaySwipe||currentMode!=='home'||e.touches.length!==1)return;
-  const touch=e.touches[0];
-  const dx=touch.clientX-homeMyDaySwipe.x;
-  const dy=touch.clientY-homeMyDaySwipe.y;
-  if(!homeMyDaySwipe.active){
-    if(Math.abs(dy)>16&&Math.abs(dy)>Math.abs(dx)*1.08){homeMyDaySwipe.cancelled=true;return;}
-    if(dx>9&&dx>Math.abs(dy)*1.12)homeMyDaySwipe.active=true;
-  }
-  if(!homeMyDaySwipe.active||homeMyDaySwipe.cancelled||dx<=0)return;
-  homeMyDaySwipe.dx=dx;
-  const progress=Math.max(0,Math.min(1,dx/112));
-  const shift=Math.min(92,dx*.58);
-  homeView.classList.add('my-day-swipe-active');
-  homeView.classList.toggle('my-day-swipe-ready',progress>=1);
-  homeView.style.setProperty('--myday-swipe-x',shift+'px');
-  homeView.style.setProperty('--myday-swipe-progress',String(progress));
-  e.preventDefault();
-},{passive:false});
-homeView?.addEventListener('touchend',e=>{
-  if(!homeMyDaySwipe||currentMode!=='home')return;
-  const state=homeMyDaySwipe;
-  homeMyDaySwipe=null;
-  const touch=e.changedTouches?.[0];
-  const dx=touch?touch.clientX-state.x:state.dx;
-  const dy=touch?touch.clientY-state.y:0;
-  const launch=state.active&&!state.cancelled&&dx>=96&&Math.abs(dy)<=82&&Date.now()-state.time<1200;
-  if(launch){
-    homeView.classList.remove('my-day-swipe-active','my-day-swipe-ready');
-    homeView.classList.add('my-day-swipe-launch');
-    homeView.style.setProperty('--myday-swipe-x','118px');
-    homeView.style.setProperty('--myday-swipe-progress','1');
-    if(navigator.vibrate)navigator.vibrate(16);
-    setTimeout(()=>{
-      resetHomeMyDaySwipe({animate:false});
-      openMyDayCamera();
-    },180);
-  }else resetHomeMyDaySwipe({animate:true});
-},{passive:true});
-homeView?.addEventListener('touchcancel',()=>{
-  homeMyDaySwipe=null;
-  resetHomeMyDaySwipe({animate:true});
-},{passive:true});
 function renderHome() {
   if (!me) return;
   renderMyDayTray();
