@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260925-myday-notify1" />
+  <link rel="stylesheet" href="/styles.css?v=20260925-myday-insights1" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -151,7 +151,10 @@
       </header>
 
       <section id="myDayTray" class="my-day-tray hidden" aria-label="My Day stories">
-        <button id="myDayAddBtn" class="my-day-add" type="button" aria-label="Add to My Day"></button>
+        <div class="my-day-own-wrap">
+          <button id="myDayAddBtn" class="my-day-add" type="button" aria-label="Open or add to My Day"></button>
+          <button id="myDayQuickAddBtn" class="my-day-quick-add hidden" type="button" aria-label="Add another My Day">＋</button>
+        </div>
         <div id="myDayStoryList" class="my-day-story-list"></div>
       </section>
       <input id="myDayCameraInput" type="file" accept="image/*" capture="environment" hidden />
@@ -824,8 +827,17 @@
     <div id="myDayComposer" class="my-day-overlay hidden" role="dialog" aria-modal="true" aria-label="Post to My Day">
       <div class="my-day-composer-card">
         <header><div><p class="eyebrow">MY DAY</p><h2>Share this moment</h2></div><button id="myDayComposerClose" class="icon-btn" type="button">×</button></header>
-        <img id="myDayComposerImage" alt="My Day preview" />
-        <textarea id="myDayCaption" rows="2" maxlength="280" placeholder="Add a caption…"></textarea>
+        <div class="my-day-composer-preview">
+          <img id="myDayComposerImage" alt="My Day preview" />
+          <div id="myDayComposerOverlayText" class="my-day-overlay-text position-center hidden"></div>
+        </div>
+        <label class="my-day-text-field"><span>Text on photo</span><input id="myDayText" maxlength="180" placeholder="Type text to place on your My Day…" autocomplete="off" /></label>
+        <div id="myDayTextPosition" class="my-day-text-position" aria-label="Text position">
+          <button type="button" data-position="top">Top</button>
+          <button type="button" data-position="center" class="active">Center</button>
+          <button type="button" data-position="bottom">Bottom</button>
+        </div>
+        <textarea id="myDayCaption" rows="2" maxlength="280" placeholder="Caption below the story (optional)…"></textarea>
         <div class="my-day-composer-actions"><button id="myDayRetakeBtn" class="ghost" type="button">Retake</button><button id="myDayPostBtn" class="primary" type="button">Post to My Day</button></div>
         <small>My Day disappears automatically after 24 hours.</small>
       </div>
@@ -835,9 +847,21 @@
       <div id="myDayProgress" class="my-day-progress"></div>
       <header class="my-day-viewer-head"><div id="myDayViewerIdentity"></div><button id="myDayViewerClose" type="button" aria-label="Close My Day">×</button></header>
       <button id="myDayPrevBtn" class="my-day-nav my-day-prev" type="button" aria-label="Previous story">‹</button>
-      <div class="my-day-media"><img id="myDayViewerImage" alt="My Day" /><p id="myDayViewerCaption"></p></div>
+      <div class="my-day-media">
+        <img id="myDayViewerImage" alt="My Day" />
+        <div id="myDayViewerOverlayText" class="my-day-overlay-text position-center hidden"></div>
+        <p id="myDayViewerCaption"></p>
+      </div>
       <button id="myDayNextBtn" class="my-day-nav my-day-next" type="button" aria-label="Next story">›</button>
       <div id="myDayViewerActions" class="my-day-viewer-actions">
+        <div id="myDayStoryCounter" class="my-day-story-counter hidden"></div>
+        <div id="myDayOwnerInsights" class="my-day-owner-insights hidden">
+          <div class="my-day-insight-buttons">
+            <button id="myDayViewersBtn" type="button">👁 <span>0 viewers</span></button>
+            <button id="myDayReactorsBtn" type="button">❤️ <span>0 reactions</span></button>
+          </div>
+          <div id="myDayInsightList" class="my-day-insight-list hidden"></div>
+        </div>
         <div id="myDayReactions" class="my-day-reactions" aria-label="React to My Day"></div>
         <form id="myDayReplyForm" class="my-day-reply-form"><input id="myDayReplyText" maxlength="1000" placeholder="Reply to My Day…" autocomplete="off" /><button class="primary" type="submit">Send</button></form>
         <button id="myDayDeleteBtn" class="ghost my-day-delete hidden" type="button">Delete My Day</button>
@@ -846,6 +870,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260925-myday-notify1" defer></script>
+  <script src="/app.js?v=20260925-myday-insights1" defer></script>
 </body>
 </html>
