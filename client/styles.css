@@ -14885,3 +14885,194 @@ html[data-theme="night"] .my-day-tray{background:#2d2427;border-color:#4b3b40}
   .my-day-nav{opacity:.68}
   .my-day-media p{bottom:126px}
 }
+
+
+/* ===== 2026-09-25 MY DAY TEXT + OWNER INSIGHTS ===== */
+.my-day-own-wrap{
+  position:relative;
+  flex:0 0 66px;
+  width:66px;
+}
+.my-day-quick-add{
+  position:absolute;
+  right:-1px;
+  top:38px;
+  z-index:3;
+  width:22px;
+  height:22px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:2px solid var(--paper);
+  border-radius:50%;
+  color:#fff;
+  background:var(--rose);
+  font:800 13px/1 ui-sans-serif,system-ui,sans-serif;
+  box-shadow:0 4px 12px rgba(0,0,0,.18);
+}
+.my-day-composer-preview{
+  position:relative;
+  width:100%;
+  overflow:hidden;
+  border-radius:16px;
+  background:#111;
+}
+.my-day-composer-preview>img{
+  display:block;
+  width:100%;
+  max-height:64dvh;
+  object-fit:contain;
+  background:#111;
+}
+.my-day-text-field{
+  display:grid;
+  gap:6px;
+}
+.my-day-text-field>span{
+  color:var(--muted);
+  font:800 8px/1 ui-sans-serif,system-ui,sans-serif;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.my-day-text-position{
+  display:flex;
+  gap:6px;
+}
+.my-day-text-position button{
+  min-height:32px;
+  padding:6px 12px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  color:var(--ink);
+  background:var(--paper-2);
+  font:800 8px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-text-position button.active{
+  color:#fff;
+  border-color:var(--rose);
+  background:var(--rose);
+}
+.my-day-overlay-text{
+  position:absolute;
+  z-index:2;
+  left:8%;
+  right:8%;
+  padding:8px 10px;
+  color:#fff;
+  font:800 clamp(18px,5vw,38px)/1.15 ui-sans-serif,system-ui,sans-serif;
+  text-align:center;
+  text-shadow:0 2px 10px rgba(0,0,0,.78),0 1px 2px rgba(0,0,0,.9);
+  overflow-wrap:anywhere;
+  pointer-events:none;
+}
+.my-day-overlay-text.position-top{
+  top:15%;
+  transform:translateY(-50%);
+}
+.my-day-overlay-text.position-center{
+  top:50%;
+  transform:translateY(-50%);
+}
+.my-day-overlay-text.position-bottom{
+  bottom:18%;
+}
+.my-day-story-counter{
+  justify-self:center;
+  padding:5px 9px;
+  border-radius:999px;
+  color:rgba(255,255,255,.86);
+  background:rgba(0,0,0,.32);
+  font:800 8px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-owner-insights{
+  display:grid;
+  gap:7px;
+}
+.my-day-insight-buttons{
+  display:flex;
+  justify-content:center;
+  gap:7px;
+}
+.my-day-insight-buttons button{
+  min-height:38px;
+  padding:7px 12px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:999px;
+  color:#fff;
+  background:rgba(0,0,0,.42);
+  font:800 9px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-insight-list{
+  width:100%;
+  max-height:180px;
+  overflow:auto;
+  display:grid;
+  gap:3px;
+  padding:7px;
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:14px;
+  background:rgba(15,11,12,.82);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.my-day-insight-person{
+  display:grid;
+  grid-template-columns:36px minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px;
+  padding:6px;
+  border-radius:10px;
+  color:#fff;
+  background:rgba(255,255,255,.045);
+}
+.my-day-insight-avatar{
+  width:36px!important;
+  height:36px!important;
+  border-radius:50%;
+  object-fit:cover;
+}
+.my-day-insight-person>span{
+  min-width:0;
+}
+.my-day-insight-person strong,
+.my-day-insight-person small{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.my-day-insight-person strong{
+  font:800 9px/1.2 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-insight-person small{
+  margin-top:2px;
+  color:rgba(255,255,255,.68);
+  font:700 7px/1.2 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-insight-person em{
+  font-style:normal;
+  font-size:18px;
+}
+.my-day-insight-empty{
+  margin:0;
+  padding:10px;
+  color:rgba(255,255,255,.68);
+  text-align:center;
+  font:700 8px/1.3 ui-sans-serif,system-ui,sans-serif;
+}
+@media(max-width:800px){
+  .my-day-composer-card{
+    max-height:94dvh;
+  }
+  .my-day-overlay-text{
+    font-size:clamp(20px,7vw,34px);
+  }
+  .my-day-viewer-actions{
+    max-height:38dvh;
+    overflow-y:auto;
+    padding-bottom:max(0px,env(safe-area-inset-bottom));
+  }
+  .my-day-insight-list{
+    max-height:145px;
+  }
+}
