@@ -38,6 +38,10 @@ let myDayPosting = false;
 let pendingStoryMusicFile = null;
 let pendingStoryMusicName = '';
 let pendingStoryEffect = 'original';
+let pendingStoryTextX = 50;
+let pendingStoryTextY = 50;
+let storyTextDragPointerId = null;
+let myDayReactionQueue = Promise.resolve();
 const MY_DAY_STORY_DURATION_MS = 10000;
 let myDayStoryFrame = 0;
 let myDayStoryStartedAt = 0;
@@ -2388,6 +2392,17 @@ function renderNotificationHub() {
       </article>`;
     }
 
+    if (item.type === 'story_mention') {
+      return `<article class="notification-item mention-notification notification-route-story ${item.unread ? 'unread' : ''}" data-story-id="${escapeHtml(item.storyId || '')}" data-story-author="${escapeHtml(actor.tag || '')}">
+        <div class="notification-actor">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>mentioned you in their story</small></span>
+        </div>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+        ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
+      </article>`;
+    }
+
     if (item.type === 'comment_mention') {
       return `<article class="notification-item mention-notification notification-route-memory ${item.unread ? 'unread' : ''}" data-scrapbook-id="${escapeHtml(item.scrapbookId || '')}" data-entry-id="${escapeHtml(item.entryId || '')}">
         <div class="notification-actor">
@@ -2490,6 +2505,10 @@ function renderNotificationHub() {
   host.querySelectorAll('.notification-route-chat').forEach(card=>card.addEventListener('click',async e=>{
     if(e.target.closest('.inline-mention,button'))return;
     await openNotificationChat(card.dataset.chatId);
+  }));
+  host.querySelectorAll('.notification-route-story').forEach(card=>card.addEventListener('click',async e=>{
+    if(e.target.closest('.inline-mention,button'))return;
+    await openMyDayStoryById(card.dataset.storyId,card.dataset.storyAuthor);
   }));
 
   host.querySelectorAll('.group-delete-approve').forEach(button=>button.addEventListener('click',async e=>{
@@ -3809,10 +3828,7 @@ function renderStoryMentionChoices(){
   list.querySelectorAll('[data-story-mention]').forEach(button=>button.addEventListener('click',()=>{
     const tag=String(button.dataset.storyMention||'').trim();
     if(!tag)return;
-    const field=$('#myDayText');
-    const prefix=String(field?.value||'').trim();
-    if(field)field.value=(prefix?prefix+' ':'')+'@'+tag;
-    syncMyDayComposerText();
+    appendStoryComposerText('@'+tag);
     $('#storyMentionPanel')?.classList.add('hidden');
   }));
 }
@@ -3863,18 +3879,84 @@ async function openMyDayCamera(){
   }
   $('#myDayCameraInput')?.click();
 }
+function storyTextCoordinate(value,fallback=50){
+  const number=Number(value);
+  return Number.isFinite(number)?Math.max(8,Math.min(92,number)):fallback;
+}
+function storyLegacyTextY(item){
+  if(item?.textPosition==='top')return 16;
+  if(item?.textPosition==='bottom')return 82;
+  return 50;
+}
+function storyComposerText(){
+  const overlay=$('#myDayComposerOverlayText');
+  if(!overlay)return '';
+  return String(overlay.innerText ?? overlay.textContent ?? '').replace(/\u00a0/g,' ').trim().slice(0,180);
+}
+function applyStoryTextPosition(element,x,y){
+  if(!element)return;
+  element.style.left=storyTextCoordinate(x,50)+'%';
+  element.style.top=storyTextCoordinate(y,50)+'%';
+  element.style.right='auto';
+  element.style.bottom='auto';
+  element.style.transform='translate(-50%,-50%)';
+}
 function syncMyDayComposerText(){
-  const input=$('#myDayText');
   const overlay=$('#myDayComposerOverlayText');
   if(!overlay)return;
-  const text=String(input?.value||'').trim();
-  const active=$('#myDayTextPosition [data-position].active');
-  const position=['top','center','bottom'].includes(active?.dataset.position) ? active.dataset.position : 'center';
-  overlay.textContent=text;
-  overlay.classList.toggle('hidden',!text);
-  overlay.classList.remove('position-top','position-center','position-bottom');
-  overlay.classList.add('position-'+position);
-  input?.classList.toggle('has-text',Boolean(text));
+  const text=storyComposerText();
+  const editing=overlay.dataset.editing==='1';
+  overlay.classList.toggle('hidden',!text&&!editing);
+  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY);
+}
+function placeStoryCaretAtEnd(element){
+  if(!element)return;
+  try{
+    const range=document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection=window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }catch{}
+}
+function startStoryTextEditing(){
+  closeStoryToolPanels();
+  const overlay=$('#myDayComposerOverlayText');
+  if(!overlay)return;
+  overlay.dataset.editing='1';
+  overlay.contentEditable='true';
+  overlay.classList.remove('hidden');
+  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY);
+  setTimeout(()=>{
+    overlay.focus({preventScroll:true});
+    placeStoryCaretAtEnd(overlay);
+  },40);
+}
+function finishStoryTextEditing(){
+  const overlay=$('#myDayComposerOverlayText');
+  if(!overlay)return;
+  overlay.dataset.editing='0';
+  overlay.contentEditable='false';
+  overlay.blur();
+  syncMyDayComposerText();
+}
+function appendStoryComposerText(value){
+  const overlay=$('#myDayComposerOverlayText');
+  if(!overlay)return;
+  const current=storyComposerText();
+  const next=(current?current+' ':'')+String(value||'');
+  overlay.textContent=next.slice(0,180);
+  syncMyDayComposerText();
+}
+function setStoryTextFromPointer(event){
+  const stage=$('.story-editor-stage');
+  if(!stage)return;
+  const rect=stage.getBoundingClientRect();
+  if(!rect.width||!rect.height)return;
+  pendingStoryTextX=storyTextCoordinate(((event.clientX-rect.left)/rect.width)*100,50);
+  pendingStoryTextY=storyTextCoordinate(((event.clientY-rect.top)/rect.height)*100,50);
+  syncMyDayComposerText();
 }
 function setMyDayPostProgress(percent,label,{state='working'}={}){
   const box=$('#myDayPostProgress');
@@ -3952,8 +4034,14 @@ function prepareMyDayFile(file,{openText=false}={}){
   pendingMyDayPreviewUrl=URL.createObjectURL(file);
   $('#myDayComposerImage').src=pendingMyDayPreviewUrl;
   if($('#myDayCaption'))$('#myDayCaption').value='';
-  if($('#myDayText'))$('#myDayText').value='';
-  $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(button=>button.classList.toggle('active',button.dataset.position==='center'));
+  const storyText=$('#myDayComposerOverlayText');
+  if(storyText){
+    storyText.textContent='';
+    storyText.dataset.editing='0';
+    storyText.contentEditable='false';
+  }
+  pendingStoryTextX=50;
+  pendingStoryTextY=50;
   $('#storyMusicBadge')?.classList.add('hidden');
   closeStoryToolPanels();
   syncMyDayComposerText();
@@ -3962,14 +4050,7 @@ function prepareMyDayFile(file,{openText=false}={}){
   closeStoryCreateHub();
   $('#myDayComposer').classList.remove('hidden');
   document.body.classList.add('my-day-open');
-  if(openText){
-    $('#storyTextToolPanel')?.classList.remove('hidden');
-    setTimeout(()=>{
-      const field=$('#myDayText');
-      field?.focus({preventScroll:false});
-      field?.scrollIntoView({behavior:'smooth',block:'nearest'});
-    },180);
-  }
+  if(openText)setTimeout(startStoryTextEditing,180);
 }
 function closeMyDayComposer(){
   if(myDayPosting)return;
@@ -3980,6 +4061,16 @@ function closeMyDayComposer(){
   pendingStoryMusicFile=null;
   pendingStoryMusicName='';
   pendingStoryEffect='original';
+  pendingStoryTextX=50;
+  pendingStoryTextY=50;
+  storyTextDragPointerId=null;
+  const storyText=$('#myDayComposerOverlayText');
+  if(storyText){
+    storyText.textContent='';
+    storyText.dataset.editing='0';
+    storyText.contentEditable='false';
+    storyText.classList.add('hidden');
+  }
   const image=$('#myDayComposerImage');
   if(image)image.style.filter='none';
   $('#storyMusicBadge')?.classList.add('hidden');
@@ -4005,12 +4096,13 @@ async function postMyDay(){
     let musicUpload=null;
     if(pendingStoryMusicFile)musicUpload=await uploadStoryMusicWithProgress(pendingStoryMusicFile);
     setMyDayPostProgress(94,'Saving story…');
-    const textButton=$('#myDayTextPosition [data-position].active');
+    finishStoryTextEditing();
     const posted=await api('/api/my-day',{method:'POST',body:JSON.stringify({
       image:uploaded.src,
       caption:String($('#myDayCaption')?.value||'').trim(),
-      overlayText:String($('#myDayText')?.value||'').trim(),
-      textPosition:textButton?.dataset.position || 'center',
+      overlayText:storyComposerText(),
+      textX:pendingStoryTextX,
+      textY:pendingStoryTextY,
       effect:pendingStoryEffect,
       music:musicUpload?.src || '',
       musicName:pendingStoryMusicName
@@ -4123,6 +4215,29 @@ function openMyDayViewer(tag,itemIndex=0){
   renderMyDayViewer();
   markCurrentMyDayViewed();
 }
+async function openMyDayStoryById(storyId,author=''){
+  const id=String(storyId||'').trim();
+  if(!id)return false;
+  try{await loadMyDays();}catch{}
+  let groupIndex=-1;
+  let itemIndex=-1;
+  for(let index=0;index<myDayGroups.length;index++){
+    const group=myDayGroups[index];
+    if(author && group?.profile?.tag!==author)continue;
+    const found=(group?.items||[]).findIndex(item=>item.id===id);
+    if(found>=0){groupIndex=index;itemIndex=found;break;}
+  }
+  if(groupIndex<0){
+    showToast('That story has expired or is no longer available.');
+    return false;
+  }
+  closeNotificationHub?.();
+  showView('home');
+  const tag=myDayGroups[groupIndex]?.profile?.tag;
+  if(!tag)return false;
+  openMyDayViewer(tag,itemIndex);
+  return true;
+}
 function closeMyDayViewer(){
   stopMyDayStoryTimer();
   const audio=$('#storyViewerAudio');
@@ -4135,24 +4250,41 @@ function closeMyDayViewer(){
 function moveMyDay(delta){
   advanceMyDayStory(delta);
 }
-function renderMyDayInsightList(kind='viewers'){
+function renderMyDayInsightList(){
   const current=myDayCurrent(),item=current.item;
   const host=$('#myDayInsightList');
   if(!host||!item)return;
-  const entries=kind==='reactions'
-    ? (Array.isArray(item.reactionPeople)?item.reactionPeople:[])
-    : (Array.isArray(item.viewers)?item.viewers:[]);
-  host.dataset.kind=kind;
+  const entries=Array.isArray(item.viewers)?item.viewers:[];
   host.classList.remove('hidden');
   host.innerHTML=entries.length ? entries.map(entry=>{
     const profile=entry.profile||{};
-    const when=kind==='reactions'?entry.reactedAt:entry.viewedAt;
+    const when=entry.viewedAt;
     return '<div class="my-day-insight-person">'+avatarHtml(profile,'my-day-insight-avatar')+
       '<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+
       (when?' · '+escapeHtml(myDayTimeLabel(when)):'')+'</small></span>'+
-      (kind==='reactions'?'<em>'+escapeHtml(entry.emoji||'❤️')+'</em>':'<em>👁</em>')+
+      '<em>'+(entry.emoji?escapeHtml(entry.emoji):'')+'</em>'+
       '</div>';
-  }).join('') : '<p class="my-day-insight-empty">'+(kind==='reactions'?'No reactions yet.':'No viewers yet.')+'</p>';
+  }).join('') : '<p class="my-day-insight-empty">No viewers yet.</p>';
+}
+function renderMyDayOwnerSummary(item){
+  const viewers=Array.isArray(item?.viewers)?item.viewers:[];
+  const count=$('#myDayViewerSummaryCount');
+  const names=$('#myDayViewerSummaryNames');
+  if(count)count.textContent=viewers.length
+    ? (viewers.length+' viewer'+(viewers.length===1?'':'s'))
+    : 'No viewers yet';
+  if(names){
+    names.textContent=viewers.length
+      ? viewers.slice(0,3).map(entry=>{
+          const profile=entry.profile||{};
+          const label=String(profile.displayName||profile.tag||'Viewer').split(/\s+/)[0];
+          return label+(entry.emoji?' '+entry.emoji:'');
+        }).join(' · ')
+      : 'Your viewers and reactions will appear here.';
+  }
+  const summary=$('#myDayViewerSummaryBtn');
+  const list=$('#myDayInsightList');
+  if(summary)summary.setAttribute('aria-expanded',String(Boolean(list&&!list.classList.contains('hidden'))));
 }
 function renderMyDayViewer(){
   const current=myDayCurrent(),group=current.group,item=current.item;if(!group||!item)return closeMyDayViewer();
@@ -4188,14 +4320,13 @@ function renderMyDayViewer(){
   if(storyText){
     storyText.textContent=item.overlayText||'';
     storyText.classList.toggle('hidden',!item.overlayText);
-    storyText.classList.remove('position-top','position-center','position-bottom');
-    storyText.classList.add('position-'+(['top','center','bottom'].includes(item.textPosition)?item.textPosition:'center'));
+    applyStoryTextPosition(storyText,item.textX,Number.isFinite(Number(item.textY))?item.textY:storyLegacyTextY(item));
   }
   const caption=$('#myDayViewerCaption');caption.textContent=item.caption||'';caption.classList.toggle('hidden',!item.caption);
   const reactions=$('#myDayReactions');
   reactions.innerHTML=['❤️','😂','😮','😢','👍'].map(emoji=>{
     const count=Number(item.reactionCounts?.[emoji])||0;
-    return '<button type="button" class="'+(item.myReaction===emoji?'active':'')+'" data-myday-reaction="'+emoji+'"><span>'+emoji+'</span>'+(count?'<b>'+count+'</b>':'')+'</button>';
+    return '<button type="button" data-myday-reaction="'+emoji+'"><span>'+emoji+'</span>'+(count?'<b>'+count+'</b>':'')+'</button>';
   }).join('');
   reactions.querySelectorAll('[data-myday-reaction]').forEach(button=>button.addEventListener('click',()=>reactToMyDay(item.id,button.dataset.mydayReaction)));
   const own=group.profile?.tag===me?.tag;
@@ -4221,26 +4352,22 @@ function renderMyDayViewer(){
   const insights=$('#myDayOwnerInsights');
   insights?.classList.toggle('hidden',!own);
   if(own){
-    const viewers=Number(item.viewerCount)||0;
-    const reactors=Number(item.reactionCount)||0;
-    const viewersLabel=$('#myDayViewersBtn span');
-    const reactorsLabel=$('#myDayReactorsBtn span');
-    if(viewersLabel)viewersLabel.textContent=viewers+' viewer'+(viewers===1?'':'s');
-    if(reactorsLabel)reactorsLabel.textContent=reactors+' reaction'+(reactors===1?'':'s');
+    renderMyDayOwnerSummary(item);
     const list=$('#myDayInsightList');
-    if(list&&!list.classList.contains('hidden'))renderMyDayInsightList(list.dataset.kind||'viewers');
+    if(list&&!list.classList.contains('hidden'))renderMyDayInsightList();
   }else{
     $('#myDayInsightList')?.classList.add('hidden');
   }
 }
-async function reactToMyDay(storyId,emoji){
-  try{
+function reactToMyDay(storyId,emoji){
+  myDayReactionQueue=myDayReactionQueue.then(async()=>{
     const data=await api('/api/my-day/'+encodeURIComponent(storyId)+'/reaction',{method:'POST',body:JSON.stringify({emoji})});
     const current=myDayCurrent(),group=current.group;
     const index=group?.items?.findIndex(item=>item.id===storyId)??-1;
     if(index>=0&&data.item)group.items[index]=data.item;
     renderMyDayViewer();
-  }catch(err){showToast(err?.message||'Could not react to My Day.');}
+  }).catch(err=>showToast(err?.message||'Could not react to My Day.'));
+  return myDayReactionQueue;
 }
 async function replyToMyDay(text){
   const current=myDayCurrent(),group=current.group,item=current.item,target=group?.profile?.tag,message=String(text||'').trim();
@@ -4298,16 +4425,42 @@ $('#storyMusicInput')?.addEventListener('change',e=>{
   if(file)setStoryMusic(file);
   e.target.value='';
 });
-$('#myDayText')?.addEventListener('input',syncMyDayComposerText);
-$('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',()=>{
-  $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(item=>item.classList.toggle('active',item===button));
+const storyComposerOverlay=$('#myDayComposerOverlayText');
+storyComposerOverlay?.addEventListener('input',()=>{
+  const value=storyComposerText();
+  if(value.length>=180 && String(storyComposerOverlay.innerText||storyComposerOverlay.textContent||'').trim().length>180){
+    storyComposerOverlay.textContent=value;
+    placeStoryCaretAtEnd(storyComposerOverlay);
+  }
   syncMyDayComposerText();
-}));
-$('#storyEditorDoneBtn')?.addEventListener('click',()=>closeStoryToolPanels());
-$('#storyEditorTextBtn')?.addEventListener('click',()=>{
-  openStoryToolPanel('storyTextToolPanel');
-  if(!$('#storyTextToolPanel')?.classList.contains('hidden'))setTimeout(()=>$('#myDayText')?.focus(),60);
 });
+storyComposerOverlay?.addEventListener('pointerdown',event=>{
+  if(storyComposerOverlay.dataset.editing==='1' || !storyComposerText())return;
+  event.preventDefault();
+  event.stopPropagation();
+  storyTextDragPointerId=event.pointerId;
+  storyComposerOverlay.classList.add('is-dragging');
+  try{storyComposerOverlay.setPointerCapture(event.pointerId);}catch{}
+  setStoryTextFromPointer(event);
+});
+storyComposerOverlay?.addEventListener('pointermove',event=>{
+  if(storyTextDragPointerId!==event.pointerId)return;
+  event.preventDefault();
+  setStoryTextFromPointer(event);
+});
+const endStoryTextDrag=event=>{
+  if(storyTextDragPointerId!==event.pointerId)return;
+  try{storyComposerOverlay?.releasePointerCapture(event.pointerId);}catch{}
+  storyTextDragPointerId=null;
+  storyComposerOverlay?.classList.remove('is-dragging');
+};
+storyComposerOverlay?.addEventListener('pointerup',endStoryTextDrag);
+storyComposerOverlay?.addEventListener('pointercancel',endStoryTextDrag);
+$('#storyEditorDoneBtn')?.addEventListener('click',()=>{
+  finishStoryTextEditing();
+  closeStoryToolPanels();
+});
+$('#storyEditorTextBtn')?.addEventListener('click',startStoryTextEditing);
 $('#storyEditorStickerBtn')?.addEventListener('click',()=>openStoryToolPanel('storyStickerPanel'));
 $('#storyEditorEffectBtn')?.addEventListener('click',()=>openStoryToolPanel('storyEffectPanel'));
 $('#storyEditorMentionBtn')?.addEventListener('click',()=>{
@@ -4316,10 +4469,7 @@ $('#storyEditorMentionBtn')?.addEventListener('click',()=>{
 });
 $('#storyEditorMusicBtn')?.addEventListener('click',()=>$('#storyMusicInput')?.click());
 $('#storyStickerPanel')?.querySelectorAll('[data-story-sticker]').forEach(button=>button.addEventListener('click',()=>{
-  const field=$('#myDayText');
-  const current=String(field?.value||'');
-  if(field)field.value=(current?current+' ':'')+button.dataset.storySticker;
-  syncMyDayComposerText();
+  appendStoryComposerText(button.dataset.storySticker);
 }));
 $('#storyEffectPanel')?.querySelectorAll('[data-story-effect]').forEach(button=>button.addEventListener('click',()=>{
   pendingStoryEffect=button.dataset.storyEffect||'original';
@@ -4342,8 +4492,13 @@ $('.my-day-media')?.addEventListener('click',e=>{
   advanceMyDayStory(x<rect.width*.34?-1:1);
 });
 $('#myDayDeleteBtn')?.addEventListener('click',deleteCurrentMyDay);
-$('#myDayViewersBtn')?.addEventListener('click',()=>renderMyDayInsightList('viewers'));
-$('#myDayReactorsBtn')?.addEventListener('click',()=>renderMyDayInsightList('reactions'));
+$('#myDayViewerSummaryBtn')?.addEventListener('click',()=>{
+  const list=$('#myDayInsightList');
+  if(!list)return;
+  if(list.classList.contains('hidden'))renderMyDayInsightList();
+  else list.classList.add('hidden');
+  renderMyDayOwnerSummary(myDayCurrent().item);
+});
 $('#myDayReplyForm')?.addEventListener('submit',e=>{e.preventDefault();replyToMyDay($('#myDayReplyText')?.value);});
 function renderHome() {
   if (!me) return;
@@ -5807,7 +5962,7 @@ function renderChatMessages({stickBottom=true}={}) {
         ${message.deleted
           ? '<p class="chat-message-deleted"><span>⊘</span> Message deleted</p>'
           : `${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
-             ${message.myDayReply ? `<div class="chat-myday-reply"><img src="${escapeHtml(message.myDayReply.image||'')}" alt="" /><span><small>Replied to My Day</small><strong>@${escapeHtml(message.myDayReply.author||'')}</strong></span></div>` : ''}
+             ${message.myDayReply ? `<button type="button" class="chat-myday-reply" data-story-id="${escapeHtml(message.myDayReply.storyId||'')}" data-story-author="${escapeHtml(message.myDayReply.author||'')}"><img src="${escapeHtml(message.myDayReply.image||'')}" alt="" /><span><small>Replied to My Day</small><strong>@${escapeHtml(message.myDayReply.author||'')}</strong></span></button>` : ''}
              ${images.length ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>` : ''}
              ${chatVoiceHtml(message)}
              ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
@@ -5825,6 +5980,10 @@ function renderChatMessages({stickBottom=true}={}) {
   host.querySelectorAll('.chat-reply-quote[data-reply-target]').forEach(button=>button.addEventListener('click',e=>{
     e.stopPropagation();
     scrollChatToMessage(button.dataset.replyTarget);
+  }));
+  host.querySelectorAll('.chat-myday-reply[data-story-id]').forEach(button=>button.addEventListener('click',async e=>{
+    e.stopPropagation();
+    await openMyDayStoryById(button.dataset.storyId,button.dataset.storyAuthor);
   }));
   wireChatVoicePlayers(host);
   wireChatMessageGestures(host);
@@ -9195,6 +9354,11 @@ async function ensureNativeChatNotifications() {
           const chatId=String(extra.chatId || '');
           const scrapbookId=String(extra.scrapbookId || '');
           const entryId=String(extra.entryId || '');
+          const storyId=String(extra.storyId || '');
+          if(storyId){
+            await openMyDayStoryById(storyId).catch(()=>{});
+            return;
+          }
           if (chatId) {
             showView('messages');
             await loadChats().catch(()=>{});
@@ -9238,7 +9402,11 @@ async function ensureNativeChatNotifications() {
           const url=String(data.url || '');
           const match=url.match(/[?&]messages=([^&]+)/);
           const chatId=match ? decodeURIComponent(match[1]) : '';
-          if (chatId) {
+          const storyMatch=url.match(/[?&]myday=([^&]+)/);
+          const storyId=storyMatch ? decodeURIComponent(storyMatch[1]) : '';
+          if(storyId && storyId!=='1'){
+            await openMyDayStoryById(storyId).catch(()=>{});
+          } else if (chatId) {
             showView('messages');
             await loadChats().catch(()=>{});
             if (chats.some(chat=>chat.id===chatId)) await openChat(chatId).catch(()=>{});
@@ -9342,7 +9510,7 @@ const nativeSocialNotificationSeen=new Set();
 async function showNativeSocialNotification(payload = {}) {
   if(!isNativeScrapellaApp() || payload?.from===me?.tag)return;
   const type=String(payload?.type || '');
-  if(!['comment','comment_mention','profile_mention'].includes(type))return;
+  if(!['comment','comment_mention','profile_mention','story_mention'].includes(type))return;
   const local=nativePlugin('LocalNotifications');
   if(!local)return;
   await ensureNativeChatNotifications();
@@ -9353,6 +9521,7 @@ async function showNativeSocialNotification(payload = {}) {
       actor:payload.actor || (payload.from ? {tag:payload.from,displayName:payload.from} : null),
       scrapbookId:payload.scrapbookId || null,
       entryId:payload.entryId || null,
+      storyId:payload.storyId || null,
       scrapbookName:payload.scrapbookName || '',
       excerpt:payload.excerpt || '',
       createdAt:payload.createdAt || ''
@@ -9380,7 +9549,9 @@ async function showNativeSocialNotification(payload = {}) {
       ? `${name} commented${item.scrapbookName ? ' in '+item.scrapbookName : ''}`
       : type==='profile_mention'
         ? `${name} mentioned you`
-        : `${name} mentioned you in a comment`;
+        : type==='story_mention'
+          ? `${name} mentioned you in a story`
+          : `${name} mentioned you in a comment`;
     const body=String(item.excerpt || (type==='comment' ? 'Open Scrapella to read the comment.' : 'Open Scrapella to see the mention.')).trim();
     const iconOptions=await nativeNotificationIconOptions();
     await local.schedule({
@@ -9393,7 +9564,8 @@ async function showNativeSocialNotification(payload = {}) {
         extra:{
           notificationType:type,
           scrapbookId:item.scrapbookId || payload.scrapbookId || '',
-          entryId:item.entryId || payload.entryId || ''
+          entryId:item.entryId || payload.entryId || '',
+          storyId:item.storyId || payload.storyId || ''
         }
       }]
     });
@@ -9447,9 +9619,17 @@ function maybeOpenReminderComposer() {
     }, 180);
     return;
   }
-  if (params.get('myday') === '1') {
+  const myDayParam=params.get('myday');
+  if (myDayParam) {
     history.replaceState({}, '', location.pathname);
-    setTimeout(async()=>{showView('home');await loadMyDays().catch(()=>{});},180);
+    setTimeout(async()=>{
+      if(myDayParam==='1'){
+        showView('home');
+        await loadMyDays().catch(()=>{});
+      }else{
+        await openMyDayStoryById(myDayParam).catch(()=>{});
+      }
+    },180);
     return;
   }
   if (params.get('notifications') === '1') {
