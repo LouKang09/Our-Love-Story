@@ -3732,7 +3732,7 @@ function applyStoryEditorEffect(){
   });
 }
 function closeStoryToolPanels(except=''){
-  ['storyTextToolPanel','storyStickerPanel','storyEffectPanel','storyMentionPanel'].forEach(id=>{
+  ['storyStickerPanel','storyEffectPanel','storyMentionPanel'].forEach(id=>{
     if(id!==except)$('#'+id)?.classList.add('hidden');
   });
 }
@@ -9534,6 +9534,7 @@ async function showNativeSocialNotification(payload = {}) {
         if(candidate.type!==type)return false;
         if(payload.from && candidate.actor?.tag!==payload.from)return false;
         if(payload.entryId && candidate.entryId!==payload.entryId)return false;
+        if(payload.storyId && candidate.storyId!==payload.storyId)return false;
         return true;
       }) || item;
     }
