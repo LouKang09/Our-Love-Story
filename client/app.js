@@ -3556,20 +3556,36 @@ function myDayCurrent(){
 }
 async function loadMyDays(){
   if(!me?.tag)return;
+  const previous=myDayCurrent();
+  const previousTag=previous.group?.profile?.tag || '';
+  const previousStoryId=previous.item?.id || '';
   const data=await api('/api/my-day');
   myDayGroups=Array.isArray(data.groups)?data.groups:[];
+  if(previousTag && !$('#myDayViewer')?.classList.contains('hidden')){
+    const nextGroupIndex=myDayGroups.findIndex(group=>group.profile?.tag===previousTag);
+    if(nextGroupIndex>=0){
+      myDayGroupIndex=nextGroupIndex;
+      const nextItems=myDayGroups[nextGroupIndex].items || [];
+      const nextItemIndex=nextItems.findIndex(item=>item.id===previousStoryId);
+      myDayItemIndex=nextItemIndex>=0 ? nextItemIndex : Math.min(myDayItemIndex,Math.max(0,nextItems.length-1));
+    }
+  }
   renderMyDayTray();
   if(!$('#myDayViewer')?.classList.contains('hidden'))renderMyDayViewer();
 }
 function renderMyDayTray(){
-  const tray=$('#myDayTray'),list=$('#myDayStoryList'),add=$('#myDayAddBtn');
+  const tray=$('#myDayTray'),list=$('#myDayStoryList'),add=$('#myDayAddBtn'),quickAdd=$('#myDayQuickAddBtn');
   if(!tray||!list||!add)return;
   const visible=currentMode==='home' && Boolean(me?.tag);
   tray.classList.toggle('hidden',!visible);
   if(!visible)return;
   const own=myDayGroups.find(group=>group.own);
-  add.innerHTML='<span class="my-day-avatar-wrap">'+avatarHtml(me,'my-day-avatar')+'<b>＋</b></span><small>'+(own?.items?.length?'Your day':'Add day')+'</small>';
+  add.innerHTML='<span class="my-day-avatar-wrap">'+avatarHtml(me,'my-day-avatar')+'</span><small>'+(own?.items?.length?'Your day':'Add day')+'</small>';
   add.classList.toggle('has-story',Boolean(own?.items?.length));
+  if(quickAdd){
+    quickAdd.classList.toggle('hidden',!own?.items?.length);
+    quickAdd.setAttribute('aria-label',own?.items?.length ? 'Add another My Day' : 'Add My Day');
+  }
   const groups=myDayGroups.filter(group=>!group.own);
   list.innerHTML=groups.length ? groups.map(group=>
     '<button class="my-day-story-button" type="button" data-myday-tag="'+escapeHtml(group.profile?.tag||'')+'">'+
@@ -3602,13 +3618,28 @@ async function openMyDayCamera(){
   }
   $('#myDayCameraInput')?.click();
 }
+function syncMyDayComposerText(){
+  const input=$('#myDayText');
+  const overlay=$('#myDayComposerOverlayText');
+  if(!overlay)return;
+  const text=String(input?.value||'').trim();
+  const active=$('#myDayTextPosition [data-position].active');
+  const position=['top','center','bottom'].includes(active?.dataset.position) ? active.dataset.position : 'center';
+  overlay.textContent=text;
+  overlay.classList.toggle('hidden',!text);
+  overlay.classList.remove('position-top','position-center','position-bottom');
+  overlay.classList.add('position-'+position);
+}
 function prepareMyDayFile(file){
   if(!file || !String(file.type||'').startsWith('image/'))return;
   pendingMyDayFile=file;
   if(pendingMyDayPreviewUrl)URL.revokeObjectURL(pendingMyDayPreviewUrl);
   pendingMyDayPreviewUrl=URL.createObjectURL(file);
   $('#myDayComposerImage').src=pendingMyDayPreviewUrl;
-  $('#myDayCaption').value='';
+  if($('#myDayCaption'))$('#myDayCaption').value='';
+  if($('#myDayText'))$('#myDayText').value='';
+  $('#myDayTextPosition [data-position]').forEach(button=>button.classList.toggle('active',button.dataset.position==='center'));
+  syncMyDayComposerText();
   $('#myDayComposer').classList.remove('hidden');
   document.body.classList.add('my-day-open');
 }
@@ -3624,15 +3655,29 @@ async function postMyDay(){
   const button=$('#myDayPostBtn');if(button)button.disabled=true;
   try{
     const uploaded=await uploadImage(pendingMyDayFile);
-    await api('/api/my-day',{method:'POST',body:JSON.stringify({image:uploaded.src,caption:String($('#myDayCaption')?.value||'').trim()})});
+    const textButton=$('#myDayTextPosition [data-position].active');
+    await api('/api/my-day',{method:'POST',body:JSON.stringify({
+      image:uploaded.src,
+      caption:String($('#myDayCaption')?.value||'').trim(),
+      overlayText:String($('#myDayText')?.value||'').trim(),
+      textPosition:textButton?.dataset.position || 'center'
+    })});
     closeMyDayComposer();await loadMyDays();showToast('Posted to My Day for 24 hours.');
   }catch(err){showToast(err?.message||'Could not post My Day.');}
   finally{if(button)button.disabled=false;}
 }
+async function markCurrentMyDayViewed(){
+  const current=myDayCurrent(),group=current.group,item=current.item;
+  if(!group||!item||group.profile?.tag===me?.tag)return;
+  try{await api('/api/my-day/'+encodeURIComponent(item.id)+'/view',{method:'POST',body:'{}'});}catch{}
+}
 function openMyDayViewer(tag,itemIndex=0){
   const index=myDayGroups.findIndex(group=>group.profile?.tag===tag);if(index<0)return;
   myDayGroupIndex=index;myDayItemIndex=Math.max(0,Math.min(itemIndex,myDayGroups[index].items.length-1));
-  $('#myDayViewer')?.classList.remove('hidden');document.body.classList.add('my-day-open');renderMyDayViewer();
+  $('#myDayViewer')?.classList.remove('hidden');
+  document.body.classList.add('my-day-open');
+  renderMyDayViewer();
+  markCurrentMyDayViewed();
 }
 function closeMyDayViewer(){
   $('#myDayViewer')?.classList.add('hidden');document.body.classList.remove('my-day-open');
@@ -3641,21 +3686,42 @@ function closeMyDayViewer(){
 function moveMyDay(delta){
   const group=myDayGroups[myDayGroupIndex];if(!group)return closeMyDayViewer();
   const nextItem=myDayItemIndex+delta;
-  if(nextItem>=0&&nextItem<group.items.length)myDayItemIndex=nextItem;
-  else{
-    const nextGroup=myDayGroupIndex+delta;
-    if(nextGroup<0||nextGroup>=myDayGroups.length)return closeMyDayViewer();
-    myDayGroupIndex=nextGroup;
-    const next=myDayGroups[myDayGroupIndex];
-    myDayItemIndex=delta>0?0:Math.max(0,next.items.length-1);
-  }
+  if(nextItem<0||nextItem>=group.items.length)return;
+  myDayItemIndex=nextItem;
   renderMyDayViewer();
+  markCurrentMyDayViewed();
+}
+function renderMyDayInsightList(kind='viewers'){
+  const current=myDayCurrent(),item=current.item;
+  const host=$('#myDayInsightList');
+  if(!host||!item)return;
+  const entries=kind==='reactions'
+    ? (Array.isArray(item.reactionPeople)?item.reactionPeople:[])
+    : (Array.isArray(item.viewers)?item.viewers:[]);
+  host.dataset.kind=kind;
+  host.classList.remove('hidden');
+  host.innerHTML=entries.length ? entries.map(entry=>{
+    const profile=entry.profile||{};
+    const when=kind==='reactions'?entry.reactedAt:entry.viewedAt;
+    return '<div class="my-day-insight-person">'+avatarHtml(profile,'my-day-insight-avatar')+
+      '<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+
+      (when?' · '+escapeHtml(myDayTimeLabel(when)):'')+'</small></span>'+
+      (kind==='reactions'?'<em>'+escapeHtml(entry.emoji||'❤️')+'</em>':'<em>👁</em>')+
+      '</div>';
+  }).join('') : '<p class="my-day-insight-empty">'+(kind==='reactions'?'No reactions yet.':'No viewers yet.')+'</p>';
 }
 function renderMyDayViewer(){
   const current=myDayCurrent(),group=current.group,item=current.item;if(!group||!item)return closeMyDayViewer();
   $('#myDayProgress').innerHTML=group.items.map((_,index)=>'<i class="'+(index<=myDayItemIndex?'active':'')+'"></i>').join('');
   $('#myDayViewerIdentity').innerHTML=avatarHtml(group.profile||{},'my-day-viewer-avatar')+'<span><strong>'+escapeHtml(group.profile?.displayName||group.profile?.tag||'My Day')+'</strong><small>@'+escapeHtml(group.profile?.tag||'')+' · '+escapeHtml(myDayTimeLabel(item.createdAt))+'</small></span>';
   $('#myDayViewerImage').src=item.image;
+  const storyText=$('#myDayViewerOverlayText');
+  if(storyText){
+    storyText.textContent=item.overlayText||'';
+    storyText.classList.toggle('hidden',!item.overlayText);
+    storyText.classList.remove('position-top','position-center','position-bottom');
+    storyText.classList.add('position-'+(['top','center','bottom'].includes(item.textPosition)?item.textPosition:'center'));
+  }
   const caption=$('#myDayViewerCaption');caption.textContent=item.caption||'';caption.classList.toggle('hidden',!item.caption);
   const reactions=$('#myDayReactions');
   reactions.innerHTML=['❤️','😂','😮','😢','👍'].map(emoji=>{
@@ -3664,7 +3730,38 @@ function renderMyDayViewer(){
   }).join('');
   reactions.querySelectorAll('[data-myday-reaction]').forEach(button=>button.addEventListener('click',()=>reactToMyDay(item.id,button.dataset.mydayReaction)));
   const own=group.profile?.tag===me?.tag;
-  $('#myDayReplyForm')?.classList.toggle('hidden',own);$('#myDayReactions')?.classList.toggle('hidden',own);$('#myDayDeleteBtn')?.classList.toggle('hidden',!own);
+  const multiple=(group.items?.length||0)>1;
+  const counter=$('#myDayStoryCounter');
+  if(counter){
+    counter.textContent=multiple ? (String(myDayItemIndex+1)+' of '+String(group.items.length)) : '';
+    counter.classList.toggle('hidden',!multiple);
+  }
+  const prev=$('#myDayPrevBtn'),next=$('#myDayNextBtn');
+  if(prev){
+    prev.classList.toggle('hidden',!multiple||myDayItemIndex<=0);
+    prev.disabled=myDayItemIndex<=0;
+  }
+  if(next){
+    next.classList.toggle('hidden',!multiple||myDayItemIndex>=group.items.length-1);
+    next.disabled=myDayItemIndex>=group.items.length-1;
+  }
+  $('#myDayReplyForm')?.classList.toggle('hidden',own);
+  $('#myDayReactions')?.classList.toggle('hidden',own);
+  $('#myDayDeleteBtn')?.classList.toggle('hidden',!own);
+  const insights=$('#myDayOwnerInsights');
+  insights?.classList.toggle('hidden',!own);
+  if(own){
+    const viewers=Number(item.viewerCount)||0;
+    const reactors=Number(item.reactionCount)||0;
+    const viewersLabel=$('#myDayViewersBtn span');
+    const reactorsLabel=$('#myDayReactorsBtn span');
+    if(viewersLabel)viewersLabel.textContent=viewers+' viewer'+(viewers===1?'':'s');
+    if(reactorsLabel)reactorsLabel.textContent=reactors+' reaction'+(reactors===1?'':'s');
+    const list=$('#myDayInsightList');
+    if(list&&!list.classList.contains('hidden'))renderMyDayInsightList(list.dataset.kind||'viewers');
+  }else{
+    $('#myDayInsightList')?.classList.add('hidden');
+  }
 }
 async function reactToMyDay(storyId,emoji){
   try{
@@ -3693,12 +3790,18 @@ async function deleteCurrentMyDay(){
   catch(err){showToast(err?.message||'Could not delete My Day.');}
 }
 
-$('#myDayAddBtn')?.addEventListener('click',e=>{
+$('#myDayAddBtn')?.addEventListener('click',()=>{
   const own=myDayGroups.find(group=>group.own);
-  if(own?.items?.length && !e.target.closest('b'))openMyDayViewer(me?.tag);
+  if(own?.items?.length)openMyDayViewer(me?.tag);
   else openMyDayCamera();
 });
+$('#myDayQuickAddBtn')?.addEventListener('click',openMyDayCamera);
 $('#myDayCameraInput')?.addEventListener('change',e=>prepareMyDayFile(e.target.files?.[0]));
+$('#myDayText')?.addEventListener('input',syncMyDayComposerText);
+$('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',()=>{
+  $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(item=>item.classList.toggle('active',item===button));
+  syncMyDayComposerText();
+}));
 $('#myDayComposerClose')?.addEventListener('click',closeMyDayComposer);
 $('#myDayRetakeBtn')?.addEventListener('click',openMyDayCamera);
 $('#myDayPostBtn')?.addEventListener('click',postMyDay);
@@ -3706,6 +3809,8 @@ $('#myDayViewerClose')?.addEventListener('click',closeMyDayViewer);
 $('#myDayPrevBtn')?.addEventListener('click',()=>moveMyDay(-1));
 $('#myDayNextBtn')?.addEventListener('click',()=>moveMyDay(1));
 $('#myDayDeleteBtn')?.addEventListener('click',deleteCurrentMyDay);
+$('#myDayViewersBtn')?.addEventListener('click',()=>renderMyDayInsightList('viewers'));
+$('#myDayReactorsBtn')?.addEventListener('click',()=>renderMyDayInsightList('reactions'));
 $('#myDayReplyForm')?.addEventListener('submit',e=>{e.preventDefault();replyToMyDay($('#myDayReplyText')?.value);});
 homeView?.addEventListener('touchstart',e=>{
   if(currentMode!=='home'||e.touches.length!==1||e.target.closest('input,textarea,button,a,select'))return;
