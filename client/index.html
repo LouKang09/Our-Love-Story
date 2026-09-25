@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260925-myday-insights1" />
+  <link rel="stylesheet" href="/styles.css?v=20260925-myday-progress2" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -175,6 +175,11 @@
       <section id="personalPrivacyQuick" class="personal-privacy-quick hidden" aria-label="Personal scrapbook privacy"></section>
 
       <section id="homeView" class="home-view hidden">
+        <div id="homeMyDaySwipeCue" class="home-myday-swipe-cue" aria-hidden="true">
+          <span class="home-myday-swipe-camera">📷</span>
+          <strong>My Day camera</strong>
+          <small>Keep swiping right</small>
+        </div>
         <div class="home-hero">
           <div>
             <p class="eyebrow">YOUR SCRAPBOOK CIRCLE</p>
@@ -831,13 +836,20 @@
           <img id="myDayComposerImage" alt="My Day preview" />
           <div id="myDayComposerOverlayText" class="my-day-overlay-text position-center hidden"></div>
         </div>
-        <label class="my-day-text-field"><span>Text on photo</span><input id="myDayText" maxlength="180" placeholder="Type text to place on your My Day…" autocomplete="off" /></label>
+        <div class="my-day-text-editor">
+          <div class="my-day-text-editor-head"><span class="my-day-aa">Aa</span><span><strong>Add text on photo</strong><small>Your text appears live on the picture above.</small></span></div>
+          <textarea id="myDayText" rows="2" maxlength="180" placeholder="Type your My Day text…" autocomplete="off"></textarea>
+        </div>
         <div id="myDayTextPosition" class="my-day-text-position" aria-label="Text position">
           <button type="button" data-position="top">Top</button>
           <button type="button" data-position="center" class="active">Center</button>
           <button type="button" data-position="bottom">Bottom</button>
         </div>
         <textarea id="myDayCaption" rows="2" maxlength="280" placeholder="Caption below the story (optional)…"></textarea>
+        <div id="myDayPostProgress" class="my-day-post-progress hidden" role="status" aria-live="polite">
+          <div class="my-day-post-progress-head"><strong id="myDayPostProgressLabel">Preparing My Day…</strong><b id="myDayPostProgressPercent">0%</b></div>
+          <div class="my-day-post-progress-track"><i id="myDayPostProgressFill"></i></div>
+        </div>
         <div class="my-day-composer-actions"><button id="myDayRetakeBtn" class="ghost" type="button">Retake</button><button id="myDayPostBtn" class="primary" type="button">Post to My Day</button></div>
         <small>My Day disappears automatically after 24 hours.</small>
       </div>
@@ -870,6 +882,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260925-myday-insights1" defer></script>
+  <script src="/app.js?v=20260925-myday-progress2" defer></script>
 </body>
 </html>
