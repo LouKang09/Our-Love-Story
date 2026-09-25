@@ -33,7 +33,7 @@ const HUAWEI_PUSH_CLIENT_ID = String(process.env.HUAWEI_PUSH_CLIENT_ID || '').tr
 const HUAWEI_PUSH_CLIENT_SECRET = String(process.env.HUAWEI_PUSH_CLIENT_SECRET || '').trim();
 const HUAWEI_PUSH_READY = Boolean(HUAWEI_PUSH_CLIENT_ID && HUAWEI_PUSH_CLIENT_SECRET);
 const MY_DAY_TTL_MS = 24 * 60 * 60 * 1000;
-const MY_DAY_REACTIONS = new Set(['❤️','😂','😮','😢','👍']);
+const MY_DAY_REACTIONS = new Set(['❤️','👍','😂','🥰','😮','😢','😡']);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 const GUIDE_VERSION = 8;
 const PLATFORM_OWNER_SEED_TAG = slugTag(process.env.PLATFORM_OWNER_TAG || 'loukang09');
@@ -915,6 +915,25 @@ function myDayTextRotation(value) {
   if (!Number.isFinite(number)) return 0;
   return ((number % 360) + 360) % 360;
 }
+function myDayTextBoxes(item) {
+  const raw = Array.isArray(item?.textBoxes) ? item.textBoxes : [];
+  const boxes = raw.slice(0,12).map((box,index) => ({
+    id:String(box?.id || ('text-'+(index+1))).slice(0,64),
+    text:String(box?.text || '').trim().slice(0,180),
+    x:myDayTextCoord(box?.x,50),
+    y:myDayTextCoord(box?.y,50),
+    rotation:myDayTextRotation(box?.rotation)
+  })).filter(box => box.text);
+  if (boxes.length) return boxes;
+  const legacy = String(item?.overlayText || '').trim().slice(0,180);
+  return legacy ? [{
+    id:'legacy',
+    text:legacy,
+    x:myDayTextCoord(item?.textX,50),
+    y:myDayTextCoord(item?.textY,legacyMyDayTextY(item)),
+    rotation:myDayTextRotation(item?.textRotation)
+  }] : [];
+}
 function myDayAudience(item) {
   return ['followers','close_friends','private','partner'].includes(item?.audience) ? item.audience : 'followers';
 }
@@ -963,6 +982,7 @@ function canViewMyDayItem(social, item, viewer) {
   return false;
 }
 function decorateMyDayItem(social, item, viewer) {
+  const textBoxes = myDayTextBoxes(item);
   const recentReactions = myDayReactionEvents(item);
   const reactionByUser = {};
   const reactionAt = {};
@@ -1024,10 +1044,11 @@ function decorateMyDayItem(social, item, viewer) {
     profile:publicProfileFor(social,item.author),
     image:item.image,
     caption:String(item.caption || '').slice(0,280),
-    overlayText:String(item.overlayText || '').slice(0,180),
-    textX:myDayTextCoord(item.textX,50),
-    textY:myDayTextCoord(item.textY,legacyMyDayTextY(item)),
-    textRotation:myDayTextRotation(item.textRotation),
+    overlayText:String(textBoxes[0]?.text || '').slice(0,180),
+    textX:myDayTextCoord(textBoxes[0]?.x,50),
+    textY:myDayTextCoord(textBoxes[0]?.y,50),
+    textRotation:myDayTextRotation(textBoxes[0]?.rotation),
+    textBoxes,
     textPosition:['top','center','bottom'].includes(item.textPosition) ? item.textPosition : 'center',
     audience:myDayAudience(item),
     effect:['original','warm','cool','bw','vivid'].includes(item.effect) ? item.effect : 'original',
@@ -2673,16 +2694,24 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/my-day' && req.method === 'POST') {
     const body=await readBody(req,128*1024);
     const image=String(body.image || '').trim();
-    const overlayText=String(body.overlayText || '').trim().slice(0,180);
-    const textX=myDayTextCoord(body.textX,50);
-    const textY=myDayTextCoord(body.textY,50);
-    const textRotation=myDayTextRotation(body.textRotation);
+    const textBoxes=myDayTextBoxes({
+      textBoxes:body.textBoxes,
+      overlayText:body.overlayText,
+      textX:body.textX,
+      textY:body.textY,
+      textRotation:body.textRotation
+    });
+    const overlayText=String(textBoxes[0]?.text || '').slice(0,180);
+    const textX=myDayTextCoord(textBoxes[0]?.x,50);
+    const textY=myDayTextCoord(textBoxes[0]?.y,50);
+    const textRotation=myDayTextRotation(textBoxes[0]?.rotation);
     const audience=['followers','close_friends','private','partner'].includes(String(body.audience||'')) ? String(body.audience) : 'followers';
     const effect=['original','warm','cool','bw','vivid'].includes(String(body.effect||'')) ? String(body.effect) : 'original';
     const music=String(body.music || '').trim();
     const musicName=String(body.musicName || '').trim().slice(0,120);
     const mentions=[];
-    for (const target of mentionTags(overlayText)) {
+    const allStoryText=textBoxes.map(box=>box.text).join(' ');
+    for (const target of mentionTags(allStoryText)) {
       if (target===user || !(await accountExists(target))) continue;
       mentions.push(target);
     }
@@ -2699,6 +2728,7 @@ async function handleApi(req, res, url) {
       textX,
       textY,
       textRotation,
+      textBoxes,
       audience,
       effect,
       music,
@@ -2715,7 +2745,7 @@ async function handleApi(req, res, url) {
     social.myDays.push(item);
     const actor=publicProfileFor(social,user);
     const mentionEvents=[];
-    const mentionExcerpt=(overlayText || 'Mentioned you in a story').slice(0,180);
+    const mentionExcerpt=(allStoryText || 'Mentioned you in a story').slice(0,180);
     for (const target of item.mentions) {
       const notice=appendActivityNotification(social,{
         to:target,

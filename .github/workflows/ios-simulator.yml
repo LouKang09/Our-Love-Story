@@ -46,8 +46,8 @@ jobs:
           plist["NSPhotoLibraryUsageDescription"] = "Scrapella lets you choose photos from your library to add to scrapbooks and messages."
           plist["NSPhotoLibraryAddUsageDescription"] = "Scrapella can save photos to your library when you choose to save them."
           plist["NSMicrophoneUsageDescription"] = "Scrapella uses your microphone when you record and send a voice message."
-          plist["CFBundleShortVersionString"] = "2.5.0"
-          plist["CFBundleVersion"] = "250"
+          plist["CFBundleShortVersionString"] = "2.5.1"
+          plist["CFBundleVersion"] = "251"
           with plist_path.open("wb") as fh:
               plistlib.dump(plist, fh)
 
@@ -122,7 +122,7 @@ jobs:
       - name: Upload iOS Simulator app
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-ios-simulator-v2.5.0
+          name: scrapella-ios-simulator-v2.5.1
           path: ios/build/Build/Products/Debug-iphonesimulator/App.app
           if-no-files-found: error
           retention-days: 30
@@ -149,7 +149,7 @@ jobs:
       - name: Upload single iOS IPA
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-ios-unsigned-ipa-v2.5.0
+          name: scrapella-ios-unsigned-ipa-v2.5.1
           path: Scrapella-iOS-Unsigned.ipa
           if-no-files-found: error
           retention-days: 30

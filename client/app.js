@@ -41,6 +41,8 @@ let pendingStoryEffect = 'original';
 let pendingStoryTextX = 50;
 let pendingStoryTextY = 50;
 let pendingStoryTextRotation = 0;
+let pendingStoryTextBoxes = [];
+let activeStoryTextBoxId = '';
 let storyTextDragPointerId = null;
 let storyTextRotatePointerId = null;
 let storyTextRotateStartAngle = 0;
@@ -3922,13 +3924,68 @@ function storyTextRotation(value){
   const number=Number(value);
   return Number.isFinite(number)?((number%360)+360)%360:0;
 }
+function createStoryTextId(){
+  try{return crypto.randomUUID();}catch{return 'story-text-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+}
+function activeStoryTextBox(){
+  return pendingStoryTextBoxes.find(box=>box.id===activeStoryTextBoxId)||null;
+}
+function storyTextElementById(id){
+  const layer=$('#storyTextLayer');
+  if(!layer||!id)return null;
+  return [...layer.querySelectorAll('[data-story-text-id]')].find(el=>el.dataset.storyTextId===id)||null;
+}
+function syncActiveStoryTextState(){
+  const box=activeStoryTextBox();
+  if(!box)return;
+  pendingStoryTextX=storyTextCoordinate(box.x,50);
+  pendingStoryTextY=storyTextCoordinate(box.y,50);
+  pendingStoryTextRotation=storyTextRotation(box.rotation);
+}
+function syncActiveStoryTextBoxFromElement(){
+  const box=activeStoryTextBox();
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  if(!box||!overlay)return;
+  box.text=String(overlay.innerText ?? overlay.textContent ?? '').replace(/\u00a0/g,' ').slice(0,180);
+  box.x=storyTextCoordinate(pendingStoryTextX,50);
+  box.y=storyTextCoordinate(pendingStoryTextY,50);
+  box.rotation=storyTextRotation(pendingStoryTextRotation);
+}
 function storyComposerRawText(){
-  const overlay=$('#myDayComposerOverlayText');
-  if(!overlay)return '';
-  return String(overlay.innerText ?? overlay.textContent ?? '').replace(/\u00a0/g,' ').slice(0,180);
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  if(overlay)return String(overlay.innerText ?? overlay.textContent ?? '').replace(/\u00a0/g,' ').slice(0,180);
+  return String(activeStoryTextBox()?.text||'').slice(0,180);
 }
 function storyComposerText(){
   return storyComposerRawText().trim();
+}
+function storyComposerTextBoxes(){
+  syncActiveStoryTextBoxFromElement();
+  return pendingStoryTextBoxes.map((box,index)=>({
+    id:String(box.id||('text-'+(index+1))).slice(0,64),
+    text:String(box.text||'').trim().slice(0,180),
+    x:storyTextCoordinate(box.x,50),
+    y:storyTextCoordinate(box.y,50),
+    rotation:storyTextRotation(box.rotation)
+  })).filter(box=>box.text).slice(0,12);
+}
+function storyItemTextBoxes(item){
+  const boxes=Array.isArray(item?.textBoxes)?item.textBoxes:[];
+  const normalized=boxes.slice(0,12).map((box,index)=>({
+    id:String(box?.id||('text-'+(index+1))),
+    text:String(box?.text||'').trim().slice(0,180),
+    x:storyTextCoordinate(box?.x,50),
+    y:storyTextCoordinate(box?.y,50),
+    rotation:storyTextRotation(box?.rotation)
+  })).filter(box=>box.text);
+  if(normalized.length)return normalized;
+  const legacy=String(item?.overlayText||'').trim().slice(0,180);
+  return legacy?[{
+    id:'legacy',text:legacy,
+    x:storyTextCoordinate(item?.textX,50),
+    y:storyTextCoordinate(item?.textY,storyLegacyTextY(item)),
+    rotation:storyTextRotation(item?.textRotation)
+  }]:[];
 }
 function applyStoryTextPosition(element,x,y,rotation=0){
   if(!element)return;
@@ -3938,26 +3995,62 @@ function applyStoryTextPosition(element,x,y,rotation=0){
   element.style.bottom='auto';
   element.style.transform='translate(-50%,-50%) rotate('+storyTextRotation(rotation)+'deg)';
 }
-function syncStoryTextRotateHandle(){
+function syncStoryTextBoxElement(box){
+  const layer=$('#storyTextLayer');
+  if(!layer||!box)return null;
+  let overlay=storyTextElementById(box.id);
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.className='my-day-overlay-text story-editable-text';
+    overlay.dataset.storyTextId=box.id;
+    overlay.dataset.editing='0';
+    overlay.contentEditable='false';
+    overlay.setAttribute('role','textbox');
+    overlay.setAttribute('aria-label','Story text');
+    overlay.dataset.placeholder='Type or @tag…';
+    layer.appendChild(overlay);
+  }
+  if(overlay.dataset.editing!=='1' && overlay.textContent!==box.text)overlay.textContent=box.text;
+  overlay.classList.toggle('is-selected',box.id===activeStoryTextBoxId);
+  applyStoryTextPosition(overlay,box.x,box.y,box.rotation);
+  return overlay;
+}
+function renderStoryTextBoxes(){
+  const layer=$('#storyTextLayer');
+  if(!layer)return;
+  const ids=new Set(pendingStoryTextBoxes.map(box=>box.id));
+  layer.querySelectorAll('[data-story-text-id]').forEach(el=>{if(!ids.has(el.dataset.storyTextId))el.remove();});
+  pendingStoryTextBoxes.forEach(syncStoryTextBoxElement);
+  syncStoryTextHandles();
+}
+function rotateStoryLocalPoint(dx,dy,rotation){
+  const angle=storyTextRotation(rotation)*Math.PI/180;
+  return {x:(dx*Math.cos(angle))-(dy*Math.sin(angle)),y:(dx*Math.sin(angle))+(dy*Math.cos(angle))};
+}
+function syncStoryTextHandles(){
   const rotate=$('#storyTextRotateHandle');
   const move=$('#storyTextMoveHandle');
-  const overlay=$('#myDayComposerOverlayText');
   const stage=$('.story-editor-stage');
-  if(!rotate||!move||!overlay||!stage)return;
-  const visible=Boolean(storyComposerText());
+  const box=activeStoryTextBox();
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  if(!rotate||!move||!stage||!box||!overlay){
+    rotate?.classList.add('hidden');move?.classList.add('hidden');return;
+  }
+  const visible=Boolean(String(box.text||storyComposerRawText()).trim());
   rotate.classList.toggle('hidden',!visible);
   move.classList.toggle('hidden',!visible);
   if(!visible)return;
   const stageRect=stage.getBoundingClientRect();
-  const textRect=overlay.getBoundingClientRect();
-  const moveLeft=Math.max(12,Math.min(stageRect.width-12,textRect.left-stageRect.left));
-  const moveTop=Math.max(12,Math.min(stageRect.height-12,textRect.top-stageRect.top));
-  const rotateLeft=Math.max(12,Math.min(stageRect.width-12,textRect.right-stageRect.left));
-  const rotateTop=Math.max(12,Math.min(stageRect.height-12,textRect.bottom-stageRect.top));
-  move.style.left=moveLeft+'px';
-  move.style.top=moveTop+'px';
-  rotate.style.left=rotateLeft+'px';
-  rotate.style.top=rotateTop+'px';
+  const cx=(storyTextCoordinate(box.x,50)/100)*stageRect.width;
+  const cy=(storyTextCoordinate(box.y,50)/100)*stageRect.height;
+  const halfW=Math.max(18,overlay.offsetWidth/2);
+  const halfH=Math.max(18,overlay.offsetHeight/2);
+  const moveVector=rotateStoryLocalPoint(0,-halfH-22,box.rotation);
+  const rotateVector=rotateStoryLocalPoint(halfW+22,0,box.rotation);
+  move.style.left=Math.max(18,Math.min(stageRect.width-18,cx+moveVector.x))+'px';
+  move.style.top=Math.max(18,Math.min(stageRect.height-18,cy+moveVector.y))+'px';
+  rotate.style.left=Math.max(18,Math.min(stageRect.width-18,cx+rotateVector.x))+'px';
+  rotate.style.top=Math.max(18,Math.min(stageRect.height-18,cy+rotateVector.y))+'px';
 }
 function hideStoryInlineMentionSuggestions(){
   const host=$('#storyInlineMentionSuggestions');
@@ -3978,8 +4071,9 @@ function currentStoryMentionQuery(){
 }
 function renderStoryInlineMentionSuggestions(){
   const host=$('#storyInlineMentionSuggestions');
-  const overlay=$('#myDayComposerOverlayText');
-  if(!host||!overlay||overlay.dataset.editing!=='1')return hideStoryInlineMentionSuggestions();
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  const box=activeStoryTextBox();
+  if(!host||!overlay||!box||overlay.dataset.editing!=='1')return hideStoryInlineMentionSuggestions();
   const query=currentStoryMentionQuery();
   if(query===null)return hideStoryInlineMentionSuggestions();
   const candidates=storyMentionCandidates().filter(profile=>{
@@ -3989,9 +4083,9 @@ function renderStoryInlineMentionSuggestions(){
   }).slice(0,6);
   if(!candidates.length)return hideStoryInlineMentionSuggestions();
   host.innerHTML=candidates.map(profile=>'<button type="button" data-inline-story-mention="'+escapeHtml(profile.tag||'')+'">'+avatarHtml(profile,'story-inline-mention-avatar')+'<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+'</small></span></button>').join('');
-  host.style.left=storyTextCoordinate(pendingStoryTextX,50)+'%';
-  if(pendingStoryTextY>56){host.style.top='auto';host.style.bottom=Math.max(8,100-storyTextCoordinate(pendingStoryTextY,50)+7)+'%';}
-  else{host.style.bottom='auto';host.style.top=Math.min(86,storyTextCoordinate(pendingStoryTextY,50)+8)+'%';}
+  host.style.left=storyTextCoordinate(box.x,50)+'%';
+  if(box.y>56){host.style.top='auto';host.style.bottom=Math.max(8,100-storyTextCoordinate(box.y,50)+7)+'%';}
+  else{host.style.bottom='auto';host.style.top=Math.min(86,storyTextCoordinate(box.y,50)+8)+'%';}
   host.classList.remove('hidden');
   host.querySelectorAll('[data-inline-story-mention]').forEach(button=>button.addEventListener('pointerdown',event=>event.stopPropagation()));
   host.querySelectorAll('[data-inline-story-mention]').forEach(button=>button.addEventListener('click',()=>{
@@ -3999,21 +4093,24 @@ function renderStoryInlineMentionSuggestions(){
     const raw=storyComposerRawText();
     const next=raw.replace(/(^|\s)@[a-z0-9_.-]{0,23}$/i,(match,prefix)=>prefix+'@'+tag+' ');
     overlay.textContent=next.slice(0,180);
+    box.text=overlay.textContent;
     overlay.focus({preventScroll:true});
     placeStoryCaretAtEnd(overlay);
     hideStoryInlineMentionSuggestions();
-    syncMyDayComposerText();
+    requestAnimationFrame(syncStoryTextHandles);
   }));
 }
 function syncMyDayComposerText(){
-  const overlay=$('#myDayComposerOverlayText');
-  if(!overlay)return;
-  const text=storyComposerText();
-  const editing=overlay.dataset.editing==='1';
-  overlay.classList.toggle('hidden',!text&&!editing);
-  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY,pendingStoryTextRotation);
-  syncStoryTextRotateHandle();
-  if(editing)renderStoryInlineMentionSuggestions();
+  syncActiveStoryTextBoxFromElement();
+  const box=activeStoryTextBox();
+  if(box){
+    box.x=storyTextCoordinate(pendingStoryTextX,50);
+    box.y=storyTextCoordinate(pendingStoryTextY,50);
+    box.rotation=storyTextRotation(pendingStoryTextRotation);
+    const overlay=syncStoryTextBoxElement(box);
+    if(overlay?.dataset.editing==='1')renderStoryInlineMentionSuggestions();
+  }
+  requestAnimationFrame(syncStoryTextHandles);
 }
 function placeStoryCaretAtEnd(element){
   if(!element)return;
@@ -4026,44 +4123,75 @@ function placeStoryCaretAtEnd(element){
     selection.addRange(range);
   }catch{}
 }
-function startStoryTextEditing(){
-  closeStoryToolPanels();
-  const overlay=$('#myDayComposerOverlayText');
-  if(!overlay)return;
-  overlay.dataset.editing='1';
-  overlay.contentEditable='true';
-  overlay.classList.remove('hidden');
-  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY,pendingStoryTextRotation);
-  syncStoryTextRotateHandle();
-  setTimeout(()=>{
-    overlay.focus({preventScroll:true});
-    placeStoryCaretAtEnd(overlay);
-  },40);
-}
-function finishStoryTextEditing(){
-  const overlay=$('#myDayComposerOverlayText');
-  if(!overlay)return;
+function finishStoryTextEditing({removeEmpty=true}={}){
+  const box=activeStoryTextBox();
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  if(!box||!overlay){hideStoryInlineMentionSuggestions();return;}
+  syncActiveStoryTextBoxFromElement();
   overlay.dataset.editing='0';
   overlay.contentEditable='false';
   overlay.blur();
+  if(removeEmpty&&!String(box.text||'').trim()){
+    pendingStoryTextBoxes=pendingStoryTextBoxes.filter(entry=>entry.id!==box.id);
+    overlay.remove();
+    activeStoryTextBoxId='';
+  }
   hideStoryInlineMentionSuggestions();
-  syncMyDayComposerText();
+  renderStoryTextBoxes();
+}
+function startStoryTextEditing({create=false,id=''}={}){
+  closeStoryToolPanels();
+  if(create){
+    if(pendingStoryTextBoxes.length>=12){showToast('You can add up to 12 text boxes to one Story.');return;}
+    if(activeStoryTextBoxId)finishStoryTextEditing();
+    const index=pendingStoryTextBoxes.length;
+    const box={id:createStoryTextId(),text:'',x:50,y:storyTextCoordinate(38+((index%5)*10),50),rotation:0};
+    pendingStoryTextBoxes.push(box);
+    activeStoryTextBoxId=box.id;
+  }else if(id){
+    if(activeStoryTextBoxId&&activeStoryTextBoxId!==id)finishStoryTextEditing();
+    activeStoryTextBoxId=id;
+  }else if(!activeStoryTextBoxId){
+    if(pendingStoryTextBoxes.length)activeStoryTextBoxId=pendingStoryTextBoxes[0].id;
+    else return startStoryTextEditing({create:true});
+  }
+  const box=activeStoryTextBox();
+  if(!box)return;
+  syncActiveStoryTextState();
+  renderStoryTextBoxes();
+  const overlay=storyTextElementById(box.id);
+  if(!overlay)return;
+  overlay.dataset.editing='1';
+  overlay.contentEditable='true';
+  overlay.classList.add('is-selected');
+  applyStoryTextPosition(overlay,box.x,box.y,box.rotation);
+  requestAnimationFrame(syncStoryTextHandles);
+  setTimeout(()=>{
+    overlay.focus({preventScroll:true});
+    placeStoryCaretAtEnd(overlay);
+    renderStoryInlineMentionSuggestions();
+  },40);
 }
 function appendStoryComposerText(value){
-  const overlay=$('#myDayComposerOverlayText');
-  if(!overlay)return;
-  const current=storyComposerText();
+  if(!activeStoryTextBoxId)startStoryTextEditing({create:true});
+  const box=activeStoryTextBox();
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  if(!box||!overlay)return;
+  const current=String(overlay.innerText ?? overlay.textContent ?? box.text ?? '').trim();
   const next=(current?current+' ':'')+String(value||'');
   overlay.textContent=next.slice(0,180);
+  box.text=overlay.textContent;
   syncMyDayComposerText();
 }
 function setStoryTextFromPointer(event){
   const stage=$('.story-editor-stage');
-  if(!stage)return;
+  const box=activeStoryTextBox();
+  if(!stage||!box)return;
   const rect=stage.getBoundingClientRect();
   if(!rect.width||!rect.height)return;
   pendingStoryTextX=storyTextCoordinate(((event.clientX-rect.left)/rect.width)*100,50);
   pendingStoryTextY=storyTextCoordinate(((event.clientY-rect.top)/rect.height)*100,50);
+  box.x=pendingStoryTextX;box.y=pendingStoryTextY;
   syncMyDayComposerText();
 }
 function updateStoryAudienceButton(){
@@ -4213,12 +4341,10 @@ function prepareMyDayFile(file,{openText=false}={}){
   if(pendingMyDayPreviewUrl)URL.revokeObjectURL(pendingMyDayPreviewUrl);
   pendingMyDayPreviewUrl=URL.createObjectURL(file);
   $('#myDayComposerImage').src=pendingMyDayPreviewUrl;
-  const storyText=$('#myDayComposerOverlayText');
-  if(storyText){
-    storyText.textContent='';
-    storyText.dataset.editing='0';
-    storyText.contentEditable='false';
-  }
+  pendingStoryTextBoxes=[];
+  activeStoryTextBoxId='';
+  const storyLayer=$('#storyTextLayer');
+  if(storyLayer)storyLayer.innerHTML='';
   pendingStoryTextX=50;
   pendingStoryTextY=50;
   pendingStoryTextRotation=0;
@@ -4234,7 +4360,7 @@ function prepareMyDayFile(file,{openText=false}={}){
   closeStoryCreateHub();
   $('#myDayComposer').classList.remove('hidden');
   document.body.classList.add('my-day-open');
-  if(openText)setTimeout(startStoryTextEditing,180);
+  if(openText)setTimeout(()=>startStoryTextEditing({create:true}),180);
 }
 function closeMyDayComposer(){
   if(myDayPosting)return;
@@ -4251,13 +4377,11 @@ function closeMyDayComposer(){
   pendingStoryAudience='followers';
   storyTextDragPointerId=null;
   storyTextRotatePointerId=null;
-  const storyText=$('#myDayComposerOverlayText');
-  if(storyText){
-    storyText.textContent='';
-    storyText.dataset.editing='0';
-    storyText.contentEditable='false';
-    storyText.classList.add('hidden');
-  }
+  storyTextMovePointerId=null;
+  pendingStoryTextBoxes=[];
+  activeStoryTextBoxId='';
+  const storyLayer=$('#storyTextLayer');
+  if(storyLayer)storyLayer.innerHTML='';
   $('#storyTextRotateHandle')?.classList.add('hidden');
   $('#storyTextMoveHandle')?.classList.add('hidden');
   hideStoryInlineMentionSuggestions();
@@ -4289,12 +4413,15 @@ async function postMyDay(){
     if(pendingStoryMusicFile)musicUpload=await uploadStoryMusicWithProgress(pendingStoryMusicFile);
     setMyDayPostProgress(94,'Saving story…');
     finishStoryTextEditing();
+    const storyTextBoxes=storyComposerTextBoxes();
+    const firstStoryText=storyTextBoxes[0]||null;
     const posted=await api('/api/my-day',{method:'POST',body:JSON.stringify({
       image:uploaded.src,
-      overlayText:storyComposerText(),
-      textX:pendingStoryTextX,
-      textY:pendingStoryTextY,
-      textRotation:pendingStoryTextRotation,
+      overlayText:firstStoryText?.text||'',
+      textX:firstStoryText?.x??50,
+      textY:firstStoryText?.y??50,
+      textRotation:firstStoryText?.rotation??0,
+      textBoxes:storyTextBoxes,
       audience:pendingStoryAudience,
       effect:pendingStoryEffect,
       music:musicUpload?.src || '',
@@ -4595,14 +4722,19 @@ function renderMyDayViewer(){
     if(storyAudio){storyAudio.pause();storyAudio.removeAttribute('src');storyAudio.dataset.storyId='';}
     musicBadge?.classList.add('hidden');
   }
-  const storyText=$('#myDayViewerOverlayText');
-  if(storyText){
-    storyText.textContent=item.overlayText||'';
-    storyText.classList.toggle('hidden',!item.overlayText);
-    applyStoryTextPosition(storyText,item.textX,Number.isFinite(Number(item.textY))?item.textY:storyLegacyTextY(item),item.textRotation||0);
+  const viewerTextLayer=$('#myDayViewerTextLayer');
+  if(viewerTextLayer){
+    viewerTextLayer.innerHTML='';
+    storyItemTextBoxes(item).forEach(box=>{
+      const text=document.createElement('div');
+      text.className='my-day-overlay-text';
+      text.textContent=box.text;
+      applyStoryTextPosition(text,box.x,box.y,box.rotation);
+      viewerTextLayer.appendChild(text);
+    });
   }
   const reactions=$('#myDayReactions');
-  reactions.innerHTML=['❤️','👍','😂'].map(emoji=>{
+  reactions.innerHTML=['❤️','👍','😂','🥰','😮','😢','😡'].map(emoji=>{
     const count=Number(item.reactionCounts?.[emoji])||0;
     return '<button type="button" data-myday-reaction="'+emoji+'"><span>'+emoji+'</span>'+(count?'<b>'+count+'</b>':'')+'</button>';
   }).join('');
@@ -4834,48 +4966,56 @@ $('#storyMusicInput')?.addEventListener('change',e=>{
   if(file)setStoryMusic(file);
   e.target.value='';
 });
-const storyComposerOverlay=$('#myDayComposerOverlayText');
-storyComposerOverlay?.addEventListener('input',()=>{
-  const value=storyComposerText();
-  if(value.length>=180 && String(storyComposerOverlay.innerText||storyComposerOverlay.textContent||'').trim().length>180){
-    storyComposerOverlay.textContent=value;
-    placeStoryCaretAtEnd(storyComposerOverlay);
+const storyTextLayer=$('#storyTextLayer');
+storyTextLayer?.addEventListener('input',event=>{
+  const overlay=event.target?.closest?.('[data-story-text-id]');
+  if(!overlay)return;
+  const id=String(overlay.dataset.storyTextId||'');
+  if(id!==activeStoryTextBoxId)return;
+  const box=activeStoryTextBox();
+  if(!box)return;
+  const raw=String(overlay.innerText??overlay.textContent??'').replace(/\u00a0/g,' ');
+  if(raw.length>180){
+    overlay.textContent=raw.slice(0,180);
+    placeStoryCaretAtEnd(overlay);
   }
-  syncMyDayComposerText();
+  box.text=String(overlay.innerText??overlay.textContent??'').slice(0,180);
+  renderStoryInlineMentionSuggestions();
+  requestAnimationFrame(syncStoryTextHandles);
 });
-storyComposerOverlay?.addEventListener('pointerdown',event=>{
-  if(storyComposerOverlay.dataset.editing==='1' || !storyComposerText())return;
-  event.preventDefault();
+storyTextLayer?.addEventListener('click',event=>{
+  const overlay=event.target?.closest?.('[data-story-text-id]');
+  if(!overlay)return;
   event.stopPropagation();
-  storyTextDragPointerId=event.pointerId;
-  storyComposerOverlay.classList.add('is-dragging');
-  try{storyComposerOverlay.setPointerCapture(event.pointerId);}catch{}
-  setStoryTextFromPointer(event);
+  const id=String(overlay.dataset.storyTextId||'');
+  if(!id)return;
+  if(id!==activeStoryTextBoxId||overlay.dataset.editing!=='1')startStoryTextEditing({id});
 });
-storyComposerOverlay?.addEventListener('pointermove',event=>{
-  if(storyTextDragPointerId!==event.pointerId)return;
-  event.preventDefault();
-  setStoryTextFromPointer(event);
+storyTextLayer?.addEventListener('pointerdown',event=>{
+  const overlay=event.target?.closest?.('[data-story-text-id]');
+  if(!overlay)return;
+  const id=String(overlay.dataset.storyTextId||'');
+  if(id!==activeStoryTextBoxId){
+    if(activeStoryTextBoxId)finishStoryTextEditing();
+    activeStoryTextBoxId=id;
+    syncActiveStoryTextState();
+    renderStoryTextBoxes();
+  }
 });
-const endStoryTextDrag=event=>{
-  if(storyTextDragPointerId!==event.pointerId)return;
-  try{storyComposerOverlay?.releasePointerCapture(event.pointerId);}catch{}
-  storyTextDragPointerId=null;
-  storyComposerOverlay?.classList.remove('is-dragging');
-};
-storyComposerOverlay?.addEventListener('pointerup',endStoryTextDrag);
-storyComposerOverlay?.addEventListener('pointercancel',endStoryTextDrag);
 const storyMoveHandle=$('#storyTextMoveHandle');
 storyMoveHandle?.addEventListener('pointerdown',event=>{
   event.preventDefault();event.stopPropagation();
-  if(!storyComposerText())return;
-  if(storyComposerOverlay?.dataset.editing==='1')finishStoryTextEditing();
+  const box=activeStoryTextBox();
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  if(!box||!String(box.text||storyComposerRawText()).trim())return;
+  if(overlay?.dataset.editing==='1')finishStoryTextEditing({removeEmpty:false});
   storyTextMovePointerId=event.pointerId;
   storyTextMoveStartPointerX=event.clientX;
   storyTextMoveStartPointerY=event.clientY;
+  syncActiveStoryTextState();
   storyTextMoveStartX=pendingStoryTextX;
   storyTextMoveStartY=pendingStoryTextY;
-  storyComposerOverlay?.classList.add('is-dragging');
+  storyTextElementById(activeStoryTextBoxId)?.classList.add('is-dragging');
   try{storyMoveHandle.setPointerCapture(event.pointerId);}catch{}
 });
 storyMoveHandle?.addEventListener('pointermove',event=>{
@@ -4885,13 +5025,15 @@ storyMoveHandle?.addEventListener('pointermove',event=>{
   const rect=stage.getBoundingClientRect();if(!rect.width||!rect.height)return;
   pendingStoryTextX=storyTextCoordinate(storyTextMoveStartX+((event.clientX-storyTextMoveStartPointerX)/rect.width)*100,50);
   pendingStoryTextY=storyTextCoordinate(storyTextMoveStartY+((event.clientY-storyTextMoveStartPointerY)/rect.height)*100,50);
+  const box=activeStoryTextBox();
+  if(box){box.x=pendingStoryTextX;box.y=pendingStoryTextY;}
   syncMyDayComposerText();
 });
 const endStoryTextMove=event=>{
   if(storyTextMovePointerId!==event.pointerId)return;
   try{storyMoveHandle?.releasePointerCapture(event.pointerId);}catch{}
   storyTextMovePointerId=null;
-  storyComposerOverlay?.classList.remove('is-dragging');
+  storyTextElementById(activeStoryTextBoxId)?.classList.remove('is-dragging');
   syncMyDayComposerText();
 };
 storyMoveHandle?.addEventListener('pointerup',endStoryTextMove);
@@ -4899,7 +5041,11 @@ storyMoveHandle?.addEventListener('pointercancel',endStoryTextMove);
 const storyRotateHandle=$('#storyTextRotateHandle');
 storyRotateHandle?.addEventListener('pointerdown',event=>{
   event.preventDefault();event.stopPropagation();
-  if(storyComposerOverlay?.dataset.editing==='1')finishStoryTextEditing();
+  const box=activeStoryTextBox();
+  const overlay=storyTextElementById(activeStoryTextBoxId);
+  if(!box)return;
+  if(overlay?.dataset.editing==='1')finishStoryTextEditing({removeEmpty:false});
+  syncActiveStoryTextState();
   const stage=$('.story-editor-stage');if(!stage)return;
   const rect=stage.getBoundingClientRect();
   const cx=rect.left+(storyTextCoordinate(pendingStoryTextX,50)/100)*rect.width;
@@ -4918,12 +5064,15 @@ storyRotateHandle?.addEventListener('pointermove',event=>{
   const cy=rect.top+(storyTextCoordinate(pendingStoryTextY,50)/100)*rect.height;
   const angle=Math.atan2(event.clientY-cy,event.clientX-cx);
   pendingStoryTextRotation=storyTextRotation(storyTextRotateStartRotation+((angle-storyTextRotateStartAngle)*180/Math.PI));
+  const box=activeStoryTextBox();
+  if(box)box.rotation=pendingStoryTextRotation;
   syncMyDayComposerText();
 });
 const endStoryTextRotate=event=>{
   if(storyTextRotatePointerId!==event.pointerId)return;
   try{storyRotateHandle?.releasePointerCapture(event.pointerId);}catch{}
   storyTextRotatePointerId=null;
+  syncMyDayComposerText();
 };
 storyRotateHandle?.addEventListener('pointerup',endStoryTextRotate);
 storyRotateHandle?.addEventListener('pointercancel',endStoryTextRotate);
@@ -4931,7 +5080,7 @@ $('#storyEditorDoneBtn')?.addEventListener('click',()=>{
   finishStoryTextEditing();
   closeStoryToolPanels();
 });
-$('#storyEditorTextBtn')?.addEventListener('click',startStoryTextEditing);
+$('#storyEditorTextBtn')?.addEventListener('click',()=>startStoryTextEditing({create:true}));
 $('#storyEditorStickerBtn')?.addEventListener('click',()=>openStoryToolPanel('storyStickerPanel'));
 $('#storyEditorEffectBtn')?.addEventListener('click',()=>openStoryToolPanel('storyEffectPanel'));
 $('#storyEditorMentionBtn')?.addEventListener('click',()=>{

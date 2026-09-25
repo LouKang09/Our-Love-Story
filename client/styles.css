@@ -16419,3 +16419,51 @@ html[data-theme="night"] .my-day-create-visual>b{
   .my-day-viewer-summary{min-width:128px!important;min-height:56px!important}
   .story-owner-sheet{max-height:86dvh;padding-left:12px;padding-right:12px}
 }
+
+
+/* ===== 2026-09-26 MULTI TEXT BOXES + SCROLLABLE STORY REACTIONS ===== */
+.story-text-layer,
+.story-viewer-text-layer{
+  position:absolute;
+  z-index:5;
+  inset:0;
+  pointer-events:none;
+}
+.story-text-layer .my-day-overlay-text{pointer-events:auto}
+.story-viewer-text-layer .my-day-overlay-text{pointer-events:none}
+.story-editor-stage .my-day-overlay-text.is-selected{
+  border-color:rgba(255,255,255,.62);
+  background:rgba(0,0,0,.12);
+}
+.story-text-move-handle,
+.story-text-rotate-handle{z-index:18!important}
+.my-day-other-action-bar{
+  grid-template-columns:48px minmax(110px,1fr) minmax(132px,44vw)!important;
+  overflow:visible;
+}
+.my-day-other-action-bar .my-day-reactions{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  display:flex!important;
+  flex-wrap:nowrap!important;
+  justify-content:flex-start!important;
+  gap:6px!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  padding:2px 2px 4px;
+  scroll-snap-type:x proximity;
+  overscroll-behavior-x:contain;
+  touch-action:pan-x;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.my-day-other-action-bar .my-day-reactions::-webkit-scrollbar{display:none}
+.my-day-other-action-bar .my-day-reactions button{
+  flex:0 0 48px!important;
+  scroll-snap-align:start;
+}
+@media(max-width:800px){
+  .my-day-other-action-bar{grid-template-columns:46px minmax(94px,1fr) minmax(126px,46vw)!important}
+  .my-day-other-action-bar .my-day-reactions button{flex-basis:44px!important}
+}
