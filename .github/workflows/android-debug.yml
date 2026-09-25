@@ -103,7 +103,7 @@ jobs:
               }
 
               @Override
-              protected void onDestroy() {
+              public void onDestroy() {
                   retryHandler.removeCallbacksAndMessages(null);
                   super.onDestroy();
               }
