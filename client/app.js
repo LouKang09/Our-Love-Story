@@ -35,6 +35,9 @@ let myDayItemIndex = 0;
 let pendingMyDayFile = null;
 let pendingMyDayPreviewUrl = '';
 let myDayPosting = false;
+let pendingStoryMusicFile = null;
+let pendingStoryMusicName = '';
+let pendingStoryEffect = 'original';
 const MY_DAY_STORY_DURATION_MS = 10000;
 let myDayStoryFrame = 0;
 let myDayStoryStartedAt = 0;
@@ -3685,6 +3688,149 @@ async function nativeCameraPhotoToFile(photo){
     {type:blob.type||type||'image/jpeg',lastModified:Date.now()}
   );
 }
+function openStoryCreateHub(){
+  $('#storyCreateHub')?.classList.remove('hidden');
+  document.body.classList.add('my-day-open');
+}
+function closeStoryCreateHub(){
+  $('#storyCreateHub')?.classList.add('hidden');
+  if($('#myDayComposer')?.classList.contains('hidden'))document.body.classList.remove('my-day-open');
+}
+function storyEffectCss(effect='original'){
+  return ({
+    original:'none',
+    warm:'saturate(1.08) sepia(.16) contrast(1.03)',
+    cool:'saturate(.95) hue-rotate(8deg) brightness(1.03)',
+    bw:'grayscale(1) contrast(1.08)',
+    vivid:'saturate(1.42) contrast(1.08)'
+  })[effect] || 'none';
+}
+function applyStoryEditorEffect(){
+  const image=$('#myDayComposerImage');
+  if(image)image.style.filter=storyEffectCss(pendingStoryEffect);
+  $('#storyEffectPanel')?.querySelectorAll('[data-story-effect]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.storyEffect===pendingStoryEffect);
+  });
+}
+function closeStoryToolPanels(except=''){
+  ['storyTextToolPanel','storyStickerPanel','storyEffectPanel','storyMentionPanel'].forEach(id=>{
+    if(id!==except)$('#'+id)?.classList.add('hidden');
+  });
+}
+function openStoryToolPanel(id){
+  const panel=$('#'+id);
+  if(!panel)return;
+  const opening=panel.classList.contains('hidden');
+  closeStoryToolPanels(opening?id:'');
+  panel.classList.toggle('hidden',!opening);
+}
+function storyFileImage(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const image=new Image();
+    image.onload=()=>resolve({image,url});
+    image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('One selected photo could not be opened.'));};
+    image.src=url;
+  });
+}
+function drawStoryCover(ctx,image,x,y,w,h){
+  const scale=Math.max(w/image.naturalWidth,h/image.naturalHeight);
+  const dw=image.naturalWidth*scale,dh=image.naturalHeight*scale;
+  ctx.drawImage(image,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
+}
+async function canvasStoryFile(canvas,name='story.jpg'){
+  const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('Could not prepare the story image.')),'image/jpeg',.9));
+  return new File([blob],name,{type:'image/jpeg',lastModified:Date.now()});
+}
+async function buildStoryCollage(files){
+  const selected=files.filter(Boolean).slice(0,6);
+  if(!selected.length)throw new Error('Choose at least one photo.');
+  if(selected.length===1)return selected[0];
+  const canvas=document.createElement('canvas');
+  canvas.width=1080;canvas.height=1920;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#111';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const loaded=await Promise.all(selected.map(storyFileImage));
+  let cells=[];
+  if(selected.length===2)cells=[[0,0,540,1920],[540,0,540,1920]];
+  else if(selected.length===3)cells=[[0,0,1080,960],[0,960,540,960],[540,960,540,960]];
+  else{
+    const rows=Math.ceil(selected.length/2);
+    const h=1920/rows;
+    cells=selected.map((_,index)=>[(index%2)*540,Math.floor(index/2)*h,540,h]);
+  }
+  loaded.forEach((entry,index)=>{
+    const [x,y,w,h]=cells[index];
+    drawStoryCover(ctx,entry.image,x+3,y+3,w-6,h-6);
+    URL.revokeObjectURL(entry.url);
+  });
+  return canvasStoryFile(canvas,'story-collage-'+Date.now()+'.jpg');
+}
+async function createStoryTextBackground(){
+  const canvas=document.createElement('canvas');
+  canvas.width=1080;canvas.height=1920;
+  const ctx=canvas.getContext('2d');
+  const gradient=ctx.createLinearGradient(0,0,1080,1920);
+  gradient.addColorStop(0,'#6c3a58');
+  gradient.addColorStop(.52,'#a75a72');
+  gradient.addColorStop(1,'#df9c7e');
+  ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1920);
+  const file=await canvasStoryFile(canvas,'text-story-'+Date.now()+'.jpg');
+  prepareMyDayFile(file,{openText:true});
+}
+async function chooseStoryGallery({multiple=false,collage=false}={}){
+  try{
+    if(isNativeScrapellaApp()){
+      const camera=nativePlugin('Camera');
+      if(camera?.pickImages){
+        const result=await camera.pickImages({quality:90,limit:multiple?6:1});
+        const photos=Array.isArray(result?.photos)?result.photos:[];
+        if(!photos.length)return;
+        const files=[];
+        for(const photo of photos.slice(0,multiple?6:1))files.push(await nativeCameraPhotoToFile(photo));
+        const file=(collage||files.length>1)?await buildStoryCollage(files):files[0];
+        closeStoryCreateHub();
+        prepareMyDayFile(file);
+        return;
+      }
+    }
+    (multiple?$('#storyMultiInput'):$('#storyGalleryInput'))?.click();
+  }catch(err){
+    const message=String(err?.message||'');
+    if(!/cancel/i.test(message))showToast(message||'Could not open Gallery.');
+  }
+}
+function renderStoryMentionChoices(){
+  const list=$('#storyMentionList');
+  if(!list)return;
+  list.innerHTML=following.length
+    ? following.map(profile=>'<button type="button" data-story-mention="'+escapeHtml(profile.tag||'')+'">'+avatarHtml(profile,'story-mention-avatar')+'<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+'</small></span></button>').join('')
+    : '<p>You are not following anyone yet.</p>';
+  list.querySelectorAll('[data-story-mention]').forEach(button=>button.addEventListener('click',()=>{
+    const tag=String(button.dataset.storyMention||'').trim();
+    if(!tag)return;
+    const field=$('#myDayText');
+    const prefix=String(field?.value||'').trim();
+    if(field)field.value=(prefix?prefix+' ':'')+'@'+tag;
+    syncMyDayComposerText();
+    $('#storyMentionPanel')?.classList.add('hidden');
+  }));
+}
+function setStoryMusic(file){
+  if(!file)return;
+  if(!String(file.type||'').startsWith('audio/')){showToast('Choose an audio file for Story music.');return;}
+  if(file.size>8*1024*1024){showToast('Story music must be 8 MB or smaller.');return;}
+  pendingStoryMusicFile=file;
+  pendingStoryMusicName=file.name||'Story music';
+  const badge=$('#storyMusicBadge');
+  if(badge){
+    badge.classList.remove('hidden');
+    const span=badge.querySelector('span');
+    if(span)span.textContent=pendingStoryMusicName;
+  }
+  showToast('Music attached to this story.');
+}
+
 async function openMyDayCamera(){
   if(!me?.tag)return;
   if(isNativeScrapellaApp()){
