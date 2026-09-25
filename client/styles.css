@@ -15309,3 +15309,33 @@ html[data-theme="night"] .my-day-post-progress-head strong{
     box-shadow:0 -6px 18px rgba(0,0,0,.08);
   }
 }
+
+
+/* ===== 2026-09-25 APP VERSION STATUS ===== */
+.app-version-status{
+  margin:8px 0 0;
+  padding:8px 10px;
+  border-radius:10px;
+  background:rgba(126,91,99,.07);
+  color:var(--muted);
+}
+.app-version-status.current{
+  color:#47745a;
+  background:rgba(72,142,92,.10);
+}
+.app-version-status.outdated{
+  color:#9a4e59;
+  background:rgba(190,68,76,.10);
+  border:1px solid rgba(190,68,76,.18);
+}
+html[data-theme="night"] .app-version-status{
+  background:#2d2528;
+}
+html[data-theme="night"] .app-version-status.current{
+  color:#9ad2aa;
+  background:rgba(72,142,92,.14);
+}
+html[data-theme="night"] .app-version-status.outdated{
+  color:#f0a7b0;
+  background:rgba(190,68,76,.14);
+}
