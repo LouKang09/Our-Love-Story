@@ -855,20 +855,8 @@
 
         <div class="my-day-composer-preview story-editor-stage">
           <img id="myDayComposerImage" alt="Story preview" />
-          <div id="myDayComposerOverlayText" class="my-day-overlay-text position-center hidden"></div>
+          <div id="myDayComposerOverlayText" class="my-day-overlay-text story-editable-text hidden" contenteditable="false" role="textbox" aria-label="Story text" data-placeholder="Type or @tag…"></div>
           <div id="storyMusicBadge" class="story-music-badge hidden">♫ <span></span></div>
-        </div>
-
-        <div id="storyTextToolPanel" class="story-editor-tool-panel hidden">
-          <div class="my-day-text-editor">
-            <div class="my-day-text-editor-head"><span class="my-day-aa">Aa</span><span><strong>Add text</strong><small>Text appears live on your story.</small></span></div>
-            <textarea id="myDayText" rows="2" maxlength="180" placeholder="Type or @tag…" autocomplete="off"></textarea>
-          </div>
-          <div id="myDayTextPosition" class="my-day-text-position" aria-label="Text position">
-            <button type="button" data-position="top">Top</button>
-            <button type="button" data-position="center" class="active">Center</button>
-            <button type="button" data-position="bottom">Bottom</button>
-          </div>
         </div>
 
         <div id="storyStickerPanel" class="story-editor-tool-panel story-sticker-panel hidden" aria-label="Stickers">
@@ -921,7 +909,7 @@
       <button id="myDayPrevBtn" class="my-day-nav my-day-prev" type="button" aria-label="Previous story">‹</button>
       <div class="my-day-media">
         <img id="myDayViewerImage" alt="My Day" />
-        <div id="myDayViewerOverlayText" class="my-day-overlay-text position-center hidden"></div>
+        <div id="myDayViewerOverlayText" class="my-day-overlay-text hidden"></div>
         <div id="storyViewerMusicBadge" class="story-music-badge hidden">♫ <span></span></div>
         <audio id="storyViewerAudio" preload="metadata" hidden></audio>
         <p id="myDayViewerCaption"></p>
@@ -930,10 +918,10 @@
       <div id="myDayViewerActions" class="my-day-viewer-actions">
         <div id="myDayStoryCounter" class="my-day-story-counter hidden"></div>
         <div id="myDayOwnerInsights" class="my-day-owner-insights hidden">
-          <div class="my-day-insight-buttons">
-            <button id="myDayViewersBtn" type="button">👁 <span>0 viewers</span></button>
-            <button id="myDayReactorsBtn" type="button">❤️ <span>0 reactions</span></button>
-          </div>
+          <button id="myDayViewerSummaryBtn" class="my-day-viewer-summary" type="button" aria-expanded="false">
+            <strong id="myDayViewerSummaryCount">No viewers yet</strong>
+            <small id="myDayViewerSummaryNames">Your viewers and reactions will appear here.</small>
+          </button>
           <div id="myDayInsightList" class="my-day-insight-list hidden"></div>
         </div>
         <div id="myDayReactions" class="my-day-reactions" aria-label="React to My Day"></div>
@@ -944,6 +932,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260925-story-create-gallery1" defer></script>
+  <script src="/app.js?v=20260925-story-drag-reactions1" defer></script>
 </body>
 </html>

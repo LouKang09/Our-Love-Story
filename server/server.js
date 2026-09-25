@@ -900,20 +900,59 @@ function activeMyDayItems(social, now = Date.now()) {
     return item?.id && item?.author && item?.image && Number.isFinite(expires) && expires > now;
   });
 }
-function decorateMyDayItem(social, item, viewer) {
-  const reactionByUser = item?.reactions && typeof item.reactions === 'object' ? item.reactions : {};
-  const reactionAt = item?.reactionAt && typeof item.reactionAt === 'object' ? item.reactionAt : {};
-  const views = item?.views && typeof item.views === 'object' ? item.views : {};
-  const counts = {};
-  for (const emoji of Object.values(reactionByUser)) {
-    if (!MY_DAY_REACTIONS.has(emoji)) continue;
-    counts[emoji] = (counts[emoji] || 0) + 1;
+function myDayTextCoord(value, fallback = 50) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(8, Math.min(92, number)) : fallback;
+}
+function legacyMyDayTextY(item) {
+  if (item?.textPosition === 'top') return 16;
+  if (item?.textPosition === 'bottom') return 82;
+  return 50;
+}
+function myDayReactionEvents(item) {
+  if (Array.isArray(item?.reactionEvents) && item.reactionEvents.length) {
+    return item.reactionEvents
+      .filter(event => event?.tag && MY_DAY_REACTIONS.has(event.emoji))
+      .map(event => ({ tag:slugTag(event.tag), emoji:event.emoji, at:String(event.at || '') }))
+      .filter(event => event.tag)
+      .slice(-5);
   }
+  const legacy = item?.reactions && typeof item.reactions === 'object' ? item.reactions : {};
+  const legacyAt = item?.reactionAt && typeof item.reactionAt === 'object' ? item.reactionAt : {};
+  return Object.entries(legacy)
+    .filter(([tag,emoji]) => tag && MY_DAY_REACTIONS.has(emoji))
+    .map(([tag,emoji]) => ({ tag:slugTag(tag), emoji, at:String(legacyAt[tag] || '') }))
+    .filter(event => event.tag)
+    .sort((a,b) => String(a.at).localeCompare(String(b.at)))
+    .slice(-5);
+}
+function canViewMyDayItem(social, item, viewer) {
+  if (!item || !viewer) return false;
+  if (item.author === viewer) return true;
+  if (isFollowing(social, viewer, item.author)) return true;
+  return Array.isArray(item.mentions) && item.mentions.includes(viewer);
+}
+function decorateMyDayItem(social, item, viewer) {
+  const recentReactions = myDayReactionEvents(item);
+  const reactionByUser = {};
+  const reactionAt = {};
+  const counts = {};
+  for (const event of recentReactions) {
+    reactionByUser[event.tag] = event.emoji;
+    reactionAt[event.tag] = event.at;
+    counts[event.emoji] = (counts[event.emoji] || 0) + 1;
+  }
+  const views = item?.views && typeof item.views === 'object' ? item.views : {};
   const own = item.author === viewer;
   const viewerDetails = own
     ? Object.entries(views)
         .filter(([tag]) => tag && tag !== item.author)
-        .map(([tag,viewedAt]) => ({ profile:publicProfileFor(social,tag), viewedAt:String(viewedAt || '') }))
+        .map(([tag,viewedAt]) => ({
+          profile:publicProfileFor(social,tag),
+          viewedAt:String(viewedAt || ''),
+          emoji:MY_DAY_REACTIONS.has(reactionByUser[tag]) ? reactionByUser[tag] : '',
+          reactedAt:String(reactionAt[tag] || '')
+        }))
         .sort((a,b)=>String(b.viewedAt||'').localeCompare(String(a.viewedAt||'')))
     : [];
   const reactionDetails = own
@@ -929,6 +968,8 @@ function decorateMyDayItem(social, item, viewer) {
     image:item.image,
     caption:String(item.caption || '').slice(0,280),
     overlayText:String(item.overlayText || '').slice(0,180),
+    textX:myDayTextCoord(item.textX,50),
+    textY:myDayTextCoord(item.textY,legacyMyDayTextY(item)),
     textPosition:['top','center','bottom'].includes(item.textPosition) ? item.textPosition : 'center',
     effect:['original','warm','cool','bw','vivid'].includes(item.effect) ? item.effect : 'original',
     music:String(item.music || '').startsWith('/uploads/') ? String(item.music) : '',
@@ -938,16 +979,15 @@ function decorateMyDayItem(social, item, viewer) {
     reactionCounts:counts,
     myReaction:MY_DAY_REACTIONS.has(reactionByUser[viewer]) ? reactionByUser[viewer] : '',
     viewerCount:own ? viewerDetails.length : undefined,
-    reactionCount:own ? reactionDetails.length : undefined,
+    reactionCount:own ? recentReactions.length : undefined,
     viewers:own ? viewerDetails : undefined,
     reactionPeople:own ? reactionDetails : undefined
   };
 }
 function myDayGroupsForViewer(social, viewer) {
-  const allowed = new Set([viewer, ...social.follows.filter(f => f.follower === viewer).map(f => f.following)]);
   const grouped = new Map();
   for (const item of activeMyDayItems(social)) {
-    if (!allowed.has(item.author)) continue;
+    if (!canViewMyDayItem(social,item,viewer)) continue;
     if (!grouped.has(item.author)) grouped.set(item.author,[]);
     grouped.get(item.author).push(item);
   }
@@ -1275,7 +1315,7 @@ async function appendMentionNotifications(social, { from, text, kind, scrapbookI
   }
   if (social.mentions.length > 2000) social.mentions = social.mentions.slice(-2000);
 }
-function appendActivityNotification(social, { to, from, type, scrapbookId = null, entryId = null, chatId = null, scrapbookName = '', excerpt = '' }) {
+function appendActivityNotification(social, { to, from, type, scrapbookId = null, entryId = null, chatId = null, storyId = null, scrapbookName = '', excerpt = '' }) {
   if (!to || to === from) return null;
   const item = {
     id:crypto.randomUUID(),
@@ -1285,6 +1325,7 @@ function appendActivityNotification(social, { to, from, type, scrapbookId = null
     scrapbookId,
     entryId,
     chatId,
+    storyId,
     scrapbookName:String(scrapbookName || '').slice(0,80),
     excerpt:String(excerpt || '').slice(0,180),
     createdAt:new Date().toISOString()
@@ -1375,6 +1416,7 @@ function notificationSnapshot(social, user) {
       scrapbookId:item.scrapbookId || null,
       entryId:item.entryId || null,
       chatId:item.chatId || null,
+      storyId:item.storyId || null,
       scrapbookName:item.scrapbookName || '',
       excerpt:item.excerpt || ''
     }));
@@ -2552,10 +2594,16 @@ async function handleApi(req, res, url) {
     const image=String(body.image || '').trim();
     const caption=String(body.caption || '').trim().slice(0,280);
     const overlayText=String(body.overlayText || '').trim().slice(0,180);
-    const textPosition=['top','center','bottom'].includes(String(body.textPosition||'')) ? String(body.textPosition) : 'center';
+    const textX=myDayTextCoord(body.textX,50);
+    const textY=myDayTextCoord(body.textY,50);
     const effect=['original','warm','cool','bw','vivid'].includes(String(body.effect||'')) ? String(body.effect) : 'original';
     const music=String(body.music || '').trim();
     const musicName=String(body.musicName || '').trim().slice(0,120);
+    const mentions=[];
+    for (const target of mentionTags(overlayText+' '+caption)) {
+      if (target===user || !(await accountExists(target))) continue;
+      mentions.push(target);
+    }
     if(!image.startsWith('/uploads/'))return json(res,400,{error:'Take or choose a photo first.'});
     if(social.uploadOwners?.[image]!==user)return forbidden(res,'You can only post a photo you uploaded.');
     if(music && social.uploadOwners?.[music]!==user)return forbidden(res,'You can only attach music you uploaded.');
@@ -2566,10 +2614,13 @@ async function handleApi(req, res, url) {
       image,
       caption,
       overlayText,
-      textPosition,
+      textX,
+      textY,
       effect,
       music,
       musicName,
+      mentions:[...new Set(mentions)],
+      reactionEvents:[],
       reactions:{},
       reactionAt:{},
       views:{},
@@ -2578,9 +2629,40 @@ async function handleApi(req, res, url) {
     };
     social.myDays=activeMyDayItems(social);
     social.myDays.push(item);
+    const actor=publicProfileFor(social,user);
+    const mentionEvents=[];
+    const mentionExcerpt=(overlayText || caption || 'Mentioned you in a story').slice(0,180);
+    for (const target of item.mentions) {
+      const notice=appendActivityNotification(social,{
+        to:target,
+        from:user,
+        type:'story_mention',
+        storyId:item.id,
+        excerpt:mentionExcerpt
+      });
+      if (notice) mentionEvents.push({target,notice});
+      await sendUserPush(social,{
+        to:target,
+        title:(actor.displayName || displayTag(user))+' mentioned you in a story',
+        body:mentionExcerpt,
+        tag:'story-mention-'+item.id+'-'+target,
+        url:'/?myday='+encodeURIComponent(item.id)
+      });
+    }
     await writeSocial(social);
+    for (const {target,notice} of mentionEvents) {
+      emitLiveEvent(target,'notification',{
+        type:'story_mention',
+        notificationId:'activity:'+notice.id,
+        from:user,
+        actor,
+        storyId:item.id,
+        excerpt:notice.excerpt,
+        createdAt:notice.createdAt
+      });
+    }
     const dayFollowers=social.follows.filter(f=>f.following===user).map(f=>f.follower);
-    emitLiveMany([...new Set([user,...dayFollowers])],'myday',{type:'posted',from:user,storyId:item.id});
+    emitLiveMany([...new Set([user,...dayFollowers,...item.mentions])],'myday',{type:'posted',from:user,storyId:item.id});
     return json(res,201,{item:decorateMyDayItem(social,item,user),groups:myDayGroupsForViewer(social,user)});
   }
 
@@ -2600,28 +2682,29 @@ async function handleApi(req, res, url) {
   if(myDayReactionMatch && req.method==='POST'){
     const item=activeMyDayItems(social).find(story=>story.id===myDayReactionMatch[1]);
     if(!item)return json(res,404,{error:'That My Day has expired.'});
-    if(item.author!==user && !isFollowing(social,user,item.author))return forbidden(res,'Follow this person to view their My Day.');
+    if(!canViewMyDayItem(social,item,user))return forbidden(res,'You do not have access to this My Day.');
     const body=await readBody(req,32*1024);
     const emoji=String(body.emoji||'');
     if(!MY_DAY_REACTIONS.has(emoji))return json(res,400,{error:'Unsupported reaction.'});
-    item.reactions=item.reactions && typeof item.reactions==='object' ? item.reactions : {};
-    item.reactionAt=item.reactionAt && typeof item.reactionAt==='object' ? item.reactionAt : {};
-    if(item.reactions[user]===emoji){
-      delete item.reactions[user];
-      delete item.reactionAt[user];
-    }else{
-      item.reactions[user]=emoji;
-      item.reactionAt[user]=new Date().toISOString();
+    const reactedAt=new Date().toISOString();
+    item.reactionEvents=myDayReactionEvents(item);
+    item.reactionEvents.push({tag:user,emoji,at:reactedAt});
+    item.reactionEvents=item.reactionEvents.slice(-5);
+    item.reactions={};
+    item.reactionAt={};
+    for (const event of item.reactionEvents) {
+      item.reactions[event.tag]=event.emoji;
+      item.reactionAt[event.tag]=event.at;
     }
     await writeSocial(social);
-    if(item.author!==user && item.reactions[user]){
+    if(item.author!==user){
       const actor=publicProfileFor(social,user);
       await sendUserPush(social,{
         to:item.author,
         title:(actor.displayName || displayTag(user)) + ' reacted to your My Day',
         body:(emoji + ' ' + (item.caption || 'Open Scrapella to see your My Day.')).slice(0,180),
         tag:'myday-' + item.id,
-        url:'/?myday=1'
+        url:'/?myday=' + encodeURIComponent(item.id)
       });
       emitLiveEvent(item.author,'myday',{type:'reaction',from:user,storyId:item.id,emoji});
     }
@@ -2633,7 +2716,7 @@ async function handleApi(req, res, url) {
     const item=activeMyDayItems(social).find(story=>story.id===myDayViewMatch[1]);
     if(!item)return json(res,404,{error:'That My Day has expired.'});
     if(item.author===user)return json(res,200,{ok:true,item:decorateMyDayItem(social,item,user)});
-    if(!isFollowing(social,user,item.author))return forbidden(res,'Follow this person to view their My Day.');
+    if(!canViewMyDayItem(social,item,user))return forbidden(res,'You do not have access to this My Day.');
     item.views=item.views && typeof item.views==='object' ? item.views : {};
     item.views[user]=new Date().toISOString();
     await writeSocial(social);
@@ -3715,6 +3798,7 @@ const server = http.createServer(async (req, res) => {
         const chatMessage = social.chatMessages?.find(message =>
           message?.image === assetPath ||
           message?.audio === assetPath ||
+          message?.myDayReply?.image === assetPath ||
           (Array.isArray(message?.images) && message.images.includes(assetPath))
         );
         if (chatMessage) {
@@ -3732,8 +3816,7 @@ const server = http.createServer(async (req, res) => {
               story?.image === assetPath || story?.music === assetPath
             );
             if (myDayStory) {
-              const canViewMyDayMedia = viewer === myDayStory.author || isFollowing(social, viewer, myDayStory.author);
-              if (!canViewMyDayMedia) return forbidden(res, 'Follow this person to view their My Day.');
+              if (!canViewMyDayItem(social,myDayStory,viewer)) return forbidden(res, 'You do not have access to this My Day.');
             } else {
               const isFreedomWallPhoto = (social.freedomWall || []).some(post => post?.image === assetPath);
               const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
