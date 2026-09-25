@@ -3587,7 +3587,7 @@ async function openMyDayCamera(){
       try{
         const permission=await checkProfilePermission('camera',{request:true});
         if(permission==='denied'){showToast('Camera permission is needed for My Day.');return;}
-        const photo=await camera.getPhoto({quality:88,allowEditing:false,resultType:'dataUrl',source:'camera',saveToGallery:false});
+        const photo=await camera.getPhoto({quality:88,allowEditing:false,resultType:'dataUrl',source:'CAMERA',saveToGallery:false});
         if(photo?.dataUrl){
           const blob=await (await fetch(photo.dataUrl)).blob();
           const ext=String(photo.format||'jpeg').replace('jpeg','jpg');
