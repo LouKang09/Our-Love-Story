@@ -3596,6 +3596,50 @@ function renderMyDayTray(){
   ).join('') : '<span class="my-day-empty">My Day posts from people you follow will appear here.</span>';
   list.querySelectorAll('[data-myday-tag]').forEach(button=>button.addEventListener('click',()=>openMyDayViewer(button.dataset.mydayTag)));
 }
+async function dataUrlOrBase64ToBlob(value,format='jpeg'){
+  const raw=String(value||'');
+  const mime='image/'+String(format||'jpeg').replace('jpg','jpeg');
+  const source=raw.startsWith('data:') ? raw : ('data:'+mime+';base64,'+raw);
+  const response=await fetch(source);
+  if(!response.ok)throw new Error('Could not read the photo returned by the camera.');
+  return response.blob();
+}
+async function nativeCameraPhotoToFile(photo){
+  if(!photo)throw new Error('The camera did not return a photo.');
+  const format=String(photo.format||'jpeg').toLowerCase().replace('jpeg','jpg');
+  const type='image/'+(format==='jpg'?'jpeg':format);
+  let blob=null;
+
+  if(photo.webPath){
+    try{
+      const response=await fetch(String(photo.webPath));
+      if(response.ok)blob=await response.blob();
+    }catch{}
+  }
+
+  if(!blob && photo.path){
+    try{
+      const converted=window.Capacitor?.convertFileSrc?.(String(photo.path)) || String(photo.path);
+      const response=await fetch(converted);
+      if(response.ok)blob=await response.blob();
+    }catch{}
+  }
+
+  if(!blob && photo.dataUrl){
+    try{blob=await dataUrlOrBase64ToBlob(photo.dataUrl,format);}catch{}
+  }
+
+  if(!blob && photo.base64String){
+    try{blob=await dataUrlOrBase64ToBlob(photo.base64String,format);}catch{}
+  }
+
+  if(!blob || !blob.size)throw new Error('Scrapella could not load the photo after the camera closed. Please try again.');
+  return new File(
+    [blob],
+    'my-day-'+Date.now()+'.'+(format||'jpg'),
+    {type:blob.type||type||'image/jpeg',lastModified:Date.now()}
+  );
+}
 async function openMyDayCamera(){
   if(!me?.tag)return;
   if(isNativeScrapellaApp()){
@@ -3604,16 +3648,24 @@ async function openMyDayCamera(){
       try{
         const permission=await checkProfilePermission('camera',{request:true});
         if(permission==='denied'){showToast('Camera permission is needed for My Day.');return;}
-        const photo=await camera.getPhoto({quality:88,allowEditing:false,resultType:'dataUrl',source:'CAMERA',saveToGallery:false});
-        if(photo?.dataUrl){
-          const blob=await (await fetch(photo.dataUrl)).blob();
-          const ext=String(photo.format||'jpeg').replace('jpeg','jpg');
-          const file=new File([blob],'my-day-'+Date.now()+'.'+ext,{type:blob.type||'image/jpeg'});
-          prepareMyDayFile(file);
-          return;
-        }
+        showToast('Opening My Day camera…');
+        const photo=await camera.getPhoto({
+          quality:88,
+          allowEditing:false,
+          resultType:'uri',
+          source:'CAMERA',
+          saveToGallery:false,
+          correctOrientation:true
+        });
+        const file=await nativeCameraPhotoToFile(photo);
+        prepareMyDayFile(file);
+        showToast('Photo ready — add text or post your My Day.');
+        return;
       }catch(err){
-        if(String(err?.message||'').toLowerCase().includes('cancel'))return;
+        const message=String(err?.message||'');
+        if(/cancel|canceled|cancelled/i.test(message))return;
+        showToast(message||'Could not return the photo to Scrapella.');
+        return;
       }
     }
   }
