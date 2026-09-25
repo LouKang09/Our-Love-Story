@@ -901,21 +901,42 @@ function activeMyDayItems(social, now = Date.now()) {
 }
 function decorateMyDayItem(social, item, viewer) {
   const reactionByUser = item?.reactions && typeof item.reactions === 'object' ? item.reactions : {};
+  const reactionAt = item?.reactionAt && typeof item.reactionAt === 'object' ? item.reactionAt : {};
+  const views = item?.views && typeof item.views === 'object' ? item.views : {};
   const counts = {};
   for (const emoji of Object.values(reactionByUser)) {
     if (!MY_DAY_REACTIONS.has(emoji)) continue;
     counts[emoji] = (counts[emoji] || 0) + 1;
   }
+  const own = item.author === viewer;
+  const viewerDetails = own
+    ? Object.entries(views)
+        .filter(([tag]) => tag && tag !== item.author)
+        .map(([tag,viewedAt]) => ({ profile:publicProfileFor(social,tag), viewedAt:String(viewedAt || '') }))
+        .sort((a,b)=>String(b.viewedAt||'').localeCompare(String(a.viewedAt||'')))
+    : [];
+  const reactionDetails = own
+    ? Object.entries(reactionByUser)
+        .filter(([tag,emoji]) => tag && tag !== item.author && MY_DAY_REACTIONS.has(emoji))
+        .map(([tag,emoji]) => ({ profile:publicProfileFor(social,tag), emoji, reactedAt:String(reactionAt[tag] || '') }))
+        .sort((a,b)=>String(b.reactedAt||'').localeCompare(String(a.reactedAt||'')))
+    : [];
   return {
     id:item.id,
     author:item.author,
     profile:publicProfileFor(social,item.author),
     image:item.image,
     caption:String(item.caption || '').slice(0,280),
+    overlayText:String(item.overlayText || '').slice(0,180),
+    textPosition:['top','center','bottom'].includes(item.textPosition) ? item.textPosition : 'center',
     createdAt:item.createdAt,
     expiresAt:item.expiresAt,
     reactionCounts:counts,
-    myReaction:MY_DAY_REACTIONS.has(reactionByUser[viewer]) ? reactionByUser[viewer] : ''
+    myReaction:MY_DAY_REACTIONS.has(reactionByUser[viewer]) ? reactionByUser[viewer] : '',
+    viewerCount:own ? viewerDetails.length : undefined,
+    reactionCount:own ? reactionDetails.length : undefined,
+    viewers:own ? viewerDetails : undefined,
+    reactionPeople:own ? reactionDetails : undefined
   };
 }
 function myDayGroupsForViewer(social, viewer) {
@@ -2525,10 +2546,24 @@ async function handleApi(req, res, url) {
     const body=await readBody(req,128*1024);
     const image=String(body.image || '').trim();
     const caption=String(body.caption || '').trim().slice(0,280);
+    const overlayText=String(body.overlayText || '').trim().slice(0,180);
+    const textPosition=['top','center','bottom'].includes(String(body.textPosition||'')) ? String(body.textPosition) : 'center';
     if(!image.startsWith('/uploads/'))return json(res,400,{error:'Take or choose a photo first.'});
     if(social.uploadOwners?.[image]!==user)return forbidden(res,'You can only post a photo you uploaded.');
     const createdAt=new Date().toISOString();
-    const item={id:crypto.randomUUID(),author:user,image,caption,reactions:{},createdAt,expiresAt:new Date(Date.now()+MY_DAY_TTL_MS).toISOString()};
+    const item={
+      id:crypto.randomUUID(),
+      author:user,
+      image,
+      caption,
+      overlayText,
+      textPosition,
+      reactions:{},
+      reactionAt:{},
+      views:{},
+      createdAt,
+      expiresAt:new Date(Date.now()+MY_DAY_TTL_MS).toISOString()
+    };
     social.myDays=activeMyDayItems(social);
     social.myDays.push(item);
     await writeSocial(social);
@@ -2558,7 +2593,14 @@ async function handleApi(req, res, url) {
     const emoji=String(body.emoji||'');
     if(!MY_DAY_REACTIONS.has(emoji))return json(res,400,{error:'Unsupported reaction.'});
     item.reactions=item.reactions && typeof item.reactions==='object' ? item.reactions : {};
-    if(item.reactions[user]===emoji)delete item.reactions[user]; else item.reactions[user]=emoji;
+    item.reactionAt=item.reactionAt && typeof item.reactionAt==='object' ? item.reactionAt : {};
+    if(item.reactions[user]===emoji){
+      delete item.reactions[user];
+      delete item.reactionAt[user];
+    }else{
+      item.reactions[user]=emoji;
+      item.reactionAt[user]=new Date().toISOString();
+    }
     await writeSocial(social);
     if(item.author!==user && item.reactions[user]){
       const actor=publicProfileFor(social,user);
@@ -2573,6 +2615,20 @@ async function handleApi(req, res, url) {
     }
     return json(res,200,{item:decorateMyDayItem(social,item,user)});
   }
+
+  const myDayViewMatch=pathname.match(/^\/api\/my-day\/([a-f0-9-]+)\/view$/i);
+  if(myDayViewMatch && req.method==='POST'){
+    const item=activeMyDayItems(social).find(story=>story.id===myDayViewMatch[1]);
+    if(!item)return json(res,404,{error:'That My Day has expired.'});
+    if(item.author===user)return json(res,200,{ok:true,item:decorateMyDayItem(social,item,user)});
+    if(!isFollowing(social,user,item.author))return forbidden(res,'Follow this person to view their My Day.');
+    item.views=item.views && typeof item.views==='object' ? item.views : {};
+    item.views[user]=new Date().toISOString();
+    await writeSocial(social);
+    emitLiveEvent(item.author,'myday',{type:'view',from:user,storyId:item.id});
+    return json(res,200,{ok:true});
+  }
+
   if (pathname === '/api/scrapbooks' && req.method === 'POST') {
     const body = await readBody(req, 128 * 1024);
     const type = body.type === 'couple' ? 'couple' : (body.type === 'personal' ? 'personal' : 'group');
