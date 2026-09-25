@@ -3636,7 +3636,7 @@ function renderMyDayTray(){
       : (group.profile?.displayName||group.profile?.tag||'Story').split(' ')[0];
     const countLabel=items.length>1 ? (items.length+' stories') : myDayTimeLabel(latest.createdAt);
     return '<button class="my-day-story-card'+(group.own?' own-story':'')+'" type="button" data-myday-tag="'+escapeHtml(group.profile?.tag||'')+'">'+
-      '<img class="my-day-story-cover" src="'+escapeHtml(latest.image||'')+'" alt="" loading="lazy" />'+
+      '<img class="my-day-story-cover" src="'+escapeHtml(latest.image||'')+'" alt="" loading="lazy" style="filter:'+escapeHtml(storyEffectCss(latest.effect||'original'))+'" />'+
       '<span class="my-day-story-shade"></span>'+
       '<span class="my-day-story-avatar">'+avatarHtml(group.profile||{},'my-day-card-mini-avatar')+'</span>'+
       '<span class="my-day-story-copy"><strong>'+escapeHtml(label)+'</strong><small>'+escapeHtml(countLabel)+'</small></span>'+
@@ -4125,6 +4125,8 @@ function openMyDayViewer(tag,itemIndex=0){
 }
 function closeMyDayViewer(){
   stopMyDayStoryTimer();
+  const audio=$('#storyViewerAudio');
+  if(audio){audio.pause();audio.removeAttribute('src');audio.dataset.storyId='';}
   $('#myDayViewer')?.classList.add('hidden');
   document.body.classList.remove('my-day-open');
   if($('#myDayReplyText'))$('#myDayReplyText').value='';
@@ -4160,7 +4162,28 @@ function renderMyDayViewer(){
     return '<i class="'+state+'"><b style="width:'+width+'"></b></i>';
   }).join('');
   $('#myDayViewerIdentity').innerHTML=avatarHtml(group.profile||{},'my-day-viewer-avatar')+'<span><strong>'+escapeHtml(group.profile?.displayName||group.profile?.tag||'My Day')+'</strong><small>@'+escapeHtml(group.profile?.tag||'')+' · '+escapeHtml(myDayTimeLabel(item.createdAt))+'</small></span>';
-  $('#myDayViewerImage').src=item.image;
+  const viewerImage=$('#myDayViewerImage');
+  viewerImage.src=item.image;
+  viewerImage.style.filter=storyEffectCss(item.effect||'original');
+  const storyAudio=$('#storyViewerAudio');
+  const musicBadge=$('#storyViewerMusicBadge');
+  if(item.music){
+    if(storyAudio?.dataset.storyId!==item.id){
+      storyAudio?.pause();
+      if(storyAudio){
+        storyAudio.src=item.music;
+        storyAudio.dataset.storyId=item.id;
+        storyAudio.currentTime=0;
+        storyAudio.play().catch(()=>{});
+      }
+    }
+    musicBadge?.classList.remove('hidden');
+    const badgeText=musicBadge?.querySelector('span');
+    if(badgeText)badgeText.textContent=item.musicName||'Story music';
+  }else{
+    if(storyAudio){storyAudio.pause();storyAudio.removeAttribute('src');storyAudio.dataset.storyId='';}
+    musicBadge?.classList.add('hidden');
+  }
   const storyText=$('#myDayViewerOverlayText');
   if(storyText){
     storyText.textContent=item.overlayText||'';
@@ -4237,15 +4260,77 @@ async function deleteCurrentMyDay(){
   catch(err){showToast(err?.message||'Could not delete My Day.');}
 }
 
-$('#myDayAddBtn')?.addEventListener('click',openMyDayCamera);
-$('#myDayCameraInput')?.addEventListener('change',e=>prepareMyDayFile(e.target.files?.[0]));
+$('#myDayAddBtn')?.addEventListener('click',openStoryCreateHub);
+$('#storyCreateClose')?.addEventListener('click',closeStoryCreateHub);
+$('#storyCreateSettings')?.addEventListener('click',()=>showToast('Stories are visible to your followers for 24 hours.'));
+$('#storyOpenGalleryBtn')?.addEventListener('click',()=>chooseStoryGallery());
+$('#storySelectMultipleBtn')?.addEventListener('click',()=>chooseStoryGallery({multiple:true,collage:true}));
+$('#storyCreateCollageBtn')?.addEventListener('click',()=>chooseStoryGallery({multiple:true,collage:true}));
+$('#storyCameraFab')?.addEventListener('click',openMyDayCamera);
+$('#storyCreateTextBtn')?.addEventListener('click',()=>createStoryTextBackground().catch(err=>showToast(err.message)));
+$('#storyCreateMusicBtn')?.addEventListener('click',async()=>{
+  try{
+    await createStoryTextBackground();
+    setTimeout(()=>$('#storyMusicInput')?.click(),120);
+  }catch(err){showToast(err.message);}
+});
+$('#myDayCameraInput')?.addEventListener('change',e=>{
+  const file=e.target.files?.[0];
+  if(file){closeStoryCreateHub();prepareMyDayFile(file);}
+});
+$('#storyGalleryInput')?.addEventListener('change',e=>{
+  const file=e.target.files?.[0];
+  if(file){closeStoryCreateHub();prepareMyDayFile(file);}
+  e.target.value='';
+});
+$('#storyMultiInput')?.addEventListener('change',async e=>{
+  const files=[...(e.target.files||[])].slice(0,6);
+  e.target.value='';
+  if(!files.length)return;
+  try{
+    const file=await buildStoryCollage(files);
+    closeStoryCreateHub();
+    prepareMyDayFile(file);
+  }catch(err){showToast(err.message||'Could not build the collage.');}
+});
+$('#storyMusicInput')?.addEventListener('change',e=>{
+  const file=e.target.files?.[0];
+  if(file)setStoryMusic(file);
+  e.target.value='';
+});
 $('#myDayText')?.addEventListener('input',syncMyDayComposerText);
 $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(button=>button.addEventListener('click',()=>{
   $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(item=>item.classList.toggle('active',item===button));
   syncMyDayComposerText();
 }));
+$('#storyEditorDoneBtn')?.addEventListener('click',()=>closeStoryToolPanels());
+$('#storyEditorTextBtn')?.addEventListener('click',()=>{
+  openStoryToolPanel('storyTextToolPanel');
+  if(!$('#storyTextToolPanel')?.classList.contains('hidden'))setTimeout(()=>$('#myDayText')?.focus(),60);
+});
+$('#storyEditorStickerBtn')?.addEventListener('click',()=>openStoryToolPanel('storyStickerPanel'));
+$('#storyEditorEffectBtn')?.addEventListener('click',()=>openStoryToolPanel('storyEffectPanel'));
+$('#storyEditorMentionBtn')?.addEventListener('click',()=>{
+  renderStoryMentionChoices();
+  openStoryToolPanel('storyMentionPanel');
+});
+$('#storyEditorMusicBtn')?.addEventListener('click',()=>$('#storyMusicInput')?.click());
+$('#storyStickerPanel')?.querySelectorAll('[data-story-sticker]').forEach(button=>button.addEventListener('click',()=>{
+  const field=$('#myDayText');
+  const current=String(field?.value||'');
+  if(field)field.value=(current?current+' ':'')+button.dataset.storySticker;
+  syncMyDayComposerText();
+}));
+$('#storyEffectPanel')?.querySelectorAll('[data-story-effect]').forEach(button=>button.addEventListener('click',()=>{
+  pendingStoryEffect=button.dataset.storyEffect||'original';
+  applyStoryEditorEffect();
+}));
+$('#storyAudienceBtn')?.addEventListener('click',()=>showToast('Current Story audience: followers.'));
 $('#myDayComposerClose')?.addEventListener('click',closeMyDayComposer);
-$('#myDayRetakeBtn')?.addEventListener('click',openMyDayCamera);
+$('#myDayRetakeBtn')?.addEventListener('click',()=>{
+  closeMyDayComposer();
+  openStoryCreateHub();
+});
 $('#myDayPostBtn')?.addEventListener('click',postMyDay);
 $('#myDayViewerClose')?.addEventListener('click',closeMyDayViewer);
 $('#myDayPrevBtn')?.addEventListener('click',()=>advanceMyDayStory(-1));
