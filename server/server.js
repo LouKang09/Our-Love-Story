@@ -8,6 +8,7 @@ const webpush = require('web-push');
 const QRCode = require('qrcode');
 
 const ROOT = path.resolve(__dirname, '..');
+const APP_VERSION = String(require(path.join(ROOT, 'package.json')).version || '').trim();
 const PUBLIC = path.join(ROOT, 'client');
 const STORAGE = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_DIR) : path.join(__dirname, 'storage');
 const UPLOADS = path.join(STORAGE, 'uploads');
@@ -1751,7 +1752,8 @@ async function handleApi(req, res, url) {
     pushEnabled: PUSH_READY,
     pushPublicKey: PUSH_READY ? VAPID_PUBLIC_KEY : '',
     nativePushEnabled: NATIVE_PUSH_READY,
-    huaweiPushEnabled: HUAWEI_PUSH_READY
+    huaweiPushEnabled: HUAWEI_PUSH_READY,
+    appVersion: APP_VERSION
   });
 
   if (pathname === '/api/tag-availability' && req.method === 'GET') {
