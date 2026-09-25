@@ -3779,7 +3779,7 @@ function prepareMyDayFile(file){
   $('#myDayComposerImage').src=pendingMyDayPreviewUrl;
   if($('#myDayCaption'))$('#myDayCaption').value='';
   if($('#myDayText'))$('#myDayText').value='';
-  $('#myDayTextPosition [data-position]').forEach(button=>button.classList.toggle('active',button.dataset.position==='center'));
+  $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(button=>button.classList.toggle('active',button.dataset.position==='center'));
   syncMyDayComposerText();
   resetMyDayPostProgress();
   $('#myDayComposer').classList.remove('hidden');
