@@ -15076,3 +15076,236 @@ html[data-theme="night"] .my-day-tray{background:#2d2427;border-color:#4b3b40}
     max-height:145px;
   }
 }
+
+
+/* ===== 2026-09-25 MY DAY SWIPE ANIMATION + POST PROGRESS ===== */
+.home-view{
+  position:relative;
+}
+.home-myday-swipe-cue{
+  position:fixed;
+  z-index:4200;
+  left:10px;
+  top:50%;
+  width:92px;
+  display:grid;
+  justify-items:center;
+  gap:4px;
+  padding:10px 8px;
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:18px;
+  color:#fff;
+  background:rgba(43,32,36,.92);
+  box-shadow:0 14px 34px rgba(0,0,0,.26);
+  transform:translate3d(calc(-112px + 88px * var(--myday-swipe-progress,0)),-50%,0)
+            scale(calc(.88 + .12 * var(--myday-swipe-progress,0)));
+  opacity:calc(.16 + .84 * var(--myday-swipe-progress,0));
+  pointer-events:none;
+  transition:opacity .08s linear,box-shadow .12s ease;
+}
+.home-myday-swipe-camera{
+  width:44px;
+  height:44px;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:linear-gradient(145deg,#b35b75,#efb36d);
+  font-size:22px;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+}
+.home-myday-swipe-cue strong{
+  font:800 8px/1.15 ui-sans-serif,system-ui,sans-serif;
+  text-align:center;
+}
+.home-myday-swipe-cue small{
+  color:rgba(255,255,255,.65);
+  font:700 6px/1.2 ui-sans-serif,system-ui,sans-serif;
+  text-align:center;
+}
+.home-view.my-day-swipe-active{
+  transform:translate3d(var(--myday-swipe-x,0px),0,0);
+  transition:none!important;
+  will-change:transform;
+}
+.home-view.my-day-swipe-ready .home-myday-swipe-cue{
+  box-shadow:0 0 0 5px rgba(211,115,145,.18),0 16px 38px rgba(0,0,0,.3);
+}
+.home-view.my-day-swipe-ready .home-myday-swipe-camera{
+  animation:myDayCameraPulse .65s ease-in-out infinite alternate;
+}
+.home-view.my-day-swipe-launch{
+  transform:translate3d(var(--myday-swipe-x,118px),0,0) scale(.985);
+  transition:transform .16s cubic-bezier(.2,.9,.3,1)!important;
+}
+.home-view.my-day-swipe-settle{
+  transform:translate3d(0,0,0);
+  transition:transform .24s cubic-bezier(.2,.9,.25,1)!important;
+}
+@keyframes myDayCameraPulse{
+  from{transform:scale(1)}
+  to{transform:scale(1.12)}
+}
+
+.my-day-text-editor{
+  display:grid;
+  gap:8px;
+  padding:11px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--paper-2);
+}
+.my-day-text-editor-head{
+  display:flex;
+  align-items:center;
+  gap:9px;
+}
+.my-day-aa{
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  flex:0 0 36px;
+  border-radius:11px;
+  color:#fff;
+  background:linear-gradient(145deg,var(--rose),#d6869d);
+  font:900 15px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-text-editor-head>span:last-child{
+  min-width:0;
+}
+.my-day-text-editor-head strong,
+.my-day-text-editor-head small{
+  display:block;
+}
+.my-day-text-editor-head strong{
+  color:var(--ink);
+  font:800 10px/1.2 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-text-editor-head small{
+  margin-top:2px;
+  color:var(--muted);
+  font:700 8px/1.3 ui-sans-serif,system-ui,sans-serif;
+}
+#myDayText{
+  width:100%;
+  min-height:68px;
+  resize:none;
+  position:relative;
+  z-index:2;
+  pointer-events:auto!important;
+  touch-action:manipulation;
+  color:var(--ink)!important;
+  background:var(--paper)!important;
+  border:1px solid var(--line)!important;
+  border-radius:12px!important;
+  padding:11px 12px!important;
+  font:700 12px/1.35 ui-sans-serif,system-ui,sans-serif!important;
+  -webkit-user-select:text!important;
+  user-select:text!important;
+}
+#myDayText.has-text{
+  border-color:rgba(179,91,117,.58)!important;
+  box-shadow:0 0 0 3px rgba(179,91,117,.10);
+}
+
+.my-day-post-progress{
+  display:grid;
+  gap:7px;
+  padding:10px 11px;
+  border:1px solid rgba(179,91,117,.22);
+  border-radius:13px;
+  background:rgba(179,91,117,.08);
+}
+.my-day-post-progress-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.my-day-post-progress-head strong{
+  min-width:0;
+  color:var(--ink);
+  font:800 9px/1.2 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-post-progress-head b{
+  flex:0 0 auto;
+  color:var(--rose-dark);
+  font:900 9px/1 ui-sans-serif,system-ui,sans-serif;
+}
+.my-day-post-progress-track{
+  height:7px;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(126,91,99,.15);
+}
+.my-day-post-progress-track i{
+  display:block;
+  width:0%;
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg,var(--rose),#e89a70);
+  transition:width .18s ease;
+}
+.my-day-post-progress.is-done{
+  border-color:rgba(60,140,91,.28);
+  background:rgba(60,140,91,.10);
+}
+.my-day-post-progress.is-done .my-day-post-progress-track i{
+  background:#4c9b69;
+}
+.my-day-post-progress.is-done .my-day-post-progress-head b,
+.my-day-post-progress.is-done .my-day-post-progress-head strong{
+  color:#3f8158;
+}
+.my-day-post-progress.is-error{
+  border-color:rgba(190,68,76,.30);
+  background:rgba(190,68,76,.10);
+}
+.my-day-post-progress.is-error .my-day-post-progress-track i{
+  background:#be444c;
+}
+.my-day-post-progress.is-error .my-day-post-progress-head b,
+.my-day-post-progress.is-error .my-day-post-progress-head strong{
+  color:#a83c45;
+}
+html[data-theme="night"] .my-day-text-editor{
+  background:#2d2427;
+  border-color:#4b3b40;
+}
+html[data-theme="night"] #myDayText{
+  color:#f5e9ec!important;
+  background:#1d1719!important;
+  border-color:#58464c!important;
+}
+html[data-theme="night"] .my-day-post-progress{
+  background:rgba(179,91,117,.12);
+  border-color:#5a4048;
+}
+html[data-theme="night"] .my-day-post-progress-head strong{
+  color:#f3e8eb;
+}
+@media(min-width:801px){
+  .home-myday-swipe-cue{display:none!important}
+}
+@media(max-width:800px){
+  .home-view.my-day-swipe-active{
+    touch-action:none!important;
+  }
+  .my-day-composer-card{
+    scroll-behavior:smooth;
+  }
+  .my-day-text-editor{
+    position:relative;
+    z-index:5;
+  }
+  #myDayText{
+    min-height:76px;
+    font-size:14px!important;
+  }
+  .my-day-post-progress{
+    position:sticky;
+    bottom:0;
+    z-index:8;
+    box-shadow:0 -6px 18px rgba(0,0,0,.08);
+  }
+}
