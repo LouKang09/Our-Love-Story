@@ -40,12 +40,28 @@ let pendingStoryMusicName = '';
 let pendingStoryEffect = 'original';
 let pendingStoryTextX = 50;
 let pendingStoryTextY = 50;
+let pendingStoryTextRotation = 0;
 let storyTextDragPointerId = null;
+let storyTextRotatePointerId = null;
+let storyTextRotateStartAngle = 0;
+let storyTextRotateStartRotation = 0;
+let pendingStoryAudience = 'followers';
+let myDayAudienceSettings = { closeFriends:[], partner:null };
+let storyCloseFriendsDraft = new Set();
+let myDayReturnContext = null;
 let myDayReactionQueue = Promise.resolve();
 const MY_DAY_STORY_DURATION_MS = 10000;
 let myDayStoryFrame = 0;
 let myDayStoryStartedAt = 0;
+let myDayStoryLastTickAt = 0;
+let myDayStoryPaused = false;
 let myDayTimedStoryId = '';
+let myDayHoldTimer = null;
+let myDayHoldPointerId = null;
+let myDayHoldStartX = 0;
+let myDayHoldStartY = 0;
+let myDayHoldLong = false;
+let suppressNextStoryMediaClick = false;
 let notificationSummary = { count: 0, pendingInvites: 0 };
 let notificationItems = [];
 let chats = [];
@@ -3618,6 +3634,9 @@ async function loadMyDays(){
   const previousStoryId=previous.item?.id || '';
   const data=await api('/api/my-day');
   myDayGroups=Array.isArray(data.groups)?data.groups:[];
+  myDayAudienceSettings=data.audienceSettings && typeof data.audienceSettings==='object'
+    ? {closeFriends:Array.isArray(data.audienceSettings.closeFriends)?data.audienceSettings.closeFriends:[],partner:data.audienceSettings.partner||null}
+    : {closeFriends:[],partner:null};
   if(previousTag && !$('#myDayViewer')?.classList.contains('hidden')){
     const nextGroupIndex=myDayGroups.findIndex(group=>group.profile?.tag===previousTag);
     if(nextGroupIndex>=0){
@@ -3661,7 +3680,7 @@ function renderMyDayTray(){
       '<span class="my-day-story-copy"><strong>'+escapeHtml(label)+'</strong><small>'+escapeHtml(countLabel)+'</small></span>'+
     '</button>';
   }).join('');
-  list.querySelectorAll('[data-myday-tag]').forEach(button=>button.addEventListener('click',()=>openMyDayViewer(button.dataset.mydayTag,0)));
+  list.querySelectorAll('[data-myday-tag]').forEach(button=>button.addEventListener('click',()=>openMyDayViewer(button.dataset.mydayTag,0,{returnContext:{mode:'home'}})));
 }
 async function dataUrlOrBase64ToBlob(value,format='jpeg'){
   const raw=String(value||'');
@@ -3888,18 +3907,80 @@ function storyLegacyTextY(item){
   if(item?.textPosition==='bottom')return 82;
   return 50;
 }
-function storyComposerText(){
+function storyTextRotation(value){
+  const number=Number(value);
+  return Number.isFinite(number)?((number%360)+360)%360:0;
+}
+function storyComposerRawText(){
   const overlay=$('#myDayComposerOverlayText');
   if(!overlay)return '';
-  return String(overlay.innerText ?? overlay.textContent ?? '').replace(/\u00a0/g,' ').trim().slice(0,180);
+  return String(overlay.innerText ?? overlay.textContent ?? '').replace(/\u00a0/g,' ').slice(0,180);
 }
-function applyStoryTextPosition(element,x,y){
+function storyComposerText(){
+  return storyComposerRawText().trim();
+}
+function applyStoryTextPosition(element,x,y,rotation=0){
   if(!element)return;
   element.style.left=storyTextCoordinate(x,50)+'%';
   element.style.top=storyTextCoordinate(y,50)+'%';
   element.style.right='auto';
   element.style.bottom='auto';
-  element.style.transform='translate(-50%,-50%)';
+  element.style.transform='translate(-50%,-50%) rotate('+storyTextRotation(rotation)+'deg)';
+}
+function syncStoryTextRotateHandle(){
+  const handle=$('#storyTextRotateHandle');
+  const overlay=$('#myDayComposerOverlayText');
+  if(!handle||!overlay)return;
+  const visible=Boolean(storyComposerText()) && overlay.dataset.editing!=='1';
+  handle.classList.toggle('hidden',!visible);
+  handle.style.left=storyTextCoordinate(pendingStoryTextX,50)+'%';
+  handle.style.top=storyTextCoordinate(pendingStoryTextY,50)+'%';
+}
+function hideStoryInlineMentionSuggestions(){
+  const host=$('#storyInlineMentionSuggestions');
+  if(host){host.classList.add('hidden');host.innerHTML='';}
+}
+function storyMentionCandidates(){
+  const map=new Map();
+  [...(following||[]),...(followers||[]),...(myDayAudienceSettings.closeFriends||[])].forEach(profile=>{
+    const tag=String(profile?.tag||'').trim();
+    if(tag && tag!==me?.tag && !map.has(tag))map.set(tag,profile);
+  });
+  return [...map.values()];
+}
+function currentStoryMentionQuery(){
+  const raw=storyComposerRawText();
+  const match=raw.match(/(?:^|\s)@([a-z0-9_.-]{0,23})$/i);
+  return match ? String(match[1]||'').toLowerCase() : null;
+}
+function renderStoryInlineMentionSuggestions(){
+  const host=$('#storyInlineMentionSuggestions');
+  const overlay=$('#myDayComposerOverlayText');
+  if(!host||!overlay||overlay.dataset.editing!=='1')return hideStoryInlineMentionSuggestions();
+  const query=currentStoryMentionQuery();
+  if(query===null)return hideStoryInlineMentionSuggestions();
+  const candidates=storyMentionCandidates().filter(profile=>{
+    const tag=String(profile?.tag||'').toLowerCase();
+    const name=String(profile?.displayName||'').toLowerCase();
+    return !query || tag.includes(query) || name.includes(query);
+  }).slice(0,6);
+  if(!candidates.length)return hideStoryInlineMentionSuggestions();
+  host.innerHTML=candidates.map(profile=>'<button type="button" data-inline-story-mention="'+escapeHtml(profile.tag||'')+'">'+avatarHtml(profile,'story-inline-mention-avatar')+'<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+'</small></span></button>').join('');
+  host.style.left=storyTextCoordinate(pendingStoryTextX,50)+'%';
+  if(pendingStoryTextY>56){host.style.top='auto';host.style.bottom=Math.max(8,100-storyTextCoordinate(pendingStoryTextY,50)+7)+'%';}
+  else{host.style.bottom='auto';host.style.top=Math.min(86,storyTextCoordinate(pendingStoryTextY,50)+8)+'%';}
+  host.classList.remove('hidden');
+  host.querySelectorAll('[data-inline-story-mention]').forEach(button=>button.addEventListener('pointerdown',event=>event.stopPropagation()));
+  host.querySelectorAll('[data-inline-story-mention]').forEach(button=>button.addEventListener('click',()=>{
+    const tag=String(button.dataset.inlineStoryMention||'');
+    const raw=storyComposerRawText();
+    const next=raw.replace(/(^|\s)@[a-z0-9_.-]{0,23}$/i,(match,prefix)=>prefix+'@'+tag+' ');
+    overlay.textContent=next.slice(0,180);
+    overlay.focus({preventScroll:true});
+    placeStoryCaretAtEnd(overlay);
+    hideStoryInlineMentionSuggestions();
+    syncMyDayComposerText();
+  }));
 }
 function syncMyDayComposerText(){
   const overlay=$('#myDayComposerOverlayText');
@@ -3907,7 +3988,9 @@ function syncMyDayComposerText(){
   const text=storyComposerText();
   const editing=overlay.dataset.editing==='1';
   overlay.classList.toggle('hidden',!text&&!editing);
-  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY);
+  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY,pendingStoryTextRotation);
+  syncStoryTextRotateHandle();
+  if(editing)renderStoryInlineMentionSuggestions();
 }
 function placeStoryCaretAtEnd(element){
   if(!element)return;
@@ -3927,7 +4010,8 @@ function startStoryTextEditing(){
   overlay.dataset.editing='1';
   overlay.contentEditable='true';
   overlay.classList.remove('hidden');
-  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY);
+  applyStoryTextPosition(overlay,pendingStoryTextX,pendingStoryTextY,pendingStoryTextRotation);
+  syncStoryTextRotateHandle();
   setTimeout(()=>{
     overlay.focus({preventScroll:true});
     placeStoryCaretAtEnd(overlay);
@@ -3939,6 +4023,7 @@ function finishStoryTextEditing(){
   overlay.dataset.editing='0';
   overlay.contentEditable='false';
   overlay.blur();
+  hideStoryInlineMentionSuggestions();
   syncMyDayComposerText();
 }
 function appendStoryComposerText(value){
@@ -3957,6 +4042,78 @@ function setStoryTextFromPointer(event){
   pendingStoryTextX=storyTextCoordinate(((event.clientX-rect.left)/rect.width)*100,50);
   pendingStoryTextY=storyTextCoordinate(((event.clientY-rect.top)/rect.height)*100,50);
   syncMyDayComposerText();
+}
+function updateStoryAudienceButton(){
+  const button=$('#storyAudienceBtn');
+  if(!button)return;
+  const label={followers:'👥 Following',close_friends:'💚 Close friends',private:'🔒 You only',partner:'♡ Partner'}[pendingStoryAudience]||'👥 Following';
+  button.textContent=label;
+}
+function storyAudienceCandidateProfiles(){
+  const map=new Map();
+  [...(following||[]),...(followers||[]),...(myDayAudienceSettings.closeFriends||[])].forEach(profile=>{
+    const tag=String(profile?.tag||'').trim();
+    if(tag && tag!==me?.tag && !map.has(tag))map.set(tag,profile);
+  });
+  return [...map.values()].sort((a,b)=>String(a.displayName||a.tag||'').localeCompare(String(b.displayName||b.tag||'')));
+}
+function renderStoryCloseFriendsManager(){
+  const host=$('#storyCloseFriendsList');
+  if(!host)return;
+  const candidates=storyAudienceCandidateProfiles();
+  host.innerHTML=candidates.length ? candidates.map(profile=>{
+    const checked=storyCloseFriendsDraft.has(profile.tag)?' checked':'';
+    return '<label class="story-close-friend-row">'+avatarHtml(profile,'story-close-friend-avatar')+'<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+'</small></span><input type="checkbox" data-story-close-friend="'+escapeHtml(profile.tag||'')+'"'+checked+' /></label>';
+  }).join('') : '<p class="story-close-friends-empty">Follow someone or have them follow you before adding close friends.</p>';
+  host.querySelectorAll('[data-story-close-friend]').forEach(input=>input.addEventListener('change',()=>{
+    const tag=String(input.dataset.storyCloseFriend||'');
+    if(input.checked)storyCloseFriendsDraft.add(tag);else storyCloseFriendsDraft.delete(tag);
+  }));
+}
+function renderStoryAudiencePanel(){
+  const panel=$('#storyAudiencePanel');
+  if(!panel)return;
+  panel.querySelectorAll('[data-story-audience]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.storyAudience===pendingStoryAudience);
+  });
+  const partnerButton=$('#storyPartnerAudienceBtn');
+  if(partnerButton)partnerButton.disabled=!myDayAudienceSettings.partner;
+  const hint=$('#storyPartnerAudienceHint');
+  if(hint)hint.textContent=myDayAudienceSettings.partner
+    ? (myDayAudienceSettings.partner.displayName||('@'+myDayAudienceSettings.partner.tag))
+    : 'No bound partner yet';
+  const manager=$('#storyCloseFriendsManager');
+  manager?.classList.toggle('hidden',pendingStoryAudience!=='close_friends');
+  if(pendingStoryAudience==='close_friends')renderStoryCloseFriendsManager();
+  updateStoryAudienceButton();
+}
+function openStoryAudiencePanel(){
+  const panel=$('#storyAudiencePanel');
+  if(!panel)return;
+  storyCloseFriendsDraft=new Set((myDayAudienceSettings.closeFriends||[]).map(profile=>profile.tag).filter(Boolean));
+  panel.classList.remove('hidden');
+  renderStoryAudiencePanel();
+}
+function closeStoryAudiencePanel(){
+  $('#storyAudiencePanel')?.classList.add('hidden');
+}
+async function saveStoryCloseFriends(){
+  const button=$('#storyCloseFriendsSaveBtn');
+  if(button)button.disabled=true;
+  try{
+    const data=await api('/api/my-day/close-friends',{method:'POST',body:JSON.stringify({tags:[...storyCloseFriendsDraft]})});
+    myDayAudienceSettings.closeFriends=Array.isArray(data.closeFriends)?data.closeFriends:[];
+    storyCloseFriendsDraft=new Set(myDayAudienceSettings.closeFriends.map(profile=>profile.tag).filter(Boolean));
+    renderStoryCloseFriendsManager();
+    showToast('Close friends updated.');
+  }catch(err){showToast(err?.message||'Could not update close friends.');}
+  finally{if(button)button.disabled=false;}
+}
+function setStoryAudience(value){
+  if(!['followers','close_friends','private','partner'].includes(value))return;
+  if(value==='partner'&&!myDayAudienceSettings.partner){showToast('Bind a partner first to use Partner stories.');return;}
+  pendingStoryAudience=value;
+  renderStoryAudiencePanel();
 }
 function setMyDayPostProgress(percent,label,{state='working'}={}){
   const box=$('#myDayPostProgress');
@@ -4033,7 +4190,6 @@ function prepareMyDayFile(file,{openText=false}={}){
   if(pendingMyDayPreviewUrl)URL.revokeObjectURL(pendingMyDayPreviewUrl);
   pendingMyDayPreviewUrl=URL.createObjectURL(file);
   $('#myDayComposerImage').src=pendingMyDayPreviewUrl;
-  if($('#myDayCaption'))$('#myDayCaption').value='';
   const storyText=$('#myDayComposerOverlayText');
   if(storyText){
     storyText.textContent='';
@@ -4042,7 +4198,12 @@ function prepareMyDayFile(file,{openText=false}={}){
   }
   pendingStoryTextX=50;
   pendingStoryTextY=50;
+  pendingStoryTextRotation=0;
+  pendingStoryAudience='followers';
+  storyTextRotatePointerId=null;
   $('#storyMusicBadge')?.classList.add('hidden');
+  closeStoryAudiencePanel();
+  updateStoryAudienceButton();
   closeStoryToolPanels();
   syncMyDayComposerText();
   applyStoryEditorEffect();
@@ -4063,7 +4224,10 @@ function closeMyDayComposer(){
   pendingStoryEffect='original';
   pendingStoryTextX=50;
   pendingStoryTextY=50;
+  pendingStoryTextRotation=0;
+  pendingStoryAudience='followers';
   storyTextDragPointerId=null;
+  storyTextRotatePointerId=null;
   const storyText=$('#myDayComposerOverlayText');
   if(storyText){
     storyText.textContent='';
@@ -4071,6 +4235,10 @@ function closeMyDayComposer(){
     storyText.contentEditable='false';
     storyText.classList.add('hidden');
   }
+  $('#storyTextRotateHandle')?.classList.add('hidden');
+  hideStoryInlineMentionSuggestions();
+  closeStoryAudiencePanel();
+  updateStoryAudienceButton();
   const image=$('#myDayComposerImage');
   if(image)image.style.filter='none';
   $('#storyMusicBadge')?.classList.add('hidden');
@@ -4099,10 +4267,11 @@ async function postMyDay(){
     finishStoryTextEditing();
     const posted=await api('/api/my-day',{method:'POST',body:JSON.stringify({
       image:uploaded.src,
-      caption:String($('#myDayCaption')?.value||'').trim(),
       overlayText:storyComposerText(),
       textX:pendingStoryTextX,
       textY:pendingStoryTextY,
+      textRotation:pendingStoryTextRotation,
+      audience:pendingStoryAudience,
       effect:pendingStoryEffect,
       music:musicUpload?.src || '',
       musicName:pendingStoryMusicName
@@ -4115,7 +4284,7 @@ async function postMyDay(){
     const own=myDayGroups.find(group=>group.own);
     const newId=posted?.item?.id;
     const itemIndex=own?.items?.findIndex(item=>item.id===newId)??-1;
-    if(own?.items?.length)openMyDayViewer(me?.tag,itemIndex>=0?itemIndex:Math.max(0,own.items.length-1));
+    if(own?.items?.length)openMyDayViewer(me?.tag,itemIndex>=0?itemIndex:Math.max(0,own.items.length-1),{returnContext:{mode:'home'}});
     showToast('Story posted successfully.');
   }catch(err){
     myDayPosting=false;
@@ -4136,18 +4305,31 @@ function stopMyDayStoryTimer(){
   if(myDayStoryFrame)cancelAnimationFrame(myDayStoryFrame);
   myDayStoryFrame=0;
   myDayStoryStartedAt=0;
+  myDayStoryLastTickAt=0;
+  myDayStoryPaused=false;
   myDayTimedStoryId='';
+}
+function setMyDayStoryPaused(paused){
+  myDayStoryPaused=Boolean(paused);
 }
 function startMyDayStoryTimer(storyId){
   stopMyDayStoryTimer();
   if(!storyId)return;
   myDayTimedStoryId=storyId;
   myDayStoryStartedAt=performance.now();
+  myDayStoryLastTickAt=myDayStoryStartedAt;
   const tick=now=>{
     if($('#myDayViewer')?.classList.contains('hidden') || myDayTimedStoryId!==storyId){
       stopMyDayStoryTimer();
       return;
     }
+    if(myDayStoryPaused){
+      myDayStoryStartedAt+=Math.max(0,now-myDayStoryLastTickAt);
+      myDayStoryLastTickAt=now;
+      myDayStoryFrame=requestAnimationFrame(tick);
+      return;
+    }
+    myDayStoryLastTickAt=now;
     const fraction=Math.max(0,Math.min(1,(now-myDayStoryStartedAt)/MY_DAY_STORY_DURATION_MS));
     const fill=$('#myDayProgress i.current b');
     if(fill)fill.style.width=(fraction*100)+'%';
@@ -4179,7 +4361,6 @@ function advanceMyDayStory(delta,{automatic=false}={}){
       while(groupIndex<myDayGroups.length && !(myDayGroups[groupIndex]?.items?.length))groupIndex+=1;
       if(groupIndex>=myDayGroups.length){
         closeMyDayViewer();
-        showView('home');
         return;
       }
       itemIndex=0;
@@ -4203,10 +4384,11 @@ function advanceMyDayStory(delta,{automatic=false}={}){
   renderMyDayViewer();
   markCurrentMyDayViewed();
 }
-function openMyDayViewer(tag,itemIndex=0){
+function openMyDayViewer(tag,itemIndex=0,{returnContext=null}={}){
   const index=myDayGroups.findIndex(group=>group.profile?.tag===tag);if(index<0)return;
   const items=myDayGroups[index]?.items||[];
   if(!items.length)return;
+  myDayReturnContext=returnContext || myDayReturnContext || {mode:'home'};
   myDayGroupIndex=index;
   myDayItemIndex=Math.max(0,Math.min(itemIndex,items.length-1));
   $('#myDayViewer')?.classList.remove('hidden');
@@ -4215,7 +4397,7 @@ function openMyDayViewer(tag,itemIndex=0){
   renderMyDayViewer();
   markCurrentMyDayViewed();
 }
-async function openMyDayStoryById(storyId,author=''){
+async function openMyDayStoryById(storyId,author='',options={}){
   const id=String(storyId||'').trim();
   if(!id)return false;
   try{await loadMyDays();}catch{}
@@ -4232,20 +4414,40 @@ async function openMyDayStoryById(storyId,author=''){
     return false;
   }
   closeNotificationHub?.();
-  showView('home');
+  const returnContext=options.returnContext || {mode:'home'};
+  if(returnContext.mode!=='messages')showView('home');
   const tag=myDayGroups[groupIndex]?.profile?.tag;
   if(!tag)return false;
-  openMyDayViewer(tag,itemIndex);
+  openMyDayViewer(tag,itemIndex,{returnContext});
   return true;
 }
-function closeMyDayViewer(){
+function restoreMyDayReturnContext(){
+  const context=myDayReturnContext || {mode:'home'};
+  myDayReturnContext=null;
+  if(context.mode==='messages'){
+    showView('messages');
+    const restore=async()=>{
+      if(context.chatId && activeChatId!==context.chatId){
+        try{await openChat(context.chatId);}catch{}
+      }
+      if(context.messageId)requestAnimationFrame(()=>scrollChatToMessage(context.messageId));
+    };
+    restore();
+    return;
+  }
+  showView('home');
+}
+function closeMyDayViewer({restore=true}={}){
   stopMyDayStoryTimer();
+  clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;myDayHoldLong=false;
+  $('#myDayViewer')?.classList.remove('story-hold-peek','own-story-view');
   const audio=$('#storyViewerAudio');
   if(audio){audio.pause();audio.removeAttribute('src');audio.dataset.storyId='';}
   $('#myDayViewer')?.classList.add('hidden');
   document.body.classList.remove('my-day-open');
   if($('#myDayReplyText'))$('#myDayReplyText').value='';
   $('#myDayInsightList')?.classList.add('hidden');
+  if(restore)restoreMyDayReturnContext();
 }
 function moveMyDay(delta){
   advanceMyDayStory(delta);
@@ -4320,9 +4522,8 @@ function renderMyDayViewer(){
   if(storyText){
     storyText.textContent=item.overlayText||'';
     storyText.classList.toggle('hidden',!item.overlayText);
-    applyStoryTextPosition(storyText,item.textX,Number.isFinite(Number(item.textY))?item.textY:storyLegacyTextY(item));
+    applyStoryTextPosition(storyText,item.textX,Number.isFinite(Number(item.textY))?item.textY:storyLegacyTextY(item),item.textRotation||0);
   }
-  const caption=$('#myDayViewerCaption');caption.textContent=item.caption||'';caption.classList.toggle('hidden',!item.caption);
   const reactions=$('#myDayReactions');
   reactions.innerHTML=['❤️','😂','😮','😢','👍'].map(emoji=>{
     const count=Number(item.reactionCounts?.[emoji])||0;
@@ -4331,6 +4532,10 @@ function renderMyDayViewer(){
   reactions.querySelectorAll('[data-myday-reaction]').forEach(button=>button.addEventListener('click',()=>reactToMyDay(item.id,button.dataset.mydayReaction)));
   const own=group.profile?.tag===me?.tag;
   const multiple=(group.items?.length||0)>1;
+  const viewer=$('#myDayViewer');
+  viewer?.classList.toggle('own-story-view',own);
+  viewer?.classList.remove('story-hold-peek');
+  myDayStoryPaused=false;
   ensureMyDayStoryTimer(item.id);
   const counter=$('#myDayStoryCounter');
   if(counter){
@@ -4377,7 +4582,7 @@ async function replyToMyDay(text){
     const created=await api('/api/chats/private',{method:'POST',body:JSON.stringify({tag:target})});
     const chatId=created.chat?.id;if(!chatId)throw new Error('Could not open the conversation.');
     await api('/api/chats/'+encodeURIComponent(chatId)+'/messages',{method:'POST',body:JSON.stringify({text:message,myDayReply:{storyId:item.id}})});
-    closeMyDayViewer();showView('messages');await loadChats();await openChat(chatId);
+    closeMyDayViewer({restore:false});showView('messages');await loadChats();await openChat(chatId);
   }catch(err){showToast(err?.message||'Could not reply to My Day.');}
   finally{if(submit)submit.disabled=false;}
 }
@@ -4456,6 +4661,36 @@ const endStoryTextDrag=event=>{
 };
 storyComposerOverlay?.addEventListener('pointerup',endStoryTextDrag);
 storyComposerOverlay?.addEventListener('pointercancel',endStoryTextDrag);
+const storyRotateHandle=$('#storyTextRotateHandle');
+storyRotateHandle?.addEventListener('pointerdown',event=>{
+  event.preventDefault();event.stopPropagation();
+  const stage=$('.story-editor-stage');if(!stage)return;
+  const rect=stage.getBoundingClientRect();
+  const cx=rect.left+(storyTextCoordinate(pendingStoryTextX,50)/100)*rect.width;
+  const cy=rect.top+(storyTextCoordinate(pendingStoryTextY,50)/100)*rect.height;
+  storyTextRotatePointerId=event.pointerId;
+  storyTextRotateStartAngle=Math.atan2(event.clientY-cy,event.clientX-cx);
+  storyTextRotateStartRotation=pendingStoryTextRotation;
+  try{storyRotateHandle.setPointerCapture(event.pointerId);}catch{}
+});
+storyRotateHandle?.addEventListener('pointermove',event=>{
+  if(storyTextRotatePointerId!==event.pointerId)return;
+  event.preventDefault();
+  const stage=$('.story-editor-stage');if(!stage)return;
+  const rect=stage.getBoundingClientRect();
+  const cx=rect.left+(storyTextCoordinate(pendingStoryTextX,50)/100)*rect.width;
+  const cy=rect.top+(storyTextCoordinate(pendingStoryTextY,50)/100)*rect.height;
+  const angle=Math.atan2(event.clientY-cy,event.clientX-cx);
+  pendingStoryTextRotation=storyTextRotation(storyTextRotateStartRotation+((angle-storyTextRotateStartAngle)*180/Math.PI));
+  syncMyDayComposerText();
+});
+const endStoryTextRotate=event=>{
+  if(storyTextRotatePointerId!==event.pointerId)return;
+  try{storyRotateHandle?.releasePointerCapture(event.pointerId);}catch{}
+  storyTextRotatePointerId=null;
+};
+storyRotateHandle?.addEventListener('pointerup',endStoryTextRotate);
+storyRotateHandle?.addEventListener('pointercancel',endStoryTextRotate);
 $('#storyEditorDoneBtn')?.addEventListener('click',()=>{
   finishStoryTextEditing();
   closeStoryToolPanels();
@@ -4475,17 +4710,53 @@ $('#storyEffectPanel')?.querySelectorAll('[data-story-effect]').forEach(button=>
   pendingStoryEffect=button.dataset.storyEffect||'original';
   applyStoryEditorEffect();
 }));
-$('#storyAudienceBtn')?.addEventListener('click',()=>showToast('Current Story audience: followers.'));
+$('#storyAudienceBtn')?.addEventListener('click',openStoryAudiencePanel);
+$('#storyAudienceCloseBtn')?.addEventListener('click',closeStoryAudiencePanel);
+$('#storyAudiencePanel')?.querySelectorAll('[data-story-audience]').forEach(button=>button.addEventListener('click',()=>setStoryAudience(button.dataset.storyAudience)));
+$('#storyCloseFriendsSaveBtn')?.addEventListener('click',saveStoryCloseFriends);
 $('#myDayComposerClose')?.addEventListener('click',closeMyDayComposer);
 $('#myDayRetakeBtn')?.addEventListener('click',()=>{
   closeMyDayComposer();
   openStoryCreateHub();
 });
 $('#myDayPostBtn')?.addEventListener('click',postMyDay);
-$('#myDayViewerClose')?.addEventListener('click',closeMyDayViewer);
+$('#myDayViewerClose')?.addEventListener('click',()=>closeMyDayViewer());
 $('#myDayPrevBtn')?.addEventListener('click',()=>advanceMyDayStory(-1));
 $('#myDayNextBtn')?.addEventListener('click',()=>advanceMyDayStory(1));
-$('.my-day-media')?.addEventListener('click',e=>{
+const storyViewerMedia=$('.my-day-media');
+storyViewerMedia?.addEventListener('pointerdown',event=>{
+  const current=myDayCurrent();
+  if(!current.item || current.group?.profile?.tag===me?.tag || event.target.closest('button,input,textarea,a'))return;
+  myDayHoldPointerId=event.pointerId;
+  myDayHoldStartX=event.clientX;myDayHoldStartY=event.clientY;myDayHoldLong=false;
+  setMyDayStoryPaused(true);
+  clearTimeout(myDayHoldTimer);
+  myDayHoldTimer=setTimeout(()=>{
+    if(myDayHoldPointerId!==event.pointerId)return;
+    myDayHoldLong=true;
+    $('#myDayViewer')?.classList.add('story-hold-peek');
+  },240);
+});
+storyViewerMedia?.addEventListener('pointermove',event=>{
+  if(myDayHoldPointerId!==event.pointerId || myDayHoldLong)return;
+  if(Math.hypot(event.clientX-myDayHoldStartX,event.clientY-myDayHoldStartY)>14){
+    clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;setMyDayStoryPaused(false);
+  }
+});
+const endMyDayHold=event=>{
+  if(myDayHoldPointerId!==event.pointerId)return;
+  clearTimeout(myDayHoldTimer);myDayHoldTimer=null;
+  const wasLong=myDayHoldLong;
+  myDayHoldPointerId=null;myDayHoldLong=false;
+  $('#myDayViewer')?.classList.remove('story-hold-peek');
+  setMyDayStoryPaused(false);
+  if(wasLong){suppressNextStoryMediaClick=true;event.preventDefault();}
+};
+storyViewerMedia?.addEventListener('pointerup',endMyDayHold);
+storyViewerMedia?.addEventListener('pointercancel',endMyDayHold);
+storyViewerMedia?.addEventListener('contextmenu',event=>event.preventDefault());
+storyViewerMedia?.addEventListener('click',e=>{
+  if(suppressNextStoryMediaClick){suppressNextStoryMediaClick=false;e.preventDefault();return;}
   if(e.target.closest('button,input,textarea,a'))return;
   const rect=e.currentTarget.getBoundingClientRect();
   const x=e.clientX-rect.left;
@@ -5983,7 +6254,8 @@ function renderChatMessages({stickBottom=true}={}) {
   }));
   host.querySelectorAll('.chat-myday-reply[data-story-id]').forEach(button=>button.addEventListener('click',async e=>{
     e.stopPropagation();
-    await openMyDayStoryById(button.dataset.storyId,button.dataset.storyAuthor);
+    const messageId=button.closest('.chat-message')?.dataset.messageId || '';
+    await openMyDayStoryById(button.dataset.storyId,button.dataset.storyAuthor,{returnContext:{mode:'messages',chatId:activeChatId,messageId}});
   }));
   wireChatVoicePlayers(host);
   wireChatMessageGestures(host);

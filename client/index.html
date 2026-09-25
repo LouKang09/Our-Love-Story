@@ -856,6 +856,8 @@
         <div class="my-day-composer-preview story-editor-stage">
           <img id="myDayComposerImage" alt="Story preview" />
           <div id="myDayComposerOverlayText" class="my-day-overlay-text story-editable-text hidden" contenteditable="false" role="textbox" aria-label="Story text" data-placeholder="Type or @tag…"></div>
+          <button id="storyTextRotateHandle" class="story-text-rotate-handle hidden" type="button" aria-label="Rotate story text">↻</button>
+          <div id="storyInlineMentionSuggestions" class="story-inline-mention-suggestions hidden" role="listbox" aria-label="Mention suggestions"></div>
           <div id="storyMusicBadge" class="story-music-badge hidden">♫ <span></span></div>
         </div>
 
@@ -880,8 +882,6 @@
           <div id="storyMentionList"></div>
         </div>
 
-        <textarea id="myDayCaption" rows="1" maxlength="280" placeholder="Add a caption (optional)…"></textarea>
-
         <div class="story-editor-tools">
           <button id="storyEditorMusicBtn" type="button"><span>♫</span><small>Music</small></button>
           <button id="storyEditorStickerBtn" type="button"><span>☺</span><small>Stickers</small></button>
@@ -895,8 +895,23 @@
           <div class="my-day-post-progress-track"><i id="myDayPostProgressFill"></i></div>
         </div>
 
+        <div id="storyAudiencePanel" class="story-audience-panel hidden" aria-label="Story audience">
+          <div class="story-audience-panel-head"><div><strong>Who can see this story?</strong><small>Choose an audience for this story.</small></div><button id="storyAudienceCloseBtn" type="button" aria-label="Close audience options">×</button></div>
+          <div class="story-audience-options">
+            <button type="button" data-story-audience="followers"><span>👥</span><span><strong>Following</strong><small>Your Scrapella circle</small></span><b>✓</b></button>
+            <button type="button" data-story-audience="close_friends"><span>💚</span><span><strong>Close friends</strong><small>Only people on your close friends list</small></span><b>✓</b></button>
+            <button type="button" data-story-audience="private"><span>🔒</span><span><strong>You only</strong><small>Only you can open this story</small></span><b>✓</b></button>
+            <button id="storyPartnerAudienceBtn" type="button" data-story-audience="partner"><span>♡</span><span><strong>Partner</strong><small id="storyPartnerAudienceHint">Your bound partner</small></span><b>✓</b></button>
+          </div>
+          <div id="storyCloseFriendsManager" class="story-close-friends-manager hidden">
+            <div><strong>Close friends</strong><small>Select people you trust. You can change this list any time.</small></div>
+            <div id="storyCloseFriendsList" class="story-close-friends-list"></div>
+            <button id="storyCloseFriendsSaveBtn" class="primary" type="button">Save close friends</button>
+          </div>
+        </div>
+
         <div class="story-editor-share-row">
-          <button id="storyAudienceBtn" class="story-audience-btn" type="button">👥 Followers</button>
+          <button id="storyAudienceBtn" class="story-audience-btn" type="button">👥 Following</button>
           <button id="myDayRetakeBtn" class="story-replace-btn" type="button">Replace</button>
           <button id="myDayPostBtn" class="story-share-btn" type="button">Share</button>
         </div>
@@ -912,18 +927,17 @@
         <div id="myDayViewerOverlayText" class="my-day-overlay-text hidden"></div>
         <div id="storyViewerMusicBadge" class="story-music-badge hidden">♫ <span></span></div>
         <audio id="storyViewerAudio" preload="metadata" hidden></audio>
-        <p id="myDayViewerCaption"></p>
       </div>
       <button id="myDayNextBtn" class="my-day-nav my-day-next" type="button" aria-label="Next story">›</button>
+      <div id="myDayOwnerInsights" class="my-day-owner-insights hidden">
+        <button id="myDayViewerSummaryBtn" class="my-day-viewer-summary" type="button" aria-expanded="false">
+          <strong id="myDayViewerSummaryCount">No viewers yet</strong>
+          <small id="myDayViewerSummaryNames">Your viewers and reactions will appear here.</small>
+        </button>
+        <div id="myDayInsightList" class="my-day-insight-list hidden"></div>
+      </div>
       <div id="myDayViewerActions" class="my-day-viewer-actions">
         <div id="myDayStoryCounter" class="my-day-story-counter hidden"></div>
-        <div id="myDayOwnerInsights" class="my-day-owner-insights hidden">
-          <button id="myDayViewerSummaryBtn" class="my-day-viewer-summary" type="button" aria-expanded="false">
-            <strong id="myDayViewerSummaryCount">No viewers yet</strong>
-            <small id="myDayViewerSummaryNames">Your viewers and reactions will appear here.</small>
-          </button>
-          <div id="myDayInsightList" class="my-day-insight-list hidden"></div>
-        </div>
         <div id="myDayReactions" class="my-day-reactions" aria-label="React to My Day"></div>
         <form id="myDayReplyForm" class="my-day-reply-form"><input id="myDayReplyText" maxlength="1000" placeholder="Reply to My Day…" autocomplete="off" /><button class="primary" type="submit">Send</button></form>
         <button id="myDayDeleteBtn" class="ghost my-day-delete hidden" type="button">Delete My Day</button>
@@ -932,6 +946,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260925-story-drag-reactions1" defer></script>
+  <script src="/app.js?v=20260925-story-audience-rotate-hold1" defer></script>
 </body>
 </html>

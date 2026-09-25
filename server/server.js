@@ -233,6 +233,7 @@ async function readSocial() {
   data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
   data.nativePushTokens = Array.isArray(data.nativePushTokens) ? data.nativePushTokens : [];
   data.myDays = Array.isArray(data.myDays) ? data.myDays : [];
+  data.storyCloseFriends = data.storyCloseFriends && typeof data.storyCloseFriends === 'object' ? data.storyCloseFriends : {};
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   data.notificationHub = data.notificationHub && typeof data.notificationHub === 'object' ? data.notificationHub : {};
   data.mentions = Array.isArray(data.mentions) ? data.mentions : [];
@@ -909,6 +910,31 @@ function legacyMyDayTextY(item) {
   if (item?.textPosition === 'bottom') return 82;
   return 50;
 }
+function myDayTextRotation(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return ((number % 360) + 360) % 360;
+}
+function myDayAudience(item) {
+  return ['followers','close_friends','private','partner'].includes(item?.audience) ? item.audience : 'followers';
+}
+function storyCloseFriendsFor(social, owner) {
+  const raw = Array.isArray(social.storyCloseFriends?.[owner]) ? social.storyCloseFriends[owner] : [];
+  return [...new Set(raw.map(slugTag).filter(tag => tag && tag !== owner && social.profiles?.[tag]))].slice(0,100);
+}
+function myDayAudienceRecipients(social, item) {
+  const recipients = new Set([item?.author, ...(Array.isArray(item?.mentions) ? item.mentions : [])].filter(Boolean));
+  const audience = myDayAudience(item);
+  if (audience === 'followers') {
+    social.follows.filter(f => f.following === item.author).forEach(f => recipients.add(f.follower));
+  } else if (audience === 'close_friends') {
+    storyCloseFriendsFor(social,item.author).forEach(tag => recipients.add(tag));
+  } else if (audience === 'partner') {
+    const partner = activePartnerTag(social,item.author);
+    if (partner) recipients.add(partner);
+  }
+  return [...recipients];
+}
 function myDayReactionEvents(item) {
   if (Array.isArray(item?.reactionEvents) && item.reactionEvents.length) {
     return item.reactionEvents
@@ -929,8 +955,12 @@ function myDayReactionEvents(item) {
 function canViewMyDayItem(social, item, viewer) {
   if (!item || !viewer) return false;
   if (item.author === viewer) return true;
-  if (isFollowing(social, viewer, item.author)) return true;
-  return Array.isArray(item.mentions) && item.mentions.includes(viewer);
+  if (Array.isArray(item.mentions) && item.mentions.includes(viewer)) return true;
+  const audience = myDayAudience(item);
+  if (audience === 'followers') return isFollowing(social, viewer, item.author);
+  if (audience === 'close_friends') return storyCloseFriendsFor(social,item.author).includes(viewer);
+  if (audience === 'partner') return isActivePartner(social, viewer, item.author);
+  return false;
 }
 function decorateMyDayItem(social, item, viewer) {
   const recentReactions = myDayReactionEvents(item);
@@ -970,7 +1000,9 @@ function decorateMyDayItem(social, item, viewer) {
     overlayText:String(item.overlayText || '').slice(0,180),
     textX:myDayTextCoord(item.textX,50),
     textY:myDayTextCoord(item.textY,legacyMyDayTextY(item)),
+    textRotation:myDayTextRotation(item.textRotation),
     textPosition:['top','center','bottom'].includes(item.textPosition) ? item.textPosition : 'center',
+    audience:myDayAudience(item),
     effect:['original','warm','cool','bw','vivid'].includes(item.effect) ? item.effect : 'original',
     music:String(item.music || '').startsWith('/uploads/') ? String(item.music) : '',
     musicName:String(item.musicName || '').slice(0,120),
@@ -2586,21 +2618,41 @@ async function handleApi(req, res, url) {
   }
 
   if (pathname === '/api/my-day' && req.method === 'GET') {
-    return json(res,200,{ groups:myDayGroupsForViewer(social,user), ttlHours:24 });
+    const closeFriends=storyCloseFriendsFor(social,user);
+    const partner=activePartnerTag(social,user);
+    return json(res,200,{
+      groups:myDayGroupsForViewer(social,user),
+      ttlHours:24,
+      audienceSettings:{
+        closeFriends:closeFriends.map(tag=>publicProfileFor(social,tag)),
+        partner:partner ? publicProfileFor(social,partner) : null
+      }
+    });
+  }
+
+  if (pathname === '/api/my-day/close-friends' && req.method === 'POST') {
+    const body=await readBody(req,64*1024);
+    const requested=Array.isArray(body.tags) ? body.tags : [];
+    const tags=[...new Set(requested.map(slugTag).filter(tag => tag && tag !== user && social.profiles?.[tag]))].slice(0,100);
+    social.storyCloseFriends ||= {};
+    social.storyCloseFriends[user]=tags;
+    await writeSocial(social);
+    return json(res,200,{ closeFriends:tags.map(tag=>publicProfileFor(social,tag)) });
   }
 
   if (pathname === '/api/my-day' && req.method === 'POST') {
     const body=await readBody(req,128*1024);
     const image=String(body.image || '').trim();
-    const caption=String(body.caption || '').trim().slice(0,280);
     const overlayText=String(body.overlayText || '').trim().slice(0,180);
     const textX=myDayTextCoord(body.textX,50);
     const textY=myDayTextCoord(body.textY,50);
+    const textRotation=myDayTextRotation(body.textRotation);
+    const audience=['followers','close_friends','private','partner'].includes(String(body.audience||'')) ? String(body.audience) : 'followers';
     const effect=['original','warm','cool','bw','vivid'].includes(String(body.effect||'')) ? String(body.effect) : 'original';
     const music=String(body.music || '').trim();
     const musicName=String(body.musicName || '').trim().slice(0,120);
     const mentions=[];
-    for (const target of mentionTags(overlayText+' '+caption)) {
+    for (const target of mentionTags(overlayText)) {
       if (target===user || !(await accountExists(target))) continue;
       mentions.push(target);
     }
@@ -2612,10 +2664,12 @@ async function handleApi(req, res, url) {
       id:crypto.randomUUID(),
       author:user,
       image,
-      caption,
+      caption:'',
       overlayText,
       textX,
       textY,
+      textRotation,
+      audience,
       effect,
       music,
       musicName,
@@ -2631,7 +2685,7 @@ async function handleApi(req, res, url) {
     social.myDays.push(item);
     const actor=publicProfileFor(social,user);
     const mentionEvents=[];
-    const mentionExcerpt=(overlayText || caption || 'Mentioned you in a story').slice(0,180);
+    const mentionExcerpt=(overlayText || 'Mentioned you in a story').slice(0,180);
     for (const target of item.mentions) {
       const notice=appendActivityNotification(social,{
         to:target,
@@ -2661,8 +2715,7 @@ async function handleApi(req, res, url) {
         createdAt:notice.createdAt
       });
     }
-    const dayFollowers=social.follows.filter(f=>f.following===user).map(f=>f.follower);
-    emitLiveMany([...new Set([user,...dayFollowers,...item.mentions])],'myday',{type:'posted',from:user,storyId:item.id});
+    emitLiveMany(myDayAudienceRecipients(social,item),'myday',{type:'posted',from:user,storyId:item.id});
     return json(res,201,{item:decorateMyDayItem(social,item,user),groups:myDayGroupsForViewer(social,user)});
   }
 
@@ -2671,10 +2724,10 @@ async function handleApi(req, res, url) {
     const item=(social.myDays||[]).find(story=>story.id===myDayDeleteMatch[1]);
     if(!item)return notFound(res);
     if(item.author!==user)return forbidden(res,'You can only delete your own My Day.');
+    const recipients=myDayAudienceRecipients(social,item);
     social.myDays=(social.myDays||[]).filter(story=>story.id!==item.id);
     await writeSocial(social);
-    const dayFollowers=social.follows.filter(f=>f.following===user).map(f=>f.follower);
-    emitLiveMany([...new Set([user,...dayFollowers])],'myday',{type:'deleted',from:user,storyId:item.id});
+    emitLiveMany(recipients,'myday',{type:'deleted',from:user,storyId:item.id});
     return json(res,200,{ok:true});
   }
 
