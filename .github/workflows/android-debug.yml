@@ -483,7 +483,7 @@ jobs:
       - name: Upload Scrapella Android release APK
         uses: actions/upload-artifact@v4
         with:
-          name: scrapella-android-release-v2.3.2
+          name: scrapella-android-release-v2.4.0
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
