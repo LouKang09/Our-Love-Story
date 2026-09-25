@@ -76,24 +76,82 @@ jobs:
 
           import android.os.Build;
           import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
           import android.view.View;
           import android.view.WindowInsets;
           import android.view.WindowInsetsController;
+          import android.webkit.WebResourceError;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
           import com.getcapacitor.BridgeActivity;
+          import com.getcapacitor.BridgeWebViewClient;
 
           public class MainActivity extends BridgeActivity {
+              private static final String SCRAPELLA_URL = "https://scrapella.up.railway.app";
+              private final Handler retryHandler = new Handler(Looper.getMainLooper());
+              private int mainFrameRetryCount = 0;
+
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   registerPlugin(MicrophonePermissionPlugin.class);
                   registerPlugin(NotificationPermissionPlugin.class);
                   super.onCreate(savedInstanceState);
+                  installResilientWebViewClient();
                   hideNavigationBar();
+              }
+
+              @Override
+              protected void onDestroy() {
+                  retryHandler.removeCallbacksAndMessages(null);
+                  super.onDestroy();
               }
 
               @Override
               public void onWindowFocusChanged(boolean hasFocus) {
                   super.onWindowFocusChanged(hasFocus);
                   if (hasFocus) hideNavigationBar();
+              }
+
+              private void installResilientWebViewClient() {
+                  if (bridge == null || bridge.getWebView() == null) return;
+                  WebView webView = bridge.getWebView();
+                  webView.setWebViewClient(new BridgeWebViewClient(bridge) {
+                      @Override
+                      public void onPageFinished(WebView view, String url) {
+                          super.onPageFinished(view, url);
+                          if (url != null && url.startsWith(SCRAPELLA_URL)) {
+                              mainFrameRetryCount = 0;
+                          }
+                      }
+
+                      @Override
+                      public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                          boolean mainFrame = request != null && request.isForMainFrame();
+                          int code = error == null ? WebViewClient.ERROR_UNKNOWN : error.getErrorCode();
+                          if (mainFrame && isTransientNetworkError(code) && mainFrameRetryCount < 4) {
+                              mainFrameRetryCount++;
+                              view.stopLoading();
+                              long delayMs = Math.min(6000L, 1200L * mainFrameRetryCount);
+                              retryHandler.postDelayed(() -> {
+                                  if (!isFinishing() && !isDestroyed() && bridge != null && bridge.getWebView() != null) {
+                                      bridge.getWebView().loadUrl(SCRAPELLA_URL);
+                                  }
+                              }, delayMs);
+                              return;
+                          }
+                          super.onReceivedError(view, request, error);
+                      }
+                  });
+              }
+
+              private boolean isTransientNetworkError(int code) {
+                  return code == WebViewClient.ERROR_TIMEOUT
+                      || code == WebViewClient.ERROR_HOST_LOOKUP
+                      || code == WebViewClient.ERROR_CONNECT
+                      || code == WebViewClient.ERROR_IO
+                      || code == WebViewClient.ERROR_UNKNOWN;
               }
 
               private void hideNavigationBar() {
@@ -360,8 +418,8 @@ jobs:
           gradle_path = Path("android/app/build.gradle")
           gradle = gradle_path.read_text()
 
-          gradle = re.sub(r'versionCode\\s+\\d+', 'versionCode 246', gradle, count=1)
-          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.4.5"', gradle, count=1)
+          gradle = re.sub(r'versionCode\\s+\\d+', 'versionCode 247', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.4.6"', gradle, count=1)
 
           if 'scrapella-ci-release.keystore' not in gradle:
               gradle = gradle.replace(
