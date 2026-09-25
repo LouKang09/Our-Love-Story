@@ -85,6 +85,7 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   registerPlugin(MicrophonePermissionPlugin.class);
+                  registerPlugin(NotificationPermissionPlugin.class);
                   super.onCreate(savedInstanceState);
                   hideNavigationBar();
               }
@@ -169,6 +170,167 @@ jobs:
           }
           JAVA
 
+          cat > android/app/src/main/java/com/loukang/scrapella/NotificationPermissionPlugin.java <<'JAVA'
+          package com.loukang.scrapella;
+
+          import android.Manifest;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.provider.Settings;
+          import androidx.core.app.NotificationManagerCompat;
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.PermissionState;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+          import com.getcapacitor.annotation.Permission;
+          import com.getcapacitor.annotation.PermissionCallback;
+
+          @CapacitorPlugin(
+              name = "NotificationPermission",
+              permissions = {
+                  @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
+              }
+          )
+          public class NotificationPermissionPlugin extends Plugin {
+              private boolean enabled() {
+                  return NotificationManagerCompat.from(getContext()).areNotificationsEnabled();
+              }
+
+              private void resolveState(PluginCall call, String value) {
+                  JSObject result = new JSObject();
+                  result.put("notifications", value);
+                  result.put("enabled", enabled());
+                  result.put("runtimePrompt", Build.VERSION.SDK_INT >= 33);
+                  call.resolve(result);
+              }
+
+              @PluginMethod
+              public void check(PluginCall call) {
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      PermissionState state = getPermissionState("notifications");
+                      if (state == PermissionState.GRANTED && enabled()) resolveState(call, "granted");
+                      else if (state == PermissionState.DENIED) resolveState(call, "denied");
+                      else resolveState(call, enabled() ? "granted" : "prompt");
+                      return;
+                  }
+                  resolveState(call, enabled() ? "granted" : "denied");
+              }
+
+              @PluginMethod
+              public void request(PluginCall call) {
+                  if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED) {
+                      requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
+                      return;
+                  }
+                  if (enabled()) {
+                      resolveState(call, "granted");
+                      return;
+                  }
+                  openNotificationSettings();
+                  resolveState(call, "settings");
+              }
+
+              @PluginMethod
+              public void openSettings(PluginCall call) {
+                  openNotificationSettings();
+                  resolveState(call, "settings");
+              }
+
+              private void openNotificationSettings() {
+                  try {
+                      Intent intent = new Intent();
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          intent.setAction(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                          intent.putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+                      } else {
+                          intent.setAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                          intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                      }
+                      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      getContext().startActivity(intent);
+                  } catch (Exception ignored) {}
+              }
+
+              @PermissionCallback
+              private void notificationPermissionCallback(PluginCall call) {
+                  check(call);
+              }
+          }
+          JAVA
+
+      - name: Configure Huawei Push Kit when credentials are available
+        env:
+          HUAWEI_AGCONNECT_SERVICES_JSON: ${{ secrets.HUAWEI_AGCONNECT_SERVICES_JSON }}
+        run: |
+          if [ -z "$HUAWEI_AGCONNECT_SERVICES_JSON" ]; then
+            echo "Huawei AppGallery credentials are not configured; HMS push bridge skipped."
+            exit 0
+          fi
+          printf '%s' "$HUAWEI_AGCONNECT_SERVICES_JSON" > android/app/agconnect-services.json
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("android/build.gradle")
+          text = root.read_text()
+          if "https://developer.huawei.com/repo/" not in text:
+              text = text.replace("google()", "google()\n        maven { url 'https://developer.huawei.com/repo/' }")
+          if "com.huawei.agconnect:agcp" not in text:
+              marker = "dependencies {"
+              pos = text.find(marker)
+              if pos >= 0:
+                  pos += len(marker)
+                  text = text[:pos] + "\n        classpath 'com.huawei.agconnect:agcp:1.9.1.300'" + text[pos:]
+          root.write_text(text)
+
+          app = Path("android/app/build.gradle")
+          gradle = app.read_text()
+          if "com.huawei.hms:push" not in gradle:
+              gradle = gradle.replace("dependencies {", "dependencies {\n    implementation 'com.huawei.hms:push:6.13.0.300'", 1)
+          if "apply plugin: 'com.huawei.agconnect'" not in gradle:
+              gradle += "\napply plugin: 'com.huawei.agconnect'\n"
+          app.write_text(gradle)
+
+          main = Path("android/app/src/main/java/com/loukang/scrapella/MainActivity.java")
+          main_text = main.read_text()
+          if "HuaweiPushPlugin.class" not in main_text:
+              main_text = main_text.replace("registerPlugin(NotificationPermissionPlugin.class);", "registerPlugin(NotificationPermissionPlugin.class);\n                  registerPlugin(HuaweiPushPlugin.class);")
+          main.write_text(main_text)
+          PY
+
+          cat > android/app/src/main/java/com/loukang/scrapella/HuaweiPushPlugin.java <<'JAVA'
+          package com.loukang.scrapella;
+
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+          import com.huawei.agconnect.config.AGConnectServicesConfig;
+          import com.huawei.hms.aaid.HmsInstanceId;
+          import java.util.concurrent.Executors;
+
+          @CapacitorPlugin(name = "HuaweiPush")
+          public class HuaweiPushPlugin extends Plugin {
+              @PluginMethod
+              public void getToken(PluginCall call) {
+                  Executors.newSingleThreadExecutor().execute(() -> {
+                      try {
+                          String appId = AGConnectServicesConfig.fromContext(getContext()).getString("client/app_id");
+                          String token = HmsInstanceId.getInstance(getContext()).getToken(appId, "HCM");
+                          JSObject result = new JSObject();
+                          result.put("token", token == null ? "" : token);
+                          call.resolve(result);
+                      } catch (Exception error) {
+                          call.reject("Huawei Push Kit token unavailable", error);
+                      }
+                  });
+              }
+          }
+          JAVA
+
       - name: Configure Android app permissions
         run: |
           python3 - <<'PY'
@@ -198,8 +360,8 @@ jobs:
           gradle_path = Path("android/app/build.gradle")
           gradle = gradle_path.read_text()
 
-          gradle = re.sub(r'versionCode\\s+\\d+', 'versionCode 240', gradle, count=1)
-          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.3.2"', gradle, count=1)
+          gradle = re.sub(r'versionCode\\s+\\d+', 'versionCode 241', gradle, count=1)
+          gradle = re.sub(r'versionName\s+"[^"]+"', 'versionName "2.4.0"', gradle, count=1)
 
           if 'scrapella-ci-release.keystore' not in gradle:
               gradle = gradle.replace(
