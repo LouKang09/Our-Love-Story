@@ -3728,10 +3728,18 @@ const server = http.createServer(async (req, res) => {
             const allowed = canContributeSecretProject(secretProject,viewer) || (secretProject.recipient === viewer && secretProjectDue(secretProject));
             if (!allowed) return forbidden(res,'This secret contribution is still sealed.');
           } else {
-            const isFreedomWallPhoto = (social.freedomWall || []).some(post => post?.image === assetPath);
-            const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
-            const isOwnedPendingUpload = social.uploadOwners?.[assetPath] === viewer;
-            if (!isFreedomWallPhoto && !isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
+            const myDayStory = activeMyDayItems(social).find(story =>
+              story?.image === assetPath || story?.music === assetPath
+            );
+            if (myDayStory) {
+              const canViewMyDayMedia = viewer === myDayStory.author || isFollowing(social, viewer, myDayStory.author);
+              if (!canViewMyDayMedia) return forbidden(res, 'Follow this person to view their My Day.');
+            } else {
+              const isFreedomWallPhoto = (social.freedomWall || []).some(post => post?.image === assetPath);
+              const isProfileAvatar = Object.values(social.profiles || {}).some(profile => profile?.avatar === assetPath);
+              const isOwnedPendingUpload = social.uploadOwners?.[assetPath] === viewer;
+              if (!isFreedomWallPhoto && !isProfileAvatar && !isOwnedPendingUpload) return forbidden(res, 'You do not have access to this photo.');
+            }
           }
         }
       }
