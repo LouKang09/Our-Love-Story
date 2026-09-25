@@ -108,7 +108,7 @@ let profileViewerX = 0;
 let profileViewerY = 0;
 const profileViewerPointers = new Map();
 let profileViewerGesture = null;
-let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.', nativePushEnabled:false, huaweiPushEnabled:false };
+let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.', nativePushEnabled:false, huaweiPushEnabled:false, appVersion:'' };
 let toastTimer;
 let liveEventSource = null;
 let realtimeEntryTimer = null;
@@ -487,11 +487,42 @@ async function checkProfilePermission(kind, { request = false } = {}) {
     return state;
   }
 }
+async function refreshInstalledAppVersion(){
+  const el=$('#profileAppVersion');
+  if(!el)return;
+  const live=String(config.appVersion||'').trim();
+  el.classList.remove('outdated','current');
+  if(!isNativeScrapellaApp()){
+    el.textContent=live ? ('Web release '+live) : 'Web release';
+    el.classList.add('current');
+    return;
+  }
+  let installed='';
+  try{
+    const app=nativePlugin('App');
+    const info=app?.getInfo ? await permissionTimeout(app.getInfo(),4500) : null;
+    installed=String(info?.version||'').trim();
+  }catch{}
+  if(installed && live){
+    const outdated=installed!==live;
+    el.textContent=outdated
+      ? ('Installed app '+installed+' · Live release '+live+' · Update app recommended')
+      : ('Installed app '+installed+' · Live release '+live+' · Up to date');
+    el.classList.add(outdated?'outdated':'current');
+  }else if(installed){
+    el.textContent='Installed app '+installed;
+  }else if(live){
+    el.textContent='Live release '+live+' · installed app version unavailable';
+  }else{
+    el.textContent='Installed app version unavailable';
+  }
+}
 async function refreshProfilePermissionSettings() {
   await Promise.allSettled([
     checkProfilePermission('notifications'),
     checkProfilePermission('camera'),
-    checkProfilePermission('microphone')
+    checkProfilePermission('microphone'),
+    refreshInstalledAppVersion()
   ]);
 }
 for (const [kind,id] of [
