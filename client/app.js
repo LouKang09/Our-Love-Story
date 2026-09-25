@@ -3693,7 +3693,11 @@ async function deleteCurrentMyDay(){
   catch(err){showToast(err?.message||'Could not delete My Day.');}
 }
 
-$('#myDayAddBtn')?.addEventListener('click',openMyDayCamera);
+$('#myDayAddBtn')?.addEventListener('click',e=>{
+  const own=myDayGroups.find(group=>group.own);
+  if(own?.items?.length && !e.target.closest('b'))openMyDayViewer(me?.tag);
+  else openMyDayCamera();
+});
 $('#myDayCameraInput')?.addEventListener('change',e=>prepareMyDayFile(e.target.files?.[0]));
 $('#myDayComposerClose')?.addEventListener('click',closeMyDayComposer);
 $('#myDayRetakeBtn')?.addEventListener('click',openMyDayCamera);
