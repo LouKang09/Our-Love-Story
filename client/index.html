@@ -887,6 +887,11 @@
           <button type="button" data-story-effect="vivid">Vivid</button>
         </div>
 
+        <div id="storyMentionPanel" class="story-editor-tool-panel story-mention-panel hidden" aria-label="Mention someone">
+          <strong>Mention someone you follow</strong>
+          <div id="storyMentionList"></div>
+        </div>
+
         <textarea id="myDayCaption" rows="1" maxlength="280" placeholder="Add a caption (optional)…"></textarea>
 
         <div class="story-editor-tools">
@@ -917,6 +922,8 @@
       <div class="my-day-media">
         <img id="myDayViewerImage" alt="My Day" />
         <div id="myDayViewerOverlayText" class="my-day-overlay-text position-center hidden"></div>
+        <div id="storyViewerMusicBadge" class="story-music-badge hidden">♫ <span></span></div>
+        <audio id="storyViewerAudio" preload="metadata" hidden></audio>
         <p id="myDayViewerCaption"></p>
       </div>
       <button id="myDayNextBtn" class="my-day-nav my-day-next" type="button" aria-label="Next story">›</button>
