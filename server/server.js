@@ -2553,13 +2553,14 @@ async function handleApi(req, res, url) {
   if(myDayReactionMatch && req.method==='POST'){
     const item=activeMyDayItems(social).find(story=>story.id===myDayReactionMatch[1]);
     if(!item)return json(res,404,{error:'That My Day has expired.'});
+    if(item.author!==user && !isFollowing(social,user,item.author))return forbidden(res,'Follow this person to view their My Day.');
     const body=await readBody(req,32*1024);
     const emoji=String(body.emoji||'');
     if(!MY_DAY_REACTIONS.has(emoji))return json(res,400,{error:'Unsupported reaction.'});
     item.reactions=item.reactions && typeof item.reactions==='object' ? item.reactions : {};
     if(item.reactions[user]===emoji)delete item.reactions[user]; else item.reactions[user]=emoji;
     await writeSocial(social);
-    if(item.author!==user){
+    if(item.author!==user && item.reactions[user]){
       const actor=publicProfileFor(social,user);
       await sendUserPush(social,{
         to:item.author,
