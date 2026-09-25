@@ -3849,6 +3849,7 @@ async function openMyDayCamera(){
           correctOrientation:true
         });
         const file=await nativeCameraPhotoToFile(photo);
+        closeStoryCreateHub();
         prepareMyDayFile(file);
         showToast('Photo ready — add text or share your story.');
         return;
@@ -3927,28 +3928,48 @@ async function uploadMyDayImageWithProgress(file){
   const dataUrl=await fileToDataUrl(compressed);
   setMyDayPostProgress(34,'Starting upload…');
   return myDayUploadRequest(
-    {dataUrl,name:compressed.name||file.name||'my-day-photo'},
-    ratio=>setMyDayPostProgress(34+(Math.max(0,Math.min(1,ratio))*51),'Uploading photo…')
+    {dataUrl,name:compressed.name||file.name||'story-photo'},
+    ratio=>setMyDayPostProgress(34+(Math.max(0,Math.min(1,ratio))*46),'Uploading photo…')
   );
 }
-function prepareMyDayFile(file){
+async function uploadStoryMusicWithProgress(file){
+  if(!file)return null;
+  if(file.size>8*1024*1024)throw new Error('Story music must be 8 MB or smaller.');
+  setMyDayPostProgress(81,'Preparing music…');
+  const dataUrl=await fileToDataUrl(file);
+  return myDayUploadRequest(
+    {dataUrl,name:file.name||'story-music'},
+    ratio=>setMyDayPostProgress(82+(Math.max(0,Math.min(1,ratio))*10),'Uploading music…')
+  );
+}
+function prepareMyDayFile(file,{openText=false}={}){
   if(!file || !String(file.type||'').startsWith('image/'))return;
   pendingMyDayFile=file;
+  pendingStoryMusicFile=null;
+  pendingStoryMusicName='';
+  pendingStoryEffect='original';
   if(pendingMyDayPreviewUrl)URL.revokeObjectURL(pendingMyDayPreviewUrl);
   pendingMyDayPreviewUrl=URL.createObjectURL(file);
   $('#myDayComposerImage').src=pendingMyDayPreviewUrl;
   if($('#myDayCaption'))$('#myDayCaption').value='';
   if($('#myDayText'))$('#myDayText').value='';
   $('#myDayTextPosition')?.querySelectorAll('[data-position]').forEach(button=>button.classList.toggle('active',button.dataset.position==='center'));
+  $('#storyMusicBadge')?.classList.add('hidden');
+  closeStoryToolPanels();
   syncMyDayComposerText();
+  applyStoryEditorEffect();
   resetMyDayPostProgress();
+  closeStoryCreateHub();
   $('#myDayComposer').classList.remove('hidden');
   document.body.classList.add('my-day-open');
-  setTimeout(()=>{
-    const field=$('#myDayText');
-    field?.focus({preventScroll:false});
-    field?.scrollIntoView({behavior:'smooth',block:'nearest'});
-  },220);
+  if(openText){
+    $('#storyTextToolPanel')?.classList.remove('hidden');
+    setTimeout(()=>{
+      const field=$('#myDayText');
+      field?.focus({preventScroll:false});
+      field?.scrollIntoView({behavior:'smooth',block:'nearest'});
+    },180);
+  }
 }
 function closeMyDayComposer(){
   if(myDayPosting)return;
@@ -3956,8 +3977,18 @@ function closeMyDayComposer(){
   document.body.classList.remove('my-day-open');
   if(pendingMyDayPreviewUrl)URL.revokeObjectURL(pendingMyDayPreviewUrl);
   pendingMyDayPreviewUrl='';pendingMyDayFile=null;
+  pendingStoryMusicFile=null;
+  pendingStoryMusicName='';
+  pendingStoryEffect='original';
+  const image=$('#myDayComposerImage');
+  if(image)image.style.filter='none';
+  $('#storyMusicBadge')?.classList.add('hidden');
+  closeStoryToolPanels();
   resetMyDayPostProgress();
   if($('#myDayCameraInput'))$('#myDayCameraInput').value='';
+  if($('#storyGalleryInput'))$('#storyGalleryInput').value='';
+  if($('#storyMultiInput'))$('#storyMultiInput').value='';
+  if($('#storyMusicInput'))$('#storyMusicInput').value='';
 }
 async function postMyDay(){
   if(!pendingMyDayFile||myDayPosting)return;
@@ -3971,13 +4002,18 @@ async function postMyDay(){
   try{
     setMyDayPostProgress(2,'Preparing story…');
     const uploaded=await uploadMyDayImageWithProgress(pendingMyDayFile);
-    setMyDayPostProgress(89,'Saving story…');
+    let musicUpload=null;
+    if(pendingStoryMusicFile)musicUpload=await uploadStoryMusicWithProgress(pendingStoryMusicFile);
+    setMyDayPostProgress(94,'Saving story…');
     const textButton=$('#myDayTextPosition [data-position].active');
     const posted=await api('/api/my-day',{method:'POST',body:JSON.stringify({
       image:uploaded.src,
       caption:String($('#myDayCaption')?.value||'').trim(),
       overlayText:String($('#myDayText')?.value||'').trim(),
-      textPosition:textButton?.dataset.position || 'center'
+      textPosition:textButton?.dataset.position || 'center',
+      effect:pendingStoryEffect,
+      music:musicUpload?.src || '',
+      musicName:pendingStoryMusicName
     })});
     setMyDayPostProgress(100,'Story posted!',{state:'done'});
     await loadMyDays();
