@@ -28,6 +28,11 @@ const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON 
 let FIREBASE_SERVICE_ACCOUNT = null;
 try { FIREBASE_SERVICE_ACCOUNT = FIREBASE_SERVICE_ACCOUNT_JSON ? JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON) : null; } catch {}
 const NATIVE_PUSH_READY = Boolean(FIREBASE_SERVICE_ACCOUNT?.project_id && FIREBASE_SERVICE_ACCOUNT?.client_email && FIREBASE_SERVICE_ACCOUNT?.private_key);
+const HUAWEI_PUSH_CLIENT_ID = String(process.env.HUAWEI_PUSH_CLIENT_ID || '').trim();
+const HUAWEI_PUSH_CLIENT_SECRET = String(process.env.HUAWEI_PUSH_CLIENT_SECRET || '').trim();
+const HUAWEI_PUSH_READY = Boolean(HUAWEI_PUSH_CLIENT_ID && HUAWEI_PUSH_CLIENT_SECRET);
+const MY_DAY_TTL_MS = 24 * 60 * 60 * 1000;
+const MY_DAY_REACTIONS = new Set(['❤️','😂','😮','😢','👍']);
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 const GUIDE_VERSION = 8;
 const PLATFORM_OWNER_SEED_TAG = slugTag(process.env.PLATFORM_OWNER_TAG || 'loukang09');
@@ -226,6 +231,7 @@ async function readSocial() {
   data.uploadOwners = data.uploadOwners && typeof data.uploadOwners === 'object' ? data.uploadOwners : {};
   data.pushSubscriptions = Array.isArray(data.pushSubscriptions) ? data.pushSubscriptions : [];
   data.nativePushTokens = Array.isArray(data.nativePushTokens) ? data.nativePushTokens : [];
+  data.myDays = Array.isArray(data.myDays) ? data.myDays : [];
   data.notificationSettings = data.notificationSettings && typeof data.notificationSettings === 'object' ? data.notificationSettings : {};
   data.notificationHub = data.notificationHub && typeof data.notificationHub === 'object' ? data.notificationHub : {};
   data.mentions = Array.isArray(data.mentions) ? data.mentions : [];
@@ -265,7 +271,7 @@ async function ensureStorage() {
   await fsp.mkdir(UPLOADS, { recursive: true });
   await ensureFile(DATA_FILE, []);
   await ensureFile(ACCOUNTS_FILE, []);
-  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], nativePushTokens: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [], secretContributorProjects: [], memoryUniverseState: {} });
+  await ensureFile(SOCIAL_FILE, { profiles: {}, scrapbooks: [], invites: [], follows: [], pushSubscriptions: [], nativePushTokens: [], myDays: [], notificationSettings: {}, notificationHub: {}, mentions: [], activityNotifications: [], chats: [], chatMessages: [], chatRead: {}, freedomWall: [], secretContributorProjects: [], memoryUniverseState: {} });
   await ensureFile(PRESENCE_FILE, {});
   await loadPresenceStore();
 
@@ -885,6 +891,54 @@ function publicProfileFor(social, tag) {
     presence: presenceSnapshot(tag)
   };
 }
+
+function activeMyDayItems(social, now = Date.now()) {
+  social.myDays = Array.isArray(social.myDays) ? social.myDays : [];
+  return social.myDays.filter(item => {
+    const expires = Date.parse(item?.expiresAt || '');
+    return item?.id && item?.author && item?.image && Number.isFinite(expires) && expires > now;
+  });
+}
+function decorateMyDayItem(social, item, viewer) {
+  const reactionByUser = item?.reactions && typeof item.reactions === 'object' ? item.reactions : {};
+  const counts = {};
+  for (const emoji of Object.values(reactionByUser)) {
+    if (!MY_DAY_REACTIONS.has(emoji)) continue;
+    counts[emoji] = (counts[emoji] || 0) + 1;
+  }
+  return {
+    id:item.id,
+    author:item.author,
+    profile:publicProfileFor(social,item.author),
+    image:item.image,
+    caption:String(item.caption || '').slice(0,280),
+    createdAt:item.createdAt,
+    expiresAt:item.expiresAt,
+    reactionCounts:counts,
+    myReaction:MY_DAY_REACTIONS.has(reactionByUser[viewer]) ? reactionByUser[viewer] : ''
+  };
+}
+function myDayGroupsForViewer(social, viewer) {
+  const allowed = new Set([viewer, ...social.follows.filter(f => f.follower === viewer).map(f => f.following)]);
+  const grouped = new Map();
+  for (const item of activeMyDayItems(social)) {
+    if (!allowed.has(item.author)) continue;
+    if (!grouped.has(item.author)) grouped.set(item.author,[]);
+    grouped.get(item.author).push(item);
+  }
+  return [...grouped.entries()].map(([tag,items]) => {
+    items.sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+    return {
+      profile:publicProfileFor(social,tag),
+      own:tag===viewer,
+      latestAt:items.at(-1)?.createdAt || '',
+      items:items.map(item=>decorateMyDayItem(social,item,viewer))
+    };
+  }).sort((a,b)=>{
+    if(a.own!==b.own)return a.own?-1:1;
+    return String(b.latestAt||'').localeCompare(String(a.latestAt||''));
+  });
+}
 function isFollowing(social, follower, following) {
   return social.follows.some(f => f.follower === follower && f.following === following);
 }
@@ -976,7 +1030,7 @@ async function firebaseAccessToken() {
 }
 async function sendNativeUserPush(social,{to,title,body,tag='scrapbook-social',url='/?notifications=1'}) {
   if(!NATIVE_PUSH_READY || !to) return;
-  const items=(social.nativePushTokens||[]).filter(item=>item.tag===to && item.token);
+  const items=(social.nativePushTokens||[]).filter(item=>item.tag===to && item.platform!=='huawei' && item.token);
   if(!items.length) return;
   let accessToken='';
   try{accessToken=await firebaseAccessToken();}catch(err){console.warn('Native push auth failed:',err?.message||err);return;}
@@ -1029,9 +1083,52 @@ async function sendNativeUserPush(social,{to,title,body,tag='scrapbook-social',u
     }catch(err){console.warn('Native push failed:',err?.message||err);}
   }
 }
+let huaweiAccessTokenCache = { token:'', expiresAt:0 };
+async function huaweiAccessToken() {
+  if (!HUAWEI_PUSH_READY) return '';
+  if (huaweiAccessTokenCache.token && huaweiAccessTokenCache.expiresAt > Date.now() + 60000) return huaweiAccessTokenCache.token;
+  const response = await fetch('https://oauth-login.cloud.huawei.com/oauth2/v3/token', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+    body:new URLSearchParams({ grant_type:'client_credentials', client_id:HUAWEI_PUSH_CLIENT_ID, client_secret:HUAWEI_PUSH_CLIENT_SECRET })
+  });
+  if (!response.ok) throw new Error('Huawei OAuth failed (' + response.status + ')');
+  const data = await response.json();
+  huaweiAccessTokenCache = { token:String(data.access_token || ''), expiresAt:Date.now() + Math.max(300,Number(data.expires_in)||3600)*1000 };
+  return huaweiAccessTokenCache.token;
+}
+async function sendHuaweiUserPush(social, {to,title,body,tag='scrapbook-social',url='/?notifications=1'}) {
+  if (!HUAWEI_PUSH_READY || !to) return;
+  const items=(social.nativePushTokens||[]).filter(item=>item.tag===to && item.platform==='huawei' && item.token);
+  if (!items.length) return;
+  let accessToken='';
+  try { accessToken=await huaweiAccessToken(); } catch(err) { console.warn('Huawei push auth failed:',err?.message||err); return; }
+  for (const item of [...items]) {
+    try {
+      const response=await fetch('https://push-api.cloud.huawei.com/v1/' + encodeURIComponent(HUAWEI_PUSH_CLIENT_ID) + '/messages:send', {
+        method:'POST',
+        headers:{ 'Authorization':'Bearer ' + accessToken, 'Content-Type':'application/json; charset=UTF-8' },
+        body:JSON.stringify({
+          validate_only:false,
+          message:{
+            notification:{ title:String(title||'Scrapella').slice(0,120), body:String(body||'Open Scrapella to see what changed.').slice(0,180) },
+            android:{ notification:{ click_action:{type:3}, default_sound:true } },
+            data:JSON.stringify({url:String(url||'/?notifications=1'),tag:String(tag||'scrapbook-social')}),
+            token:[item.token]
+          }
+        })
+      });
+      if (!response.ok) {
+        const detail=await response.text().catch(()=>'');
+        console.warn('Huawei push failed:',response.status,detail.slice(0,220));
+      }
+    } catch(err) { console.warn('Huawei push failed:',err?.message||err); }
+  }
+}
 async function sendUserPush(social, { to, title, body, tag = 'scrapbook-social', url = '/?notifications=1' }) {
   if (!to) return;
   await sendNativeUserPush(social,{to,title,body,tag,url});
+  await sendHuaweiUserPush(social,{to,title,body,tag,url});
   if (!PUSH_READY) return;
   const subscriptions = social.pushSubscriptions.filter(item => item.tag === to);
   if (!subscriptions.length) return;
@@ -1364,6 +1461,13 @@ function decorateChatMessage(social, message, user) {
     ].filter(Boolean))].slice(0,10),
     image:message.deletedAt ? '' : (message.image || (Array.isArray(message.images) ? message.images[0] || '' : '')),
     audio:message.deletedAt ? '' : (message.audio || ''),
+    myDayReply:message.deletedAt || !message.myDayReply ? null : {
+      storyId:String(message.myDayReply.storyId || ''),
+      author:String(message.myDayReply.author || ''),
+      image:String(message.myDayReply.image || ''),
+      caption:String(message.myDayReply.caption || '').slice(0,280),
+      createdAt:message.myDayReply.createdAt || null
+    },
     replyTo:replied ? {
       id:replied.id,
       author:replied.author,
@@ -1625,7 +1729,8 @@ async function handleApi(req, res, url) {
     production: PROD,
     pushEnabled: PUSH_READY,
     pushPublicKey: PUSH_READY ? VAPID_PUBLIC_KEY : '',
-    nativePushEnabled: NATIVE_PUSH_READY
+    nativePushEnabled: NATIVE_PUSH_READY,
+    huaweiPushEnabled: HUAWEI_PUSH_READY
   });
 
   if (pathname === '/api/tag-availability' && req.method === 'GET') {
@@ -2076,14 +2181,14 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/push/native/register' && req.method === 'POST') {
     const body = await readBody(req,64*1024);
     const token = String(body.token || '').trim().slice(0,4096);
-    const platform = ['android','ios'].includes(String(body.platform||'')) ? String(body.platform) : 'android';
+    const platform = ['android','ios','huawei'].includes(String(body.platform||'')) ? String(body.platform) : 'android';
     if (!token) return json(res,400,{ error:'Missing native push token.' });
     social.nativePushTokens ||= [];
     social.nativePushTokens = social.nativePushTokens.filter(item => item.token !== token);
     social.nativePushTokens.push({ tag:user, token, platform, updatedAt:new Date().toISOString() });
     if (social.nativePushTokens.length > 2000) social.nativePushTokens = social.nativePushTokens.slice(-2000);
     await writeSocial(social);
-    return json(res,200,{ ok:true, nativePushReady:NATIVE_PUSH_READY });
+    return json(res,200,{ ok:true, nativePushReady:platform==='huawei' ? HUAWEI_PUSH_READY : NATIVE_PUSH_READY, huaweiPushReady:HUAWEI_PUSH_READY });
   }
 
   if (pathname === '/api/push/native/unregister' && req.method === 'POST') {
@@ -2412,6 +2517,61 @@ async function handleApi(req, res, url) {
     });
   }
 
+  if (pathname === '/api/my-day' && req.method === 'GET') {
+    return json(res,200,{ groups:myDayGroupsForViewer(social,user), ttlHours:24 });
+  }
+
+  if (pathname === '/api/my-day' && req.method === 'POST') {
+    const body=await readBody(req,128*1024);
+    const image=String(body.image || '').trim();
+    const caption=String(body.caption || '').trim().slice(0,280);
+    if(!image.startsWith('/uploads/'))return json(res,400,{error:'Take or choose a photo first.'});
+    if(social.uploadOwners?.[image]!==user)return forbidden(res,'You can only post a photo you uploaded.');
+    const createdAt=new Date().toISOString();
+    const item={id:crypto.randomUUID(),author:user,image,caption,reactions:{},createdAt,expiresAt:new Date(Date.now()+MY_DAY_TTL_MS).toISOString()};
+    social.myDays=activeMyDayItems(social);
+    social.myDays.push(item);
+    await writeSocial(social);
+    const dayFollowers=social.follows.filter(f=>f.following===user).map(f=>f.follower);
+    emitLiveMany([...new Set([user,...dayFollowers])],'myday',{type:'posted',from:user,storyId:item.id});
+    return json(res,201,{item:decorateMyDayItem(social,item,user),groups:myDayGroupsForViewer(social,user)});
+  }
+
+  const myDayDeleteMatch=pathname.match(/^\/api\/my-day\/([a-f0-9-]+)$/i);
+  if(myDayDeleteMatch && req.method==='DELETE'){
+    const item=(social.myDays||[]).find(story=>story.id===myDayDeleteMatch[1]);
+    if(!item)return notFound(res);
+    if(item.author!==user)return forbidden(res,'You can only delete your own My Day.');
+    social.myDays=(social.myDays||[]).filter(story=>story.id!==item.id);
+    await writeSocial(social);
+    const dayFollowers=social.follows.filter(f=>f.following===user).map(f=>f.follower);
+    emitLiveMany([...new Set([user,...dayFollowers])],'myday',{type:'deleted',from:user,storyId:item.id});
+    return json(res,200,{ok:true});
+  }
+
+  const myDayReactionMatch=pathname.match(/^\/api\/my-day\/([a-f0-9-]+)\/reaction$/i);
+  if(myDayReactionMatch && req.method==='POST'){
+    const item=activeMyDayItems(social).find(story=>story.id===myDayReactionMatch[1]);
+    if(!item)return json(res,404,{error:'That My Day has expired.'});
+    const body=await readBody(req,32*1024);
+    const emoji=String(body.emoji||'');
+    if(!MY_DAY_REACTIONS.has(emoji))return json(res,400,{error:'Unsupported reaction.'});
+    item.reactions=item.reactions && typeof item.reactions==='object' ? item.reactions : {};
+    if(item.reactions[user]===emoji)delete item.reactions[user]; else item.reactions[user]=emoji;
+    await writeSocial(social);
+    if(item.author!==user){
+      const actor=publicProfileFor(social,user);
+      await sendUserPush(social,{
+        to:item.author,
+        title:(actor.displayName || displayTag(user)) + ' reacted to your My Day',
+        body:(emoji + ' ' + (item.caption || 'Open Scrapella to see your My Day.')).slice(0,180),
+        tag:'myday-' + item.id,
+        url:'/?myday=1'
+      });
+      emitLiveEvent(item.author,'myday',{type:'reaction',from:user,storyId:item.id,emoji});
+    }
+    return json(res,200,{item:decorateMyDayItem(social,item,user)});
+  }
   if (pathname === '/api/scrapbooks' && req.method === 'POST') {
     const body = await readBody(req, 128 * 1024);
     const type = body.type === 'couple' ? 'couple' : (body.type === 'personal' ? 'personal' : 'group');
@@ -2926,7 +3086,16 @@ async function handleApi(req, res, url) {
     const replyTo = String(body.replyTo || '');
     const repliedMessage = replyTo ? social.chatMessages.find(item => item.id === replyTo && item.chatId === chat.id) : null;
     if (replyTo && (!repliedMessage || repliedMessage.deletedAt)) return json(res, 400, { error:'That replied message is no longer available.' });
-    if (!text && !images.length && !audio) return json(res, 400, { error:'Write a message or attach media.' });
+    let myDayReply=null;
+    const myDayReplyId=String(body.myDayReply?.storyId || '').trim();
+    if(myDayReplyId){
+      if(chat.type!=='private')return json(res,400,{error:'My Day replies can only be sent in a private conversation.'});
+      const story=activeMyDayItems(social).find(item=>item.id===myDayReplyId);
+      const other=chatMembers(social,chat).find(tag=>tag!==user);
+      if(!story || story.author!==other)return json(res,400,{error:'That My Day is no longer available.'});
+      myDayReply={storyId:story.id,author:story.author,image:story.image,caption:String(story.caption||'').slice(0,280),createdAt:story.createdAt};
+    }
+    if (!text && !images.length && !audio && !myDayReply) return json(res, 400, { error:'Write a message or attach media.' });
     for (const src of images) {
       if (!src.startsWith('/uploads/')) return json(res, 400, { error:'Chat photos must be uploaded first.' });
       if (social.uploadOwners?.[src] !== user) return forbidden(res, 'You can only send photos you uploaded.');
@@ -2944,6 +3113,7 @@ async function handleApi(req, res, url) {
       image,
       audio,
       replyTo:repliedMessage?.id || null,
+      myDayReply,
       reactions:{},
       createdAt:new Date().toISOString()
     };
