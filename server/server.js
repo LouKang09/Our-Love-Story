@@ -930,6 +930,9 @@ function decorateMyDayItem(social, item, viewer) {
     caption:String(item.caption || '').slice(0,280),
     overlayText:String(item.overlayText || '').slice(0,180),
     textPosition:['top','center','bottom'].includes(item.textPosition) ? item.textPosition : 'center',
+    effect:['original','warm','cool','bw','vivid'].includes(item.effect) ? item.effect : 'original',
+    music:String(item.music || '').startsWith('/uploads/') ? String(item.music) : '',
+    musicName:String(item.musicName || '').slice(0,120),
     createdAt:item.createdAt,
     expiresAt:item.expiresAt,
     reactionCounts:counts,
@@ -2550,8 +2553,12 @@ async function handleApi(req, res, url) {
     const caption=String(body.caption || '').trim().slice(0,280);
     const overlayText=String(body.overlayText || '').trim().slice(0,180);
     const textPosition=['top','center','bottom'].includes(String(body.textPosition||'')) ? String(body.textPosition) : 'center';
+    const effect=['original','warm','cool','bw','vivid'].includes(String(body.effect||'')) ? String(body.effect) : 'original';
+    const music=String(body.music || '').trim();
+    const musicName=String(body.musicName || '').trim().slice(0,120);
     if(!image.startsWith('/uploads/'))return json(res,400,{error:'Take or choose a photo first.'});
     if(social.uploadOwners?.[image]!==user)return forbidden(res,'You can only post a photo you uploaded.');
+    if(music && social.uploadOwners?.[music]!==user)return forbidden(res,'You can only attach music you uploaded.');
     const createdAt=new Date().toISOString();
     const item={
       id:crypto.randomUUID(),
@@ -2560,6 +2567,9 @@ async function handleApi(req, res, url) {
       caption,
       overlayText,
       textPosition,
+      effect,
+      music,
+      musicName,
       reactions:{},
       reactionAt:{},
       views:{},
