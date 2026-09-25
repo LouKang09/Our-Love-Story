@@ -29,6 +29,12 @@ let invites = [];
 let following = [];
 let followers = [];
 let homeData = { followingShelf: [], friendSuggestions: [] };
+let myDayGroups = [];
+let myDayGroupIndex = 0;
+let myDayItemIndex = 0;
+let pendingMyDayFile = null;
+let pendingMyDayPreviewUrl = '';
+let homeMyDaySwipe = null;
 let notificationSummary = { count: 0, pendingInvites: 0 };
 let notificationItems = [];
 let chats = [];
@@ -101,7 +107,7 @@ let profileViewerX = 0;
 let profileViewerY = 0;
 const profileViewerPointers = new Map();
 let profileViewerGesture = null;
-let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.', nativePushEnabled:false };
+let config = { title: 'Our Little Book of Us', subtitle: 'Every ordinary day deserves to be remembered.', nativePushEnabled:false, huaweiPushEnabled:false };
 let toastTimer;
 let liveEventSource = null;
 let realtimeEntryTimer = null;
@@ -134,7 +140,7 @@ function isPhoneUI() {
   return window.matchMedia(PHONE_UI_QUERY).matches;
 }
 
-const NATIVE_PERMISSION_KEY = 'scrapella-native-permissions-v5';
+const NATIVE_PERMISSION_KEY = 'scrapella-native-permissions-v6';
 const NATIVE_THEME_KEY = 'scrapella-native-theme-v1';
 const nativePluginCache = {};
 
@@ -242,6 +248,40 @@ function closeNativePermissionGate(mark = 'done') {
   gate.classList.add('hidden');
   document.body.classList.remove('native-permission-open');
 }
+async function nativeNotificationPermission({request=false}={}){
+  if(!isNativeScrapellaApp())return {state:'unknown',label:'Unavailable here'};
+  if(nativePlatform()==='android'){
+    const helper=nativePlugin('NotificationPermission');
+    if(helper){
+      try{
+        const result=request && helper.request
+          ? await permissionTimeout(helper.request(),12000)
+          : helper.check ? await permissionTimeout(helper.check(),5000) : null;
+        const value=String(result?.notifications || '').toLowerCase();
+        if(value==='granted')return {state:'granted',label:'Allowed'};
+        if(value==='settings')return {state:'prompt',label:'Allow in phone notification settings',openedSettings:true};
+        if(value==='denied')return {state:'denied',label:'Not allowed'};
+      }catch{}
+    }
+  }
+  const push=nativePlugin('PushNotifications');
+  const local=nativePlugin('LocalNotifications');
+  let pushResult=null,localResult=null;
+  try{
+    pushResult=push?.checkPermissions ? await permissionTimeout(push.checkPermissions(),4500) : null;
+    if(request && push?.requestPermissions && pushResult?.receive!=='granted') pushResult=await permissionTimeout(push.requestPermissions(),9000);
+  }catch{}
+  try{
+    localResult=local?.checkPermissions ? await permissionTimeout(local.checkPermissions(),4500) : null;
+    if(request && local?.requestPermissions && localResult?.display!=='granted') localResult=await permissionTimeout(local.requestPermissions(),9000);
+  }catch{}
+  const granted=pushResult?.receive==='granted' || localResult?.display==='granted';
+  const denied=pushResult?.receive==='denied' && (!local || localResult?.display==='denied');
+  return granted
+    ? {state:'granted',label:'Allowed',pushResult,localResult}
+    : denied ? {state:'denied',label:'Not allowed',pushResult,localResult}
+      : {state:'prompt',label:'Tap to allow',pushResult,localResult};
+}
 async function maybeShowNativePermissionGate() {
   if (!isNativeScrapellaApp()) return;
   try {
@@ -307,18 +347,10 @@ async function requestScrapellaNativePermissions() {
 
   try {
     setNativePermissionState('notifications','working','Waiting…');
-    let pushResult = push?.checkPermissions ? await permissionTimeout(push.checkPermissions()) : null;
-    let localResult = local?.checkPermissions ? await permissionTimeout(local.checkPermissions()) : null;
-    if (push?.requestPermissions && (!pushResult || pushResult.receive === 'prompt' || pushResult.receive === 'prompt-with-rationale')) {
-      pushResult = await permissionTimeout(push.requestPermissions());
-    }
-    if (local?.requestPermissions && (!localResult || localResult.display !== 'granted')) {
-      localResult = await permissionTimeout(local.requestPermissions());
-    }
-    const allowed = pushResult?.receive === 'granted' || localResult?.display === 'granted';
-    setNativePermissionState('notifications',allowed ? 'granted' : 'denied',allowed ? 'Allowed' : 'Not allowed');
+    const notification=await nativeNotificationPermission({request:true});
+    setNativePermissionState('notifications',notification.state==='granted'?'granted':notification.state==='denied'?'denied':'',notification.label);
   } catch {
-    setNativePermissionState('notifications','denied','Skipped');
+    setNativePermissionState('notifications','denied','Could not check');
   }
 
   try {
@@ -390,25 +422,14 @@ async function checkProfilePermission(kind, { request = false } = {}) {
   setProfilePermissionState(kind,'working','Checking…');
   if (kind === 'notifications') {
     try {
-      const push = nativePlugin('PushNotifications');
-      const local = nativePlugin('LocalNotifications');
-      if (push || local) {
-        let pushResult = push?.checkPermissions ? await permissionTimeout(push.checkPermissions(),4500) : null;
-        let localResult = local?.checkPermissions ? await permissionTimeout(local.checkPermissions(),4500) : null;
-        if (request && push?.requestPermissions && pushResult?.receive !== 'granted') {
-          pushResult = await permissionTimeout(push.requestPermissions(),9000);
-        }
-        if (request && local?.requestPermissions && localResult?.display !== 'granted') {
-          localResult = await permissionTimeout(local.requestPermissions(),9000);
-        }
-        const granted = pushResult?.receive === 'granted' || localResult?.display === 'granted';
-        const denied = pushResult?.receive === 'denied' && (!local || localResult?.display === 'denied');
-        const state = granted ? 'granted' : denied ? 'denied' : 'prompt';
-        const label = state === 'granted'
-          ? (config.nativePushEnabled ? 'Allowed · background push ready' : 'Allowed · app alerts ready')
-          : state === 'denied' ? 'Not allowed' : 'Tap to allow';
-        setProfilePermissionState(kind,state,label);
-        return state;
+      if(isNativeScrapellaApp()){
+        const notification=await nativeNotificationPermission({request});
+        const pushReady=config.nativePushEnabled || config.huaweiPushEnabled;
+        const label=notification.state==='granted'
+          ? (pushReady ? 'Allowed · background push available' : 'Allowed · phone alerts enabled')
+          : notification.label;
+        setProfilePermissionState(kind,notification.state,label);
+        return notification.state;
       }
       if ('Notification' in window) {
         let value = Notification.permission;
@@ -696,9 +717,8 @@ function phonePullIndicator(){
 function syncPhonePullIdleHint(){
   if(!isPhoneUI() || !me?.tag)return;
   const el=phonePullIndicator();
-  const atTop=phoneAtScrollTop();
-  el.classList.toggle('idle-visible',atTop && !phonePullRefreshing);
-  if(atTop && !phonePullRefreshing){
+  el.classList.remove('idle-visible');
+  if(!phonePullRefreshing){
     el.style.setProperty('--pull','0');
     const label=el.querySelector('b');
     if(label)label.textContent='Pull to refresh';
@@ -795,7 +815,7 @@ document.addEventListener('touchstart',e=>{
   if(!phoneAtScrollTop(phonePullScroller)){phonePullReset();return;}
   phonePullStartY=touchY;
   phonePullDistance=0;
-  phonePullIndicator().classList.add('idle-visible');
+  phonePullIndicator().classList.remove('idle-visible');
   document.body.classList.remove('scrapella-pull-settling');
 },{passive:true,capture:true});
 document.addEventListener('touchmove',e=>{
@@ -2590,6 +2610,9 @@ function connectLiveEvents() {
   source.addEventListener('wall', () => {
     if (currentMode === 'universe' && universeLabMode === 'wall') renderUniverseFreedomWallLab().catch(()=>{});
   });
+  source.addEventListener('myday', () => {
+    loadMyDays().catch(()=>{});
+  });
   source.addEventListener('presence', () => {
     loadChats().then(() => {
       const chat = activeChat();
@@ -3520,8 +3543,179 @@ $('#personProfileBackBtn').addEventListener('click', async () => {
   else showView(mode);
 });
 
+function myDayTimeLabel(value){
+  const ms=Date.now()-(Date.parse(value||'')||Date.now());
+  const mins=Math.max(0,Math.floor(ms/60000));
+  if(mins<1)return 'now';
+  if(mins<60)return String(mins)+'m';
+  return String(Math.floor(mins/60))+'h';
+}
+function myDayCurrent(){
+  const group=myDayGroups[myDayGroupIndex];
+  return {group,item:group?.items?.[myDayItemIndex] || null};
+}
+async function loadMyDays(){
+  if(!me?.tag)return;
+  const data=await api('/api/my-day');
+  myDayGroups=Array.isArray(data.groups)?data.groups:[];
+  renderMyDayTray();
+  if(!$('#myDayViewer')?.classList.contains('hidden'))renderMyDayViewer();
+}
+function renderMyDayTray(){
+  const tray=$('#myDayTray'),list=$('#myDayStoryList'),add=$('#myDayAddBtn');
+  if(!tray||!list||!add)return;
+  const visible=currentMode==='home' && Boolean(me?.tag);
+  tray.classList.toggle('hidden',!visible);
+  if(!visible)return;
+  const own=myDayGroups.find(group=>group.own);
+  add.innerHTML='<span class="my-day-avatar-wrap">'+avatarHtml(me,'my-day-avatar')+'<b>＋</b></span><small>'+(own?.items?.length?'Your day':'Add day')+'</small>';
+  add.classList.toggle('has-story',Boolean(own?.items?.length));
+  const groups=myDayGroups.filter(group=>!group.own);
+  list.innerHTML=groups.length ? groups.map(group=>
+    '<button class="my-day-story-button" type="button" data-myday-tag="'+escapeHtml(group.profile?.tag||'')+'">'+
+      '<span class="my-day-avatar-ring">'+avatarHtml(group.profile||{},'my-day-avatar')+'</span>'+
+      '<small>'+escapeHtml((group.profile?.displayName||group.profile?.tag||'Story').split(' ')[0])+'</small>'+
+    '</button>'
+  ).join('') : '<span class="my-day-empty">My Day posts from people you follow will appear here.</span>';
+  list.querySelectorAll('[data-myday-tag]').forEach(button=>button.addEventListener('click',()=>openMyDayViewer(button.dataset.mydayTag)));
+}
+async function openMyDayCamera(){
+  if(!me?.tag)return;
+  if(isNativeScrapellaApp()){
+    const camera=nativePlugin('Camera');
+    if(camera?.getPhoto){
+      try{
+        const permission=await checkProfilePermission('camera',{request:true});
+        if(permission==='denied'){showToast('Camera permission is needed for My Day.');return;}
+        const photo=await camera.getPhoto({quality:88,allowEditing:false,resultType:'dataUrl',source:'camera',saveToGallery:false});
+        if(photo?.dataUrl){
+          const blob=await (await fetch(photo.dataUrl)).blob();
+          const ext=String(photo.format||'jpeg').replace('jpeg','jpg');
+          const file=new File([blob],'my-day-'+Date.now()+'.'+ext,{type:blob.type||'image/jpeg'});
+          prepareMyDayFile(file);
+          return;
+        }
+      }catch(err){
+        if(String(err?.message||'').toLowerCase().includes('cancel'))return;
+      }
+    }
+  }
+  $('#myDayCameraInput')?.click();
+}
+function prepareMyDayFile(file){
+  if(!file || !String(file.type||'').startsWith('image/'))return;
+  pendingMyDayFile=file;
+  if(pendingMyDayPreviewUrl)URL.revokeObjectURL(pendingMyDayPreviewUrl);
+  pendingMyDayPreviewUrl=URL.createObjectURL(file);
+  $('#myDayComposerImage').src=pendingMyDayPreviewUrl;
+  $('#myDayCaption').value='';
+  $('#myDayComposer').classList.remove('hidden');
+  document.body.classList.add('my-day-open');
+}
+function closeMyDayComposer(){
+  $('#myDayComposer')?.classList.add('hidden');
+  document.body.classList.remove('my-day-open');
+  if(pendingMyDayPreviewUrl)URL.revokeObjectURL(pendingMyDayPreviewUrl);
+  pendingMyDayPreviewUrl='';pendingMyDayFile=null;
+  if($('#myDayCameraInput'))$('#myDayCameraInput').value='';
+}
+async function postMyDay(){
+  if(!pendingMyDayFile)return;
+  const button=$('#myDayPostBtn');if(button)button.disabled=true;
+  try{
+    const uploaded=await uploadImage(pendingMyDayFile);
+    await api('/api/my-day',{method:'POST',body:JSON.stringify({image:uploaded.src,caption:String($('#myDayCaption')?.value||'').trim()})});
+    closeMyDayComposer();await loadMyDays();showToast('Posted to My Day for 24 hours.');
+  }catch(err){showToast(err?.message||'Could not post My Day.');}
+  finally{if(button)button.disabled=false;}
+}
+function openMyDayViewer(tag,itemIndex=0){
+  const index=myDayGroups.findIndex(group=>group.profile?.tag===tag);if(index<0)return;
+  myDayGroupIndex=index;myDayItemIndex=Math.max(0,Math.min(itemIndex,myDayGroups[index].items.length-1));
+  $('#myDayViewer')?.classList.remove('hidden');document.body.classList.add('my-day-open');renderMyDayViewer();
+}
+function closeMyDayViewer(){
+  $('#myDayViewer')?.classList.add('hidden');document.body.classList.remove('my-day-open');
+  if($('#myDayReplyText'))$('#myDayReplyText').value='';
+}
+function moveMyDay(delta){
+  const group=myDayGroups[myDayGroupIndex];if(!group)return closeMyDayViewer();
+  const nextItem=myDayItemIndex+delta;
+  if(nextItem>=0&&nextItem<group.items.length)myDayItemIndex=nextItem;
+  else{
+    const nextGroup=myDayGroupIndex+delta;
+    if(nextGroup<0||nextGroup>=myDayGroups.length)return closeMyDayViewer();
+    myDayGroupIndex=nextGroup;
+    const next=myDayGroups[myDayGroupIndex];
+    myDayItemIndex=delta>0?0:Math.max(0,next.items.length-1);
+  }
+  renderMyDayViewer();
+}
+function renderMyDayViewer(){
+  const current=myDayCurrent(),group=current.group,item=current.item;if(!group||!item)return closeMyDayViewer();
+  $('#myDayProgress').innerHTML=group.items.map((_,index)=>'<i class="'+(index<=myDayItemIndex?'active':'')+'"></i>').join('');
+  $('#myDayViewerIdentity').innerHTML=avatarHtml(group.profile||{},'my-day-viewer-avatar')+'<span><strong>'+escapeHtml(group.profile?.displayName||group.profile?.tag||'My Day')+'</strong><small>@'+escapeHtml(group.profile?.tag||'')+' · '+escapeHtml(myDayTimeLabel(item.createdAt))+'</small></span>';
+  $('#myDayViewerImage').src=item.image;
+  const caption=$('#myDayViewerCaption');caption.textContent=item.caption||'';caption.classList.toggle('hidden',!item.caption);
+  const reactions=$('#myDayReactions');
+  reactions.innerHTML=['❤️','😂','😮','😢','👍'].map(emoji=>{
+    const count=Number(item.reactionCounts?.[emoji])||0;
+    return '<button type="button" class="'+(item.myReaction===emoji?'active':'')+'" data-myday-reaction="'+emoji+'"><span>'+emoji+'</span>'+(count?'<b>'+count+'</b>':'')+'</button>';
+  }).join('');
+  reactions.querySelectorAll('[data-myday-reaction]').forEach(button=>button.addEventListener('click',()=>reactToMyDay(item.id,button.dataset.mydayReaction)));
+  const own=group.profile?.tag===me?.tag;
+  $('#myDayReplyForm')?.classList.toggle('hidden',own);$('#myDayReactions')?.classList.toggle('hidden',own);$('#myDayDeleteBtn')?.classList.toggle('hidden',!own);
+}
+async function reactToMyDay(storyId,emoji){
+  try{
+    const data=await api('/api/my-day/'+encodeURIComponent(storyId)+'/reaction',{method:'POST',body:JSON.stringify({emoji})});
+    const current=myDayCurrent(),group=current.group;
+    const index=group?.items?.findIndex(item=>item.id===storyId)??-1;
+    if(index>=0&&data.item)group.items[index]=data.item;
+    renderMyDayViewer();
+  }catch(err){showToast(err?.message||'Could not react to My Day.');}
+}
+async function replyToMyDay(text){
+  const current=myDayCurrent(),group=current.group,item=current.item,target=group?.profile?.tag,message=String(text||'').trim();
+  if(!target||target===me?.tag||!item||!message)return;
+  const submit=$('#myDayReplyForm')?.querySelector('button[type="submit"]');if(submit)submit.disabled=true;
+  try{
+    const created=await api('/api/chats/private',{method:'POST',body:JSON.stringify({tag:target})});
+    const chatId=created.chat?.id;if(!chatId)throw new Error('Could not open the conversation.');
+    await api('/api/chats/'+encodeURIComponent(chatId)+'/messages',{method:'POST',body:JSON.stringify({text:message,myDayReply:{storyId:item.id}})});
+    closeMyDayViewer();showView('messages');await loadChats();await openChat(chatId);
+  }catch(err){showToast(err?.message||'Could not reply to My Day.');}
+  finally{if(submit)submit.disabled=false;}
+}
+async function deleteCurrentMyDay(){
+  const current=myDayCurrent(),item=current.item,group=current.group;if(!item||group?.profile?.tag!==me?.tag)return;
+  try{await api('/api/my-day/'+encodeURIComponent(item.id),{method:'DELETE'});closeMyDayViewer();await loadMyDays();showToast('My Day deleted.');}
+  catch(err){showToast(err?.message||'Could not delete My Day.');}
+}
+
+$('#myDayAddBtn')?.addEventListener('click',openMyDayCamera);
+$('#myDayCameraInput')?.addEventListener('change',e=>prepareMyDayFile(e.target.files?.[0]));
+$('#myDayComposerClose')?.addEventListener('click',closeMyDayComposer);
+$('#myDayRetakeBtn')?.addEventListener('click',openMyDayCamera);
+$('#myDayPostBtn')?.addEventListener('click',postMyDay);
+$('#myDayViewerClose')?.addEventListener('click',closeMyDayViewer);
+$('#myDayPrevBtn')?.addEventListener('click',()=>moveMyDay(-1));
+$('#myDayNextBtn')?.addEventListener('click',()=>moveMyDay(1));
+$('#myDayDeleteBtn')?.addEventListener('click',deleteCurrentMyDay);
+$('#myDayReplyForm')?.addEventListener('submit',e=>{e.preventDefault();replyToMyDay($('#myDayReplyText')?.value);});
+homeView?.addEventListener('touchstart',e=>{
+  if(currentMode!=='home'||e.touches.length!==1||e.target.closest('input,textarea,button,a,select'))return;
+  const touch=e.touches[0];homeMyDaySwipe={x:touch.clientX,y:touch.clientY,time:Date.now()};
+},{passive:true});
+homeView?.addEventListener('touchend',e=>{
+  if(!homeMyDaySwipe||currentMode!=='home')return;
+  const touch=e.changedTouches?.[0],start=homeMyDaySwipe;homeMyDaySwipe=null;if(!touch)return;
+  const dx=touch.clientX-start.x,dy=touch.clientY-start.y;
+  if(dx>=90&&Math.abs(dy)<=70&&Date.now()-start.time<900)openMyDayCamera();
+},{passive:true});
 function renderHome() {
   if (!me) return;
+  renderMyDayTray();
   if (!$('#homeSearchInput')?.value.trim()) {
     $('#homeSearchResults')?.classList.add('hidden');
     if ($('#homeSearchResults')) $('#homeSearchResults').innerHTML = '';
@@ -4981,6 +5175,7 @@ function renderChatMessages({stickBottom=true}={}) {
         ${message.deleted
           ? '<p class="chat-message-deleted"><span>⊘</span> Message deleted</p>'
           : `${reply ? `<button type="button" class="chat-reply-quote" data-reply-target="${escapeHtml(reply.id || '')}"><small>↪ ${mine ? 'You replied to' : 'Replied to'} ${escapeHtml(reply.profile?.displayName || reply.author || 'message')}</small><span>${escapeHtml(chatReplySnippet(reply))}</span></button>` : ''}
+             ${message.myDayReply ? `<div class="chat-myday-reply"><img src="${escapeHtml(message.myDayReply.image||'')}" alt="" /><span><small>Replied to My Day</small><strong>@${escapeHtml(message.myDayReply.author||'')}</strong></span></div>` : ''}
              ${images.length ? `<div class="chat-image-group chat-image-count-${Math.min(images.length,10)}" data-image-count="${images.length}">${images.map((src,index)=>`<button class="chat-message-image-button" type="button" data-chat-image="${escapeHtml(src)}" aria-label="View photo ${index+1} of ${images.length}"><img class="chat-message-image" src="${escapeHtml(src)}" alt="Chat photo ${index+1}" loading="lazy" /></button>`).join('')}</div>` : ''}
              ${chatVoiceHtml(message)}
              ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
@@ -7381,6 +7576,8 @@ function showView(mode) {
   connectionsView.classList.toggle('hidden', mode !== 'connections');
   messagesView.classList.toggle('hidden', mode !== 'messages');
   personProfileView.classList.toggle('hidden', mode !== 'person');
+  $('#myDayTray')?.classList.toggle('hidden', mode !== 'home');
+  if(mode==='home')renderMyDayTray();
   $('#homeModeBtn').classList.toggle('active', mode === 'home');
   $('#bookModeBtn').classList.toggle('active', mode === 'book' || (isPhoneUI() && (mode === 'cover' || mode === 'stream')));
   $('#streamModeBtn').classList.toggle('active', mode === 'stream');
@@ -7480,6 +7677,7 @@ async function loadSession(preferredBookId = null) {
   if (!mobileBookContextTag && me?.tag) mobileBookContextTag = me.tag;
   syncResponsiveChrome();
   renderScrapbookPicker(); renderProfileChip(); renderInviteBanner(); renderNotificationBadge(); renderMessagesBadge(); renderFollowStats(); renderHome(); updateCover();
+  loadMyDays().catch(()=>{});
   await refreshEntries();
 }
 let liveRefreshSeq = 0;
@@ -8331,6 +8529,8 @@ async function ensureNativeChatNotifications() {
   const local = nativePlugin('LocalNotifications');
   const push = nativePlugin('PushNotifications');
 
+  try { await nativeNotificationPermission({request:true}); } catch {}
+
   try {
     if (local && !nativeChatNotificationsReady) {
       let permission = local.checkPermissions ? await permissionTimeout(local.checkPermissions(),4000) : null;
@@ -8436,6 +8636,23 @@ async function ensureNativeChatNotifications() {
     }
   } catch {}
 
+  // Huawei devices without Google Mobile Services use HMS Push Kit when the native bridge is present.
+  if(nativePlatform()==='android'){
+    try{
+      const huawei=nativePlugin('HuaweiPush');
+      if(huawei?.getToken){
+        const result=await permissionTimeout(huawei.getToken(),12000);
+        const token=String(result?.token || '');
+        if(token){
+          const registered=await api('/api/push/native/register',{
+            method:'POST',
+            body:JSON.stringify({token,platform:'huawei'})
+          });
+          config.huaweiPushEnabled=registered?.huaweiPushReady===true;
+        }
+      }
+    }catch{}
+  }
   // Web Push remains an additional fallback where supported.
   if (config.pushEnabled && 'serviceWorker' in navigator && 'PushManager' in window) {
     try {
@@ -8596,6 +8813,11 @@ function maybeOpenReminderComposer() {
       await loadChats();
       if (chats.some(chat => chat.id === messageChatId)) await openChat(messageChatId);
     }, 180);
+    return;
+  }
+  if (params.get('myday') === '1') {
+    history.replaceState({}, '', location.pathname);
+    setTimeout(async()=>{showView('home');await loadMyDays().catch(()=>{});},180);
     return;
   }
   if (params.get('notifications') === '1') {
