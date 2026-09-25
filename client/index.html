@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="/assets/scrapella-logo.webp" />
   <link rel="preload" as="image" href="/assets/scrapella-logo.webp" />
   <title>Scrapella</title>
-  <link rel="stylesheet" href="/styles.css?v=20260925-header-pull-affordance2" />
+  <link rel="stylesheet" href="/styles.css?v=20260925-myday-notify1" />
 </head>
 <body class="auth-pending brand-intro-active">
   <div id="app">
@@ -149,6 +149,12 @@
           <button id="logoutBtn" class="logout-btn" type="button">Log out</button>
         </div>
       </header>
+
+      <section id="myDayTray" class="my-day-tray hidden" aria-label="My Day stories">
+        <button id="myDayAddBtn" class="my-day-add" type="button" aria-label="Add to My Day"></button>
+        <div id="myDayStoryList" class="my-day-story-list"></div>
+      </section>
+      <input id="myDayCameraInput" type="file" accept="image/*" capture="environment" hidden />
 
       <section id="inviteBanner" class="invite-banner hidden"></section>
 
@@ -815,8 +821,31 @@
       <p class="profile-image-viewer-hint">Pinch with two fingers to zoom · drag when zoomed in</p>
     </div>
 
+    <div id="myDayComposer" class="my-day-overlay hidden" role="dialog" aria-modal="true" aria-label="Post to My Day">
+      <div class="my-day-composer-card">
+        <header><div><p class="eyebrow">MY DAY</p><h2>Share this moment</h2></div><button id="myDayComposerClose" class="icon-btn" type="button">×</button></header>
+        <img id="myDayComposerImage" alt="My Day preview" />
+        <textarea id="myDayCaption" rows="2" maxlength="280" placeholder="Add a caption…"></textarea>
+        <div class="my-day-composer-actions"><button id="myDayRetakeBtn" class="ghost" type="button">Retake</button><button id="myDayPostBtn" class="primary" type="button">Post to My Day</button></div>
+        <small>My Day disappears automatically after 24 hours.</small>
+      </div>
+    </div>
+
+    <div id="myDayViewer" class="my-day-viewer hidden" role="dialog" aria-modal="true" aria-label="My Day viewer">
+      <div id="myDayProgress" class="my-day-progress"></div>
+      <header class="my-day-viewer-head"><div id="myDayViewerIdentity"></div><button id="myDayViewerClose" type="button" aria-label="Close My Day">×</button></header>
+      <button id="myDayPrevBtn" class="my-day-nav my-day-prev" type="button" aria-label="Previous story">‹</button>
+      <div class="my-day-media"><img id="myDayViewerImage" alt="My Day" /><p id="myDayViewerCaption"></p></div>
+      <button id="myDayNextBtn" class="my-day-nav my-day-next" type="button" aria-label="Next story">›</button>
+      <div id="myDayViewerActions" class="my-day-viewer-actions">
+        <div id="myDayReactions" class="my-day-reactions" aria-label="React to My Day"></div>
+        <form id="myDayReplyForm" class="my-day-reply-form"><input id="myDayReplyText" maxlength="1000" placeholder="Reply to My Day…" autocomplete="off" /><button class="primary" type="submit">Send</button></form>
+        <button id="myDayDeleteBtn" class="ghost my-day-delete hidden" type="button">Delete My Day</button>
+      </div>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260925-header-pull-affordance2" defer></script>
+  <script src="/app.js?v=20260925-myday-notify1" defer></script>
 </body>
 </html>
