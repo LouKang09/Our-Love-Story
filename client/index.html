@@ -921,7 +921,13 @@
 
     <div id="myDayViewer" class="my-day-viewer hidden" role="dialog" aria-modal="true" aria-label="My Day viewer">
       <div id="myDayProgress" class="my-day-progress"></div>
-      <header class="my-day-viewer-head"><div id="myDayViewerIdentity"></div><button id="myDayViewerClose" type="button" aria-label="Close My Day">×</button></header>
+      <header class="my-day-viewer-head">
+        <div id="myDayViewerIdentity"></div>
+        <div class="my-day-viewer-head-actions">
+          <button id="myDayMoreBtn" class="my-day-more-btn hidden" type="button" aria-label="Story options">•••</button>
+          <button id="myDayViewerClose" type="button" aria-label="Close My Day">×</button>
+        </div>
+      </header>
       <button id="myDayPrevBtn" class="my-day-nav my-day-prev" type="button" aria-label="Previous story">‹</button>
       <div class="my-day-media">
         <img id="myDayViewerImage" alt="My Day" />
@@ -939,14 +945,46 @@
       </div>
       <div id="myDayViewerActions" class="my-day-viewer-actions">
         <div id="myDayStoryCounter" class="my-day-story-counter hidden"></div>
-        <div id="myDayReactions" class="my-day-reactions" aria-label="React to My Day"></div>
-        <form id="myDayReplyForm" class="my-day-reply-form"><input id="myDayReplyText" maxlength="1000" placeholder="Reply to My Day…" autocomplete="off" /><button class="primary" type="submit">Send</button></form>
-        <button id="myDayDeleteBtn" class="ghost my-day-delete hidden" type="button">Delete My Day</button>
+        <div id="myDayOtherActionBar" class="my-day-other-action-bar">
+          <button id="myDayQuickAddBtn" class="my-day-quick-create" type="button" aria-label="Add your own story">⊕</button>
+          <form id="myDayReplyForm" class="my-day-reply-form">
+            <input id="myDayReplyText" maxlength="1000" placeholder="Send message…" autocomplete="off" />
+            <button class="hidden" type="submit" aria-label="Send reply">Send</button>
+          </form>
+          <div id="myDayReactions" class="my-day-reactions" aria-label="React to My Day"></div>
+        </div>
+      </div>
+
+      <div id="myDayOwnerMenuBackdrop" class="story-owner-sheet-backdrop hidden" aria-hidden="true">
+        <section id="myDayOwnerMenu" class="story-owner-sheet" role="dialog" aria-modal="true" aria-label="Story options">
+          <div class="story-owner-sheet-handle" aria-hidden="true"></div>
+          <div id="storyOwnerMenuMain" class="story-owner-menu-page">
+            <button type="button" data-owner-story-action="mentions"><span>@</span><strong>Mention people</strong></button>
+            <button type="button" data-owner-story-action="privacy"><span>♙</span><strong>Edit story privacy</strong></button>
+            <button type="button" data-owner-story-action="share"><span>◌</span><strong>Send in Messenger</strong></button>
+            <button type="button" data-owner-story-action="delete"><span>⌫</span><strong>Delete story</strong></button>
+            <button type="button" data-owner-story-action="copy"><span>↗</span><span><strong>Copy link to share this story</strong><small>Stories are visible to your selected audience for 24 hours.</small></span></button>
+          </div>
+          <div id="storyOwnerPrivacyPage" class="story-owner-menu-page hidden">
+            <header><button type="button" data-owner-menu-back>‹</button><div><strong>Edit story privacy</strong><small>Who can open this Story?</small></div></header>
+            <div id="storyOwnerPrivacyOptions" class="story-owner-privacy-options">
+              <button type="button" data-owner-story-privacy="followers">👥 <span><strong>Following</strong><small>Your Scrapella circle</small></span><b>✓</b></button>
+              <button type="button" data-owner-story-privacy="close_friends">💚 <span><strong>Close friends</strong><small>Your saved close friends</small></span><b>✓</b></button>
+              <button type="button" data-owner-story-privacy="private">🔒 <span><strong>You only</strong><small>Only you</small></span><b>✓</b></button>
+              <button id="storyOwnerPartnerPrivacy" type="button" data-owner-story-privacy="partner">♡ <span><strong>Partner</strong><small>Your bound partner</small></span><b>✓</b></button>
+            </div>
+          </div>
+          <div id="storyOwnerMentionPage" class="story-owner-menu-page hidden">
+            <header><button type="button" data-owner-menu-back>‹</button><div><strong>Mention people</strong><small>People mentioned can open this Story.</small></div></header>
+            <div id="storyOwnerMentionList" class="story-owner-mention-list"></div>
+            <button id="storyOwnerMentionSave" class="primary story-owner-sheet-save" type="button">Save mentions</button>
+          </div>
+        </section>
       </div>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260926-story-insights-textmove2" defer></script>
+  <script src="/app.js?v=20260926-story-menu-swipe1" defer></script>
 </body>
 </html>

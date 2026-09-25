@@ -1042,7 +1042,8 @@ function decorateMyDayItem(social, item, viewer) {
     viewers:own ? viewerDetails : undefined,
     reactionPeople:own ? reactionDetails : undefined,
     recentReactionEvents:own ? recentReactionDetails : undefined,
-    storyReplies:own ? storyReplies : undefined
+    storyReplies:own ? storyReplies : undefined,
+    mentions:own ? (Array.isArray(item.mentions) ? item.mentions : []) : undefined
   };
 }
 function myDayGroupsForViewer(social, viewer) {
@@ -2746,6 +2747,68 @@ async function handleApi(req, res, url) {
     }
     emitLiveMany(myDayAudienceRecipients(social,item),'myday',{type:'posted',from:user,storyId:item.id});
     return json(res,201,{item:decorateMyDayItem(social,item,user),groups:myDayGroupsForViewer(social,user)});
+  }
+
+  const myDayUpdateMatch=pathname.match(/^\/api\/my-day\/([a-f0-9-]+)$/i);
+  if(myDayUpdateMatch && req.method==='PUT'){
+    const item=activeMyDayItems(social).find(story=>story.id===myDayUpdateMatch[1]);
+    if(!item)return json(res,404,{error:'That My Day has expired.'});
+    if(item.author!==user)return forbidden(res,'You can only edit your own My Day.');
+    const body=await readBody(req,64*1024);
+    const oldRecipients=myDayAudienceRecipients(social,item);
+    if(Object.prototype.hasOwnProperty.call(body,'audience')){
+      const audience=String(body.audience||'');
+      if(!['followers','close_friends','private','partner'].includes(audience))return json(res,400,{error:'Unsupported Story audience.'});
+      if(audience==='partner'&&!activePartnerTag(social,user))return json(res,400,{error:'Bind a partner first to use Partner stories.'});
+      item.audience=audience;
+    }
+    const addedMentions=[];
+    if(Array.isArray(body.mentions)){
+      const next=[];
+      for(const raw of body.mentions.slice(0,24)){
+        const target=slugTag(raw);
+        if(!target||target===user||next.includes(target)||!(await accountExists(target)))continue;
+        next.push(target);
+      }
+      const previous=new Set(Array.isArray(item.mentions)?item.mentions:[]);
+      item.mentions=next;
+      next.forEach(tag=>{if(!previous.has(tag))addedMentions.push(tag);});
+    }
+    const actor=publicProfileFor(social,user);
+    const mentionExcerpt=(item.overlayText || 'Mentioned you in a story').slice(0,180);
+    const mentionEvents=[];
+    for(const target of addedMentions){
+      const notice=appendActivityNotification(social,{
+        to:target,
+        from:user,
+        type:'story_mention',
+        storyId:item.id,
+        excerpt:mentionExcerpt
+      });
+      if(notice)mentionEvents.push({target,notice});
+      await sendUserPush(social,{
+        to:target,
+        title:(actor.displayName || displayTag(user))+' mentioned you in a story',
+        body:mentionExcerpt,
+        tag:'story-mention-'+item.id+'-'+target,
+        url:'/?myday='+encodeURIComponent(item.id)
+      });
+    }
+    await writeSocial(social);
+    for(const {target,notice} of mentionEvents){
+      emitLiveEvent(target,'notification',{
+        type:'story_mention',
+        notificationId:'activity:'+notice.id,
+        from:user,
+        actor,
+        storyId:item.id,
+        excerpt:notice.excerpt,
+        createdAt:notice.createdAt
+      });
+    }
+    const newRecipients=myDayAudienceRecipients(social,item);
+    emitLiveMany([...new Set([...oldRecipients,...newRecipients])],'myday',{type:'updated',from:user,storyId:item.id});
+    return json(res,200,{item:decorateMyDayItem(social,item,user)});
   }
 
   const myDayDeleteMatch=pathname.match(/^\/api\/my-day\/([a-f0-9-]+)$/i);

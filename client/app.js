@@ -67,6 +67,12 @@ let myDayHoldStartX = 0;
 let myDayHoldStartY = 0;
 let myDayHoldLong = false;
 let suppressNextStoryMediaClick = false;
+let myDaySwipePointerId = null;
+let myDaySwipeStartX = 0;
+let myDaySwipeStartY = 0;
+let myDaySwipeLastX = 0;
+let myDaySwipeLastY = 0;
+let storyOwnerMentionDraft = new Set();
 let notificationSummary = { count: 0, pendingInvites: 0 };
 let notificationItems = [];
 let chats = [];
@@ -4457,8 +4463,9 @@ function restoreMyDayReturnContext(){
 }
 function closeMyDayViewer({restore=true}={}){
   stopMyDayStoryTimer();
-  clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;myDayHoldLong=false;
-  $('#myDayViewer')?.classList.remove('story-hold-peek','own-story-view');
+  clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;myDayHoldLong=false;myDaySwipePointerId=null;
+  closeOwnerStoryMenu();
+  $('#myDayViewer')?.classList.remove('story-hold-peek','own-story-view','story-owner-menu-open');
   const audio=$('#storyViewerAudio');
   if(audio){audio.pause();audio.removeAttribute('src');audio.dataset.storyId='';}
   $('#myDayViewer')?.classList.add('hidden');
@@ -4595,7 +4602,7 @@ function renderMyDayViewer(){
     applyStoryTextPosition(storyText,item.textX,Number.isFinite(Number(item.textY))?item.textY:storyLegacyTextY(item),item.textRotation||0);
   }
   const reactions=$('#myDayReactions');
-  reactions.innerHTML=['❤️','😂','😮','😢','👍'].map(emoji=>{
+  reactions.innerHTML=['❤️','👍','😂'].map(emoji=>{
     const count=Number(item.reactionCounts?.[emoji])||0;
     return '<button type="button" data-myday-reaction="'+emoji+'"><span>'+emoji+'</span>'+(count?'<b>'+count+'</b>':'')+'</button>';
   }).join('');
@@ -4621,9 +4628,8 @@ function renderMyDayViewer(){
     next.classList.toggle('hidden',!multiple||myDayItemIndex>=group.items.length-1);
     next.disabled=myDayItemIndex>=group.items.length-1;
   }
-  $('#myDayReplyForm')?.classList.toggle('hidden',own);
-  $('#myDayReactions')?.classList.toggle('hidden',own);
-  $('#myDayDeleteBtn')?.classList.toggle('hidden',!own);
+  $('#myDayOtherActionBar')?.classList.toggle('hidden',own);
+  $('#myDayMoreBtn')?.classList.toggle('hidden',!own);
   const insights=$('#myDayOwnerInsights');
   insights?.classList.toggle('hidden',!own);
   if(own){
@@ -4632,6 +4638,128 @@ function renderMyDayViewer(){
     if(list&&!list.classList.contains('hidden'))renderMyDayInsightList();
   }else{
     closeMyDayInsights();
+  }
+}
+function currentMyDayShareUrl(){
+  const item=myDayCurrent().item;
+  if(!item)return location.origin+'/';
+  return location.origin+'/?myday='+encodeURIComponent(item.id);
+}
+function showOwnerStoryMenuPage(page){
+  const main=$('#storyOwnerMenuMain');
+  const privacy=$('#storyOwnerPrivacyPage');
+  const mentions=$('#storyOwnerMentionPage');
+  main?.classList.toggle('hidden',page!=='main');
+  privacy?.classList.toggle('hidden',page!=='privacy');
+  mentions?.classList.toggle('hidden',page!=='mentions');
+}
+function renderOwnerStoryPrivacy(){
+  const item=myDayCurrent().item;
+  $('#storyOwnerPrivacyOptions')?.querySelectorAll('[data-owner-story-privacy]').forEach(button=>{
+    button.classList.toggle('active',button.dataset.ownerStoryPrivacy===(item?.audience||'followers'));
+  });
+  const partnerButton=$('#storyOwnerPartnerPrivacy');
+  if(partnerButton)partnerButton.disabled=!myDayAudienceSettings.partner;
+}
+function renderOwnerStoryMentions(){
+  const item=myDayCurrent().item;
+  const host=$('#storyOwnerMentionList');
+  if(!host||!item)return;
+  storyOwnerMentionDraft=new Set(Array.isArray(item.mentions)?item.mentions:[]);
+  const candidates=storyAudienceCandidateProfiles();
+  const byTag=new Map(candidates.map(profile=>[profile.tag,profile]));
+  storyOwnerMentionDraft.forEach(tag=>{
+    if(!byTag.has(tag))byTag.set(tag,{tag,displayName:tag,avatar:''});
+  });
+  const profiles=[...byTag.values()];
+  host.innerHTML=profiles.length ? profiles.map(profile=>{
+    const checked=storyOwnerMentionDraft.has(profile.tag)?' checked':'';
+    return '<label class="story-owner-mention-row">'+avatarHtml(profile,'story-owner-mention-avatar')+
+      '<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+'</small></span>'+
+      '<input type="checkbox" data-owner-story-mention="'+escapeHtml(profile.tag||'')+'"'+checked+' /></label>';
+  }).join('') : '<p class="story-owner-empty">Follow someone or have them follow you to mention them here.</p>';
+  host.querySelectorAll('[data-owner-story-mention]').forEach(input=>input.addEventListener('change',()=>{
+    const tag=String(input.dataset.ownerStoryMention||'');
+    if(input.checked)storyOwnerMentionDraft.add(tag);else storyOwnerMentionDraft.delete(tag);
+  }));
+}
+function openOwnerStoryMenu(){
+  const current=myDayCurrent();
+  if(current.group?.profile?.tag!==me?.tag||!current.item)return;
+  closeMyDayInsights();
+  showOwnerStoryMenuPage('main');
+  $('#myDayOwnerMenuBackdrop')?.classList.remove('hidden');
+  $('#myDayOwnerMenuBackdrop')?.setAttribute('aria-hidden','false');
+  $('#myDayViewer')?.classList.add('story-owner-menu-open');
+  setMyDayStoryPaused(true);
+}
+function closeOwnerStoryMenu(){
+  $('#myDayOwnerMenuBackdrop')?.classList.add('hidden');
+  $('#myDayOwnerMenuBackdrop')?.setAttribute('aria-hidden','true');
+  $('#myDayViewer')?.classList.remove('story-owner-menu-open');
+  showOwnerStoryMenuPage('main');
+  setMyDayStoryPaused(false);
+}
+async function updateCurrentMyDay(patch){
+  const current=myDayCurrent(),item=current.item,group=current.group;
+  if(!item||group?.profile?.tag!==me?.tag)return null;
+  const data=await api('/api/my-day/'+encodeURIComponent(item.id),{method:'PUT',body:JSON.stringify(patch)});
+  if(data.item){
+    const index=group.items.findIndex(entry=>entry.id===item.id);
+    if(index>=0)group.items[index]=data.item;
+  }
+  renderMyDayViewer();
+  return data.item||null;
+}
+async function setCurrentStoryPrivacy(audience){
+  try{
+    await updateCurrentMyDay({audience});
+    renderOwnerStoryPrivacy();
+    showToast('Story privacy updated.');
+  }catch(err){showToast(err?.message||'Could not update Story privacy.');}
+}
+async function saveCurrentStoryMentions(){
+  const button=$('#storyOwnerMentionSave');
+  if(button)button.disabled=true;
+  try{
+    await updateCurrentMyDay({mentions:[...storyOwnerMentionDraft]});
+    closeOwnerStoryMenu();
+    showToast('Story mentions updated.');
+  }catch(err){showToast(err?.message||'Could not update mentions.');}
+  finally{if(button)button.disabled=false;}
+}
+async function shareCurrentMyDay(){
+  const item=myDayCurrent().item;if(!item)return;
+  const url=currentMyDayShareUrl();
+  const title='Scrapella Story';
+  const text='Open this Scrapella Story';
+  try{
+    if(isNativeScrapellaApp()){
+      const share=nativePlugin('Share');
+      if(share?.share){
+        await share.share({title,text,url,dialogTitle:'Send Story'});
+        return;
+      }
+    }
+    if(navigator.share){await navigator.share({title,text,url});return;}
+    await navigator.clipboard?.writeText?.(url);
+    showToast('Story link copied.');
+  }catch(err){
+    if(/cancel|abort/i.test(String(err?.message||'')))return;
+    showToast(err?.message||'Could not share this Story.');
+  }
+}
+async function copyCurrentMyDayLink(){
+  const url=currentMyDayShareUrl();
+  try{
+    await navigator.clipboard.writeText(url);
+    closeOwnerStoryMenu();
+    showToast('Story link copied.');
+  }catch{
+    try{
+      const area=document.createElement('textarea');area.value=url;document.body.appendChild(area);area.select();
+      document.execCommand('copy');area.remove();closeOwnerStoryMenu();showToast('Story link copied.');
+    }catch{showToast('Could not copy the Story link.');}
   }
 }
 function reactToMyDay(storyId,emoji){
@@ -4658,8 +4786,14 @@ async function replyToMyDay(text){
 }
 async function deleteCurrentMyDay(){
   const current=myDayCurrent(),item=current.item,group=current.group;if(!item||group?.profile?.tag!==me?.tag)return;
-  try{await api('/api/my-day/'+encodeURIComponent(item.id),{method:'DELETE'});closeMyDayViewer();await loadMyDays();showToast('My Day deleted.');}
-  catch(err){showToast(err?.message||'Could not delete My Day.');}
+  if(!window.confirm('Delete this Story?'))return;
+  try{
+    closeOwnerStoryMenu();
+    await api('/api/my-day/'+encodeURIComponent(item.id),{method:'DELETE'});
+    closeMyDayViewer();
+    await loadMyDays();
+    showToast('Story deleted.');
+  }catch(err){showToast(err?.message||'Could not delete Story.');}
 }
 
 $('#myDayAddBtn')?.addEventListener('click',openStoryCreateHub);
@@ -4823,12 +4957,21 @@ $('#myDayRetakeBtn')?.addEventListener('click',()=>{
 });
 $('#myDayPostBtn')?.addEventListener('click',postMyDay);
 $('#myDayViewerClose')?.addEventListener('click',()=>closeMyDayViewer());
+$('#myDayMoreBtn')?.addEventListener('click',openOwnerStoryMenu);
+$('#myDayQuickAddBtn')?.addEventListener('click',()=>{
+  closeMyDayViewer({restore:false});
+  showView('home');
+  openStoryCreateHub();
+});
 $('#myDayPrevBtn')?.addEventListener('click',()=>advanceMyDayStory(-1));
 $('#myDayNextBtn')?.addEventListener('click',()=>advanceMyDayStory(1));
 const storyViewerMedia=$('.my-day-media');
 storyViewerMedia?.addEventListener('pointerdown',event=>{
   const current=myDayCurrent();
-  if(!current.item || event.target.closest('button,input,textarea,a'))return;
+  if(!current.item || event.target.closest('button,input,textarea,a') || !$('#myDayOwnerMenuBackdrop')?.classList.contains('hidden'))return;
+  myDaySwipePointerId=event.pointerId;
+  myDaySwipeStartX=event.clientX;myDaySwipeStartY=event.clientY;
+  myDaySwipeLastX=event.clientX;myDaySwipeLastY=event.clientY;
   myDayHoldPointerId=event.pointerId;
   myDayHoldStartX=event.clientX;myDayHoldStartY=event.clientY;myDayHoldLong=false;
   setMyDayStoryPaused(true);
@@ -4840,22 +4983,47 @@ storyViewerMedia?.addEventListener('pointerdown',event=>{
   },240);
 });
 storyViewerMedia?.addEventListener('pointermove',event=>{
+  if(myDaySwipePointerId===event.pointerId){
+    myDaySwipeLastX=event.clientX;myDaySwipeLastY=event.clientY;
+  }
   if(myDayHoldPointerId!==event.pointerId || myDayHoldLong)return;
   if(Math.hypot(event.clientX-myDayHoldStartX,event.clientY-myDayHoldStartY)>14){
-    clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;setMyDayStoryPaused(false);
+    clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;
   }
 });
-const endMyDayHold=event=>{
-  if(myDayHoldPointerId!==event.pointerId)return;
-  clearTimeout(myDayHoldTimer);myDayHoldTimer=null;
-  const wasLong=myDayHoldLong;
-  myDayHoldPointerId=null;myDayHoldLong=false;
+const finishStoryGesture=event=>{
+  const isSwipePointer=myDaySwipePointerId===event.pointerId;
+  const dx=isSwipePointer?(event.clientX-myDaySwipeStartX):0;
+  const dy=isSwipePointer?(event.clientY-myDaySwipeStartY):0;
+  const wasLong=myDayHoldPointerId===event.pointerId && myDayHoldLong;
+  if(myDayHoldPointerId===event.pointerId){
+    clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;myDayHoldLong=false;
+  }
+  if(isSwipePointer)myDaySwipePointerId=null;
+  $('#myDayViewer')?.classList.remove('story-hold-peek');
+  const swiped=!wasLong && Math.abs(dx)>=58 && Math.abs(dx)>Math.abs(dy)*1.15;
+  if(wasLong){
+    suppressNextStoryMediaClick=true;
+    setMyDayStoryPaused(false);
+    event.preventDefault();
+    return;
+  }
+  if(swiped){
+    suppressNextStoryMediaClick=true;
+    setMyDayStoryPaused(false);
+    event.preventDefault();
+    advanceMyDayStory(dx>0?-1:1);
+    return;
+  }
+  setMyDayStoryPaused(false);
+};
+storyViewerMedia?.addEventListener('pointerup',finishStoryGesture);
+storyViewerMedia?.addEventListener('pointercancel',event=>{
+  if(myDayHoldPointerId===event.pointerId){clearTimeout(myDayHoldTimer);myDayHoldTimer=null;myDayHoldPointerId=null;myDayHoldLong=false;}
+  if(myDaySwipePointerId===event.pointerId)myDaySwipePointerId=null;
   $('#myDayViewer')?.classList.remove('story-hold-peek');
   setMyDayStoryPaused(false);
-  if(wasLong){suppressNextStoryMediaClick=true;event.preventDefault();}
-};
-storyViewerMedia?.addEventListener('pointerup',endMyDayHold);
-storyViewerMedia?.addEventListener('pointercancel',endMyDayHold);
+});
 storyViewerMedia?.addEventListener('contextmenu',event=>event.preventDefault());
 storyViewerMedia?.addEventListener('click',e=>{
   if(suppressNextStoryMediaClick){suppressNextStoryMediaClick=false;e.preventDefault();return;}
@@ -4864,14 +5032,29 @@ storyViewerMedia?.addEventListener('click',e=>{
   const x=e.clientX-rect.left;
   advanceMyDayStory(x<rect.width*.34?-1:1);
 });
-$('#myDayDeleteBtn')?.addEventListener('click',deleteCurrentMyDay);
-$('#myDayViewerSummaryBtn')?.addEventListener('click',()=>{
+$('#myDayViewerSummaryBtn')?.addEventListener('click',event=>{
+  event.preventDefault();
+  event.stopPropagation();
   const list=$('#myDayInsightList');
   if(!list)return;
   if(list.classList.contains('hidden'))openMyDayInsights();
   else closeMyDayInsights();
   renderMyDayOwnerSummary(myDayCurrent().item);
 });
+$('#myDayOwnerMenuBackdrop')?.addEventListener('click',event=>{
+  if(event.target===$('#myDayOwnerMenuBackdrop'))closeOwnerStoryMenu();
+});
+$('#storyOwnerMenuMain')?.querySelectorAll('[data-owner-story-action]').forEach(button=>button.addEventListener('click',async()=>{
+  const action=button.dataset.ownerStoryAction;
+  if(action==='mentions'){renderOwnerStoryMentions();showOwnerStoryMenuPage('mentions');return;}
+  if(action==='privacy'){renderOwnerStoryPrivacy();showOwnerStoryMenuPage('privacy');return;}
+  if(action==='share'){await shareCurrentMyDay();return;}
+  if(action==='delete'){await deleteCurrentMyDay();return;}
+  if(action==='copy'){await copyCurrentMyDayLink();}
+}));
+$('#myDayOwnerMenu')?.querySelectorAll('[data-owner-menu-back]').forEach(button=>button.addEventListener('click',()=>showOwnerStoryMenuPage('main')));
+$('#storyOwnerPrivacyOptions')?.querySelectorAll('[data-owner-story-privacy]').forEach(button=>button.addEventListener('click',()=>setCurrentStoryPrivacy(button.dataset.ownerStoryPrivacy)));
+$('#storyOwnerMentionSave')?.addEventListener('click',saveCurrentStoryMentions);
 $('#myDayReplyForm')?.addEventListener('submit',e=>{e.preventDefault();replyToMyDay($('#myDayReplyText')?.value);});
 function renderHome() {
   if (!me) return;
