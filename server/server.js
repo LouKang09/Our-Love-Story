@@ -915,6 +915,10 @@ function myDayTextRotation(value) {
   if (!Number.isFinite(number)) return 0;
   return ((number % 360) + 360) % 360;
 }
+function myDayTextScale(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(.45, Math.min(3, number)) : 1;
+}
 function myDayTextBoxes(item) {
   const raw = Array.isArray(item?.textBoxes) ? item.textBoxes : [];
   const boxes = raw.slice(0,12).map((box,index) => ({
@@ -922,7 +926,8 @@ function myDayTextBoxes(item) {
     text:String(box?.text || '').trim().slice(0,180),
     x:myDayTextCoord(box?.x,50),
     y:myDayTextCoord(box?.y,50),
-    rotation:myDayTextRotation(box?.rotation)
+    rotation:myDayTextRotation(box?.rotation),
+    scale:myDayTextScale(box?.scale)
   })).filter(box => box.text);
   if (boxes.length) return boxes;
   const legacy = String(item?.overlayText || '').trim().slice(0,180);
@@ -931,8 +936,23 @@ function myDayTextBoxes(item) {
     text:legacy,
     x:myDayTextCoord(item?.textX,50),
     y:myDayTextCoord(item?.textY,legacyMyDayTextY(item)),
-    rotation:myDayTextRotation(item?.textRotation)
+    rotation:myDayTextRotation(item?.textRotation),
+    scale:myDayTextScale(item?.textScale)
   }] : [];
+}
+function dedupeMyDayTextMentions(boxes) {
+  const seen = new Set();
+  return (Array.isArray(boxes) ? boxes : []).map(box => {
+    let text=String(box?.text || '');
+    text=text.replace(/(^|\s)@([a-z0-9_.-]{1,24})/ig,(match,prefix,rawTag)=>{
+      const tag=slugTag(rawTag);
+      if(!tag)return match;
+      if(seen.has(tag))return prefix;
+      seen.add(tag);
+      return prefix+'@'+rawTag;
+    }).replace(/[ \t]{2,}/g,' ').trim();
+    return {...box,text};
+  }).filter(box=>box.text);
 }
 function myDayAudience(item) {
   return ['followers','close_friends','private','partner'].includes(item?.audience) ? item.audience : 'followers';
@@ -1048,6 +1068,7 @@ function decorateMyDayItem(social, item, viewer) {
     textX:myDayTextCoord(textBoxes[0]?.x,50),
     textY:myDayTextCoord(textBoxes[0]?.y,50),
     textRotation:myDayTextRotation(textBoxes[0]?.rotation),
+    textScale:myDayTextScale(textBoxes[0]?.scale),
     textBoxes,
     textPosition:['top','center','bottom'].includes(item.textPosition) ? item.textPosition : 'center',
     audience:myDayAudience(item),
@@ -2694,17 +2715,19 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/my-day' && req.method === 'POST') {
     const body=await readBody(req,128*1024);
     const image=String(body.image || '').trim();
-    const textBoxes=myDayTextBoxes({
+    const textBoxes=dedupeMyDayTextMentions(myDayTextBoxes({
       textBoxes:body.textBoxes,
       overlayText:body.overlayText,
       textX:body.textX,
       textY:body.textY,
-      textRotation:body.textRotation
-    });
+      textRotation:body.textRotation,
+      textScale:body.textScale
+    }));
     const overlayText=String(textBoxes[0]?.text || '').slice(0,180);
     const textX=myDayTextCoord(textBoxes[0]?.x,50);
     const textY=myDayTextCoord(textBoxes[0]?.y,50);
     const textRotation=myDayTextRotation(textBoxes[0]?.rotation);
+    const textScale=myDayTextScale(textBoxes[0]?.scale);
     const audience=['followers','close_friends','private','partner'].includes(String(body.audience||'')) ? String(body.audience) : 'followers';
     const effect=['original','warm','cool','bw','vivid'].includes(String(body.effect||'')) ? String(body.effect) : 'original';
     const music=String(body.music || '').trim();
@@ -2728,6 +2751,7 @@ async function handleApi(req, res, url) {
       textX,
       textY,
       textRotation,
+      textScale,
       textBoxes,
       audience,
       effect,

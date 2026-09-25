@@ -16467,3 +16467,31 @@ html[data-theme="night"] .my-day-create-visual>b{
   .my-day-other-action-bar{grid-template-columns:46px minmax(94px,1fr) minmax(126px,46vw)!important}
   .my-day-other-action-bar .my-day-reactions button{flex-basis:44px!important}
 }
+
+
+/* ===== 2026-09-26 STORY TEXT TOUCH GESTURES ===== */
+.story-text-move-handle,
+.story-text-rotate-handle{display:none!important}
+.story-editor-stage{
+  touch-action:none;
+}
+.story-text-layer{
+  touch-action:none;
+}
+.story-editor-stage .my-day-overlay-text{
+  touch-action:none!important;
+  transform-origin:center center;
+  transition:border-color .12s ease,background .12s ease;
+}
+.story-editor-stage .my-day-overlay-text[data-editing="1"]{
+  touch-action:none!important;
+}
+.story-editor-stage .my-day-overlay-text.is-selected{
+  border-color:rgba(255,255,255,.66)!important;
+}
+.story-editor-stage .my-day-overlay-text.is-dragging,
+.story-editor-stage .my-day-overlay-text.is-transforming{
+  border-color:rgba(255,255,255,.92)!important;
+  background:rgba(0,0,0,.16)!important;
+  cursor:grabbing;
+}

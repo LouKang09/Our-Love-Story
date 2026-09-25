@@ -41,17 +41,20 @@ let pendingStoryEffect = 'original';
 let pendingStoryTextX = 50;
 let pendingStoryTextY = 50;
 let pendingStoryTextRotation = 0;
+let pendingStoryTextScale = 1;
 let pendingStoryTextBoxes = [];
 let activeStoryTextBoxId = '';
-let storyTextDragPointerId = null;
-let storyTextRotatePointerId = null;
-let storyTextRotateStartAngle = 0;
-let storyTextRotateStartRotation = 0;
-let storyTextMovePointerId = null;
-let storyTextMoveStartPointerX = 0;
-let storyTextMoveStartPointerY = 0;
-let storyTextMoveStartX = 50;
-let storyTextMoveStartY = 50;
+let storyTextLongPressTimer = null;
+let storyTextLongPressPointerId = null;
+let storyTextLongPressStartX = 0;
+let storyTextLongPressStartY = 0;
+let storyTextLongPressBoxX = 50;
+let storyTextLongPressBoxY = 50;
+let storyTextLongPressDragging = false;
+let storyTextGesturePointers = new Map();
+let storyTextTransformGesture = null;
+let suppressStoryTextClick = false;
+let storyDuplicateMentionToastAt = 0;
 let pendingStoryAudience = 'followers';
 let myDayAudienceSettings = { closeFriends:[], partner:null };
 let storyCloseFriendsDraft = new Set();
@@ -3854,9 +3857,12 @@ async function chooseStoryGallery({multiple=false,collage=false}={}){
 function renderStoryMentionChoices(){
   const list=$('#storyMentionList');
   if(!list)return;
-  list.innerHTML=following.length
-    ? following.map(profile=>'<button type="button" data-story-mention="'+escapeHtml(profile.tag||'')+'">'+avatarHtml(profile,'story-mention-avatar')+'<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+'</small></span></button>').join('')
-    : '<p>You are not following anyone yet.</p>';
+  const used=storyUsedMentionTags(activeStoryTextBoxId);
+  storyCurrentBoxMentionTags().forEach(tag=>used.add(tag));
+  const available=following.filter(profile=>!used.has(String(profile.tag||'').toLowerCase()));
+  list.innerHTML=available.length
+    ? available.map(profile=>'<button type="button" data-story-mention="'+escapeHtml(profile.tag||'')+'">'+avatarHtml(profile,'story-mention-avatar')+'<span><strong>'+escapeHtml(profile.displayName||profile.tag||'User')+'</strong><small>@'+escapeHtml(profile.tag||'')+'</small></span></button>').join('')
+    : '<p>Everyone available is already tagged in this Story.</p>';
   list.querySelectorAll('[data-story-mention]').forEach(button=>button.addEventListener('click',()=>{
     const tag=String(button.dataset.storyMention||'').trim();
     if(!tag)return;
@@ -3924,6 +3930,10 @@ function storyTextRotation(value){
   const number=Number(value);
   return Number.isFinite(number)?((number%360)+360)%360:0;
 }
+function storyTextScale(value){
+  const number=Number(value);
+  return Number.isFinite(number)?Math.max(.45,Math.min(3,number)):1;
+}
 function createStoryTextId(){
   try{return crypto.randomUUID();}catch{return 'story-text-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
 }
@@ -3941,6 +3951,7 @@ function syncActiveStoryTextState(){
   pendingStoryTextX=storyTextCoordinate(box.x,50);
   pendingStoryTextY=storyTextCoordinate(box.y,50);
   pendingStoryTextRotation=storyTextRotation(box.rotation);
+  pendingStoryTextScale=storyTextScale(box.scale);
 }
 function syncActiveStoryTextBoxFromElement(){
   const box=activeStoryTextBox();
@@ -3950,6 +3961,7 @@ function syncActiveStoryTextBoxFromElement(){
   box.x=storyTextCoordinate(pendingStoryTextX,50);
   box.y=storyTextCoordinate(pendingStoryTextY,50);
   box.rotation=storyTextRotation(pendingStoryTextRotation);
+  box.scale=storyTextScale(pendingStoryTextScale);
 }
 function storyComposerRawText(){
   const overlay=storyTextElementById(activeStoryTextBoxId);
@@ -3966,7 +3978,8 @@ function storyComposerTextBoxes(){
     text:String(box.text||'').trim().slice(0,180),
     x:storyTextCoordinate(box.x,50),
     y:storyTextCoordinate(box.y,50),
-    rotation:storyTextRotation(box.rotation)
+    rotation:storyTextRotation(box.rotation),
+    scale:storyTextScale(box.scale)
   })).filter(box=>box.text).slice(0,12);
 }
 function storyItemTextBoxes(item){
@@ -3976,7 +3989,8 @@ function storyItemTextBoxes(item){
     text:String(box?.text||'').trim().slice(0,180),
     x:storyTextCoordinate(box?.x,50),
     y:storyTextCoordinate(box?.y,50),
-    rotation:storyTextRotation(box?.rotation)
+    rotation:storyTextRotation(box?.rotation),
+    scale:storyTextScale(box?.scale)
   })).filter(box=>box.text);
   if(normalized.length)return normalized;
   const legacy=String(item?.overlayText||'').trim().slice(0,180);
@@ -3984,16 +3998,17 @@ function storyItemTextBoxes(item){
     id:'legacy',text:legacy,
     x:storyTextCoordinate(item?.textX,50),
     y:storyTextCoordinate(item?.textY,storyLegacyTextY(item)),
-    rotation:storyTextRotation(item?.textRotation)
+    rotation:storyTextRotation(item?.textRotation),
+    scale:storyTextScale(item?.textScale)
   }]:[];
 }
-function applyStoryTextPosition(element,x,y,rotation=0){
+function applyStoryTextPosition(element,x,y,rotation=0,scale=1){
   if(!element)return;
   element.style.left=storyTextCoordinate(x,50)+'%';
   element.style.top=storyTextCoordinate(y,50)+'%';
   element.style.right='auto';
   element.style.bottom='auto';
-  element.style.transform='translate(-50%,-50%) rotate('+storyTextRotation(rotation)+'deg)';
+  element.style.transform='translate(-50%,-50%) rotate('+storyTextRotation(rotation)+'deg) scale('+storyTextScale(scale)+')';
 }
 function syncStoryTextBoxElement(box){
   const layer=$('#storyTextLayer');
@@ -4012,7 +4027,7 @@ function syncStoryTextBoxElement(box){
   }
   if(overlay.dataset.editing!=='1' && overlay.textContent!==box.text)overlay.textContent=box.text;
   overlay.classList.toggle('is-selected',box.id===activeStoryTextBoxId);
-  applyStoryTextPosition(overlay,box.x,box.y,box.rotation);
+  applyStoryTextPosition(overlay,box.x,box.y,box.rotation,box.scale);
   return overlay;
 }
 function renderStoryTextBoxes(){
@@ -4023,34 +4038,55 @@ function renderStoryTextBoxes(){
   pendingStoryTextBoxes.forEach(syncStoryTextBoxElement);
   syncStoryTextHandles();
 }
-function rotateStoryLocalPoint(dx,dy,rotation){
-  const angle=storyTextRotation(rotation)*Math.PI/180;
-  return {x:(dx*Math.cos(angle))-(dy*Math.sin(angle)),y:(dx*Math.sin(angle))+(dy*Math.cos(angle))};
-}
 function syncStoryTextHandles(){
-  const rotate=$('#storyTextRotateHandle');
-  const move=$('#storyTextMoveHandle');
-  const stage=$('.story-editor-stage');
-  const box=activeStoryTextBox();
-  const overlay=storyTextElementById(activeStoryTextBoxId);
-  if(!rotate||!move||!stage||!box||!overlay){
-    rotate?.classList.add('hidden');move?.classList.add('hidden');return;
+  pendingStoryTextBoxes.forEach(box=>{
+    const overlay=storyTextElementById(box.id);
+    overlay?.classList.toggle('is-selected',box.id===activeStoryTextBoxId);
+  });
+}
+function storyMentionKeys(text){
+  const keys=[];
+  const regex=/(?:^|\s)@([a-z0-9_.-]{1,24})/ig;
+  let match;
+  while((match=regex.exec(String(text||''))))keys.push(String(match[1]||'').toLowerCase());
+  return keys;
+}
+function storyUsedMentionTags(excludeBoxId=''){
+  const used=new Set();
+  pendingStoryTextBoxes.forEach(box=>{
+    if(box.id===excludeBoxId)return;
+    storyMentionKeys(box.text).forEach(tag=>used.add(tag));
+  });
+  return used;
+}
+function storyCurrentBoxMentionTags(){
+  return new Set(storyMentionKeys(storyComposerRawText()));
+}
+function storyMentionAlreadyUsed(tag,{includeCurrent=true}={}){
+  const key=String(tag||'').replace(/^@/,'').toLowerCase();
+  if(!key)return false;
+  const used=storyUsedMentionTags(activeStoryTextBoxId);
+  if(used.has(key))return true;
+  return includeCurrent&&storyCurrentBoxMentionTags().has(key);
+}
+function cleanDuplicateStoryMentions(text,boxId){
+  const used=storyUsedMentionTags(boxId);
+  const local=new Set();
+  let removed='';
+  const cleaned=String(text||'').replace(/(^|\s)@([a-z0-9_.-]{1,24})/ig,(match,prefix,rawTag)=>{
+    const key=String(rawTag||'').toLowerCase();
+    if(used.has(key)||local.has(key)){
+      removed=rawTag;
+      return prefix;
+    }
+    local.add(key);
+    return prefix+'@'+rawTag;
+  }).replace(/[ \t]{2,}/g,' ');
+  if(removed && Date.now()-storyDuplicateMentionToastAt>1200){
+    storyDuplicateMentionToastAt=Date.now();
+    showToast('@'+removed+' is already tagged in this Story.');
   }
-  const visible=Boolean(String(box.text||storyComposerRawText()).trim());
-  rotate.classList.toggle('hidden',!visible);
-  move.classList.toggle('hidden',!visible);
-  if(!visible)return;
-  const stageRect=stage.getBoundingClientRect();
-  const cx=(storyTextCoordinate(box.x,50)/100)*stageRect.width;
-  const cy=(storyTextCoordinate(box.y,50)/100)*stageRect.height;
-  const halfW=Math.max(18,overlay.offsetWidth/2);
-  const halfH=Math.max(18,overlay.offsetHeight/2);
-  const moveVector=rotateStoryLocalPoint(0,-halfH-22,box.rotation);
-  const rotateVector=rotateStoryLocalPoint(halfW+22,0,box.rotation);
-  move.style.left=Math.max(18,Math.min(stageRect.width-18,cx+moveVector.x))+'px';
-  move.style.top=Math.max(18,Math.min(stageRect.height-18,cy+moveVector.y))+'px';
-  rotate.style.left=Math.max(18,Math.min(stageRect.width-18,cx+rotateVector.x))+'px';
-  rotate.style.top=Math.max(18,Math.min(stageRect.height-18,cy+rotateVector.y))+'px';
+  return cleaned.slice(0,180);
 }
 function hideStoryInlineMentionSuggestions(){
   const host=$('#storyInlineMentionSuggestions');
@@ -4076,9 +4112,12 @@ function renderStoryInlineMentionSuggestions(){
   if(!host||!overlay||!box||overlay.dataset.editing!=='1')return hideStoryInlineMentionSuggestions();
   const query=currentStoryMentionQuery();
   if(query===null)return hideStoryInlineMentionSuggestions();
+  const alreadyUsed=storyUsedMentionTags(activeStoryTextBoxId);
+  const currentTags=storyCurrentBoxMentionTags();
   const candidates=storyMentionCandidates().filter(profile=>{
     const tag=String(profile?.tag||'').toLowerCase();
     const name=String(profile?.displayName||'').toLowerCase();
+    if(alreadyUsed.has(tag)||currentTags.has(tag))return false;
     return !query || tag.includes(query) || name.includes(query);
   }).slice(0,6);
   if(!candidates.length)return hideStoryInlineMentionSuggestions();
@@ -4090,6 +4129,11 @@ function renderStoryInlineMentionSuggestions(){
   host.querySelectorAll('[data-inline-story-mention]').forEach(button=>button.addEventListener('pointerdown',event=>event.stopPropagation()));
   host.querySelectorAll('[data-inline-story-mention]').forEach(button=>button.addEventListener('click',()=>{
     const tag=String(button.dataset.inlineStoryMention||'');
+    if(storyMentionAlreadyUsed(tag)){
+      showToast('@'+tag+' is already tagged in this Story.');
+      hideStoryInlineMentionSuggestions();
+      return;
+    }
     const raw=storyComposerRawText();
     const next=raw.replace(/(^|\s)@[a-z0-9_.-]{0,23}$/i,(match,prefix)=>prefix+'@'+tag+' ');
     overlay.textContent=next.slice(0,180);
@@ -4107,6 +4151,7 @@ function syncMyDayComposerText(){
     box.x=storyTextCoordinate(pendingStoryTextX,50);
     box.y=storyTextCoordinate(pendingStoryTextY,50);
     box.rotation=storyTextRotation(pendingStoryTextRotation);
+    box.scale=storyTextScale(pendingStoryTextScale);
     const overlay=syncStoryTextBoxElement(box);
     if(overlay?.dataset.editing==='1')renderStoryInlineMentionSuggestions();
   }
@@ -4145,7 +4190,7 @@ function startStoryTextEditing({create=false,id=''}={}){
     if(pendingStoryTextBoxes.length>=12){showToast('You can add up to 12 text boxes to one Story.');return;}
     if(activeStoryTextBoxId)finishStoryTextEditing();
     const index=pendingStoryTextBoxes.length;
-    const box={id:createStoryTextId(),text:'',x:50,y:storyTextCoordinate(38+((index%5)*10),50),rotation:0};
+    const box={id:createStoryTextId(),text:'',x:50,y:storyTextCoordinate(38+((index%5)*10),50),rotation:0,scale:1};
     pendingStoryTextBoxes.push(box);
     activeStoryTextBoxId=box.id;
   }else if(id){
@@ -4164,7 +4209,7 @@ function startStoryTextEditing({create=false,id=''}={}){
   overlay.dataset.editing='1';
   overlay.contentEditable='true';
   overlay.classList.add('is-selected');
-  applyStoryTextPosition(overlay,box.x,box.y,box.rotation);
+  applyStoryTextPosition(overlay,box.x,box.y,box.rotation,box.scale);
   requestAnimationFrame(syncStoryTextHandles);
   setTimeout(()=>{
     overlay.focus({preventScroll:true});
@@ -4177,9 +4222,15 @@ function appendStoryComposerText(value){
   const box=activeStoryTextBox();
   const overlay=storyTextElementById(activeStoryTextBoxId);
   if(!box||!overlay)return;
+  const insert=String(value||'');
+  const mentionMatch=insert.match(/^@([a-z0-9_.-]{1,24})$/i);
+  if(mentionMatch&&storyMentionAlreadyUsed(mentionMatch[1])){
+    showToast('@'+mentionMatch[1]+' is already tagged in this Story.');
+    return;
+  }
   const current=String(overlay.innerText ?? overlay.textContent ?? box.text ?? '').trim();
-  const next=(current?current+' ':'')+String(value||'');
-  overlay.textContent=next.slice(0,180);
+  const next=(current?current+' ':'')+insert;
+  overlay.textContent=cleanDuplicateStoryMentions(next,box.id);
   box.text=overlay.textContent;
   syncMyDayComposerText();
 }
@@ -4348,8 +4399,10 @@ function prepareMyDayFile(file,{openText=false}={}){
   pendingStoryTextX=50;
   pendingStoryTextY=50;
   pendingStoryTextRotation=0;
+  pendingStoryTextScale=1;
   pendingStoryAudience='followers';
-  storyTextRotatePointerId=null;
+  storyTextGesturePointers.clear();
+  storyTextTransformGesture=null;
   $('#storyMusicBadge')?.classList.add('hidden');
   closeStoryAudiencePanel();
   updateStoryAudienceButton();
@@ -4374,16 +4427,18 @@ function closeMyDayComposer(){
   pendingStoryTextX=50;
   pendingStoryTextY=50;
   pendingStoryTextRotation=0;
+  pendingStoryTextScale=1;
   pendingStoryAudience='followers';
-  storyTextDragPointerId=null;
-  storyTextRotatePointerId=null;
-  storyTextMovePointerId=null;
+  clearTimeout(storyTextLongPressTimer);
+  storyTextLongPressTimer=null;
+  storyTextLongPressPointerId=null;
+  storyTextLongPressDragging=false;
+  storyTextGesturePointers.clear();
+  storyTextTransformGesture=null;
   pendingStoryTextBoxes=[];
   activeStoryTextBoxId='';
   const storyLayer=$('#storyTextLayer');
   if(storyLayer)storyLayer.innerHTML='';
-  $('#storyTextRotateHandle')?.classList.add('hidden');
-  $('#storyTextMoveHandle')?.classList.add('hidden');
   hideStoryInlineMentionSuggestions();
   closeStoryAudiencePanel();
   updateStoryAudienceButton();
@@ -4421,6 +4476,7 @@ async function postMyDay(){
       textX:firstStoryText?.x??50,
       textY:firstStoryText?.y??50,
       textRotation:firstStoryText?.rotation??0,
+      textScale:firstStoryText?.scale??1,
       textBoxes:storyTextBoxes,
       audience:pendingStoryAudience,
       effect:pendingStoryEffect,
@@ -4729,7 +4785,7 @@ function renderMyDayViewer(){
       const text=document.createElement('div');
       text.className='my-day-overlay-text';
       text.textContent=box.text;
-      applyStoryTextPosition(text,box.x,box.y,box.rotation);
+      applyStoryTextPosition(text,box.x,box.y,box.rotation,box.scale);
       viewerTextLayer.appendChild(text);
     });
   }
@@ -4967,6 +5023,78 @@ $('#storyMusicInput')?.addEventListener('change',e=>{
   e.target.value='';
 });
 const storyTextLayer=$('#storyTextLayer');
+const storyEditorStage=$('.story-editor-stage');
+function storyGestureDistance(a,b){return Math.hypot(b.x-a.x,b.y-a.y);}
+function storyGestureAngle(a,b){return Math.atan2(b.y-a.y,b.x-a.x);}
+function storyGestureCenter(a,b){return {x:(a.x+b.x)/2,y:(a.y+b.y)/2};}
+function cancelStoryTextLongPress(){
+  clearTimeout(storyTextLongPressTimer);
+  storyTextLongPressTimer=null;
+}
+function beginStoryTwoFingerTransform(boxId){
+  const points=[...storyTextGesturePointers.values()].filter(point=>point.boxId===boxId);
+  if(points.length<2)return false;
+  const box=pendingStoryTextBoxes.find(entry=>entry.id===boxId);
+  const overlay=storyTextElementById(boxId);
+  const stage=$('.story-editor-stage');
+  if(!box||!overlay||!stage)return false;
+  cancelStoryTextLongPress();
+  if(overlay.dataset.editing==='1')finishStoryTextEditing({removeEmpty:false});
+  activeStoryTextBoxId=boxId;
+  syncActiveStoryTextState();
+  const a=points[0],b=points[1];
+  const center=storyGestureCenter(a,b);
+  storyTextTransformGesture={
+    boxId,
+    pointerIds:[a.pointerId,b.pointerId],
+    startDistance:Math.max(1,storyGestureDistance(a,b)),
+    startAngle:storyGestureAngle(a,b),
+    startCenter:center,
+    startX:box.x,
+    startY:box.y,
+    startRotation:box.rotation||0,
+    startScale:storyTextScale(box.scale)
+  };
+  overlay.classList.add('is-transforming');
+  suppressStoryTextClick=true;
+  try{overlay.setPointerCapture(a.pointerId);}catch{}
+  try{overlay.setPointerCapture(b.pointerId);}catch{}
+  return true;
+}
+function updateStoryTwoFingerTransform(){
+  const gesture=storyTextTransformGesture;
+  if(!gesture)return;
+  const points=gesture.pointerIds.map(id=>storyTextGesturePointers.get(id)).filter(Boolean);
+  if(points.length<2)return;
+  const box=pendingStoryTextBoxes.find(entry=>entry.id===gesture.boxId);
+  const stage=$('.story-editor-stage');
+  if(!box||!stage)return;
+  const a=points[0],b=points[1];
+  const center=storyGestureCenter(a,b);
+  const rect=stage.getBoundingClientRect();
+  if(!rect.width||!rect.height)return;
+  const scaleRatio=storyGestureDistance(a,b)/gesture.startDistance;
+  const angleDelta=(storyGestureAngle(a,b)-gesture.startAngle)*180/Math.PI;
+  box.x=storyTextCoordinate(gesture.startX+((center.x-gesture.startCenter.x)/rect.width)*100,50);
+  box.y=storyTextCoordinate(gesture.startY+((center.y-gesture.startCenter.y)/rect.height)*100,50);
+  box.rotation=storyTextRotation(gesture.startRotation+angleDelta);
+  box.scale=storyTextScale(gesture.startScale*scaleRatio);
+  pendingStoryTextX=box.x;
+  pendingStoryTextY=box.y;
+  pendingStoryTextRotation=box.rotation;
+  pendingStoryTextScale=box.scale;
+  const overlay=storyTextElementById(box.id);
+  applyStoryTextPosition(overlay,box.x,box.y,box.rotation,box.scale);
+}
+function endStoryTwoFingerTransform(pointerId){
+  const gesture=storyTextTransformGesture;
+  if(!gesture)return;
+  if(pointerId!=null&&!gesture.pointerIds.includes(pointerId))return;
+  const overlay=storyTextElementById(gesture.boxId);
+  overlay?.classList.remove('is-transforming');
+  storyTextTransformGesture=null;
+  renderStoryTextBoxes();
+}
 storyTextLayer?.addEventListener('input',event=>{
   const overlay=event.target?.closest?.('[data-story-text-id]');
   if(!overlay)return;
@@ -4974,16 +5102,22 @@ storyTextLayer?.addEventListener('input',event=>{
   if(id!==activeStoryTextBoxId)return;
   const box=activeStoryTextBox();
   if(!box)return;
-  const raw=String(overlay.innerText??overlay.textContent??'').replace(/\u00a0/g,' ');
-  if(raw.length>180){
-    overlay.textContent=raw.slice(0,180);
+  let raw=String(overlay.innerText??overlay.textContent??'').replace(/\u00a0/g,' ');
+  raw=cleanDuplicateStoryMentions(raw,id);
+  if(raw!==String(overlay.innerText??overlay.textContent??'')){
+    overlay.textContent=raw;
     placeStoryCaretAtEnd(overlay);
   }
-  box.text=String(overlay.innerText??overlay.textContent??'').slice(0,180);
+  box.text=raw.slice(0,180);
   renderStoryInlineMentionSuggestions();
-  requestAnimationFrame(syncStoryTextHandles);
 });
 storyTextLayer?.addEventListener('click',event=>{
+  if(suppressStoryTextClick){
+    suppressStoryTextClick=false;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   const overlay=event.target?.closest?.('[data-story-text-id]');
   if(!overlay)return;
   event.stopPropagation();
@@ -4995,88 +5129,98 @@ storyTextLayer?.addEventListener('pointerdown',event=>{
   const overlay=event.target?.closest?.('[data-story-text-id]');
   if(!overlay)return;
   const id=String(overlay.dataset.storyTextId||'');
+  if(!id)return;
   if(id!==activeStoryTextBoxId){
     if(activeStoryTextBoxId)finishStoryTextEditing();
     activeStoryTextBoxId=id;
     syncActiveStoryTextState();
     renderStoryTextBoxes();
   }
-});
-const storyMoveHandle=$('#storyTextMoveHandle');
-storyMoveHandle?.addEventListener('pointerdown',event=>{
-  event.preventDefault();event.stopPropagation();
+  storyTextGesturePointers.set(event.pointerId,{pointerId:event.pointerId,x:event.clientX,y:event.clientY,boxId:id});
+  const sameBox=[...storyTextGesturePointers.values()].filter(point=>point.boxId===id);
+  if(sameBox.length>=2){
+    event.preventDefault();
+    beginStoryTwoFingerTransform(id);
+    return;
+  }
+  cancelStoryTextLongPress();
+  storyTextLongPressPointerId=event.pointerId;
+  storyTextLongPressStartX=event.clientX;
+  storyTextLongPressStartY=event.clientY;
   const box=activeStoryTextBox();
-  const overlay=storyTextElementById(activeStoryTextBoxId);
-  if(!box||!String(box.text||storyComposerRawText()).trim())return;
-  if(overlay?.dataset.editing==='1')finishStoryTextEditing({removeEmpty:false});
-  storyTextMovePointerId=event.pointerId;
-  storyTextMoveStartPointerX=event.clientX;
-  storyTextMoveStartPointerY=event.clientY;
-  syncActiveStoryTextState();
-  storyTextMoveStartX=pendingStoryTextX;
-  storyTextMoveStartY=pendingStoryTextY;
-  storyTextElementById(activeStoryTextBoxId)?.classList.add('is-dragging');
-  try{storyMoveHandle.setPointerCapture(event.pointerId);}catch{}
+  storyTextLongPressBoxX=box?.x??50;
+  storyTextLongPressBoxY=box?.y??50;
+  storyTextLongPressDragging=false;
+  storyTextLongPressTimer=setTimeout(()=>{
+    if(storyTextLongPressPointerId!==event.pointerId||storyTextTransformGesture)return;
+    const currentBox=activeStoryTextBox();
+    const currentOverlay=storyTextElementById(activeStoryTextBoxId);
+    if(!currentBox||!currentOverlay)return;
+    if(currentOverlay.dataset.editing==='1')finishStoryTextEditing({removeEmpty:false});
+    storyTextLongPressDragging=true;
+    suppressStoryTextClick=true;
+    currentOverlay.classList.add('is-dragging');
+    try{currentOverlay.setPointerCapture(event.pointerId);}catch{}
+    try{navigator.vibrate?.(12);}catch{}
+  },320);
 });
-storyMoveHandle?.addEventListener('pointermove',event=>{
-  if(storyTextMovePointerId!==event.pointerId)return;
+storyTextLayer?.addEventListener('pointermove',event=>{
+  const tracked=storyTextGesturePointers.get(event.pointerId);
+  if(tracked){
+    tracked.x=event.clientX;tracked.y=event.clientY;
+    storyTextGesturePointers.set(event.pointerId,tracked);
+  }
+  if(storyTextTransformGesture){
+    event.preventDefault();
+    updateStoryTwoFingerTransform();
+    return;
+  }
+  if(storyTextLongPressPointerId!==event.pointerId)return;
+  const dx=event.clientX-storyTextLongPressStartX;
+  const dy=event.clientY-storyTextLongPressStartY;
+  if(!storyTextLongPressDragging){
+    if(Math.hypot(dx,dy)>10)cancelStoryTextLongPress();
+    return;
+  }
   event.preventDefault();
-  const stage=$('.story-editor-stage');if(!stage)return;
-  const rect=stage.getBoundingClientRect();if(!rect.width||!rect.height)return;
-  pendingStoryTextX=storyTextCoordinate(storyTextMoveStartX+((event.clientX-storyTextMoveStartPointerX)/rect.width)*100,50);
-  pendingStoryTextY=storyTextCoordinate(storyTextMoveStartY+((event.clientY-storyTextMoveStartPointerY)/rect.height)*100,50);
+  const stage=$('.story-editor-stage');
   const box=activeStoryTextBox();
-  if(box){box.x=pendingStoryTextX;box.y=pendingStoryTextY;}
-  syncMyDayComposerText();
-});
-const endStoryTextMove=event=>{
-  if(storyTextMovePointerId!==event.pointerId)return;
-  try{storyMoveHandle?.releasePointerCapture(event.pointerId);}catch{}
-  storyTextMovePointerId=null;
-  storyTextElementById(activeStoryTextBoxId)?.classList.remove('is-dragging');
-  syncMyDayComposerText();
-};
-storyMoveHandle?.addEventListener('pointerup',endStoryTextMove);
-storyMoveHandle?.addEventListener('pointercancel',endStoryTextMove);
-const storyRotateHandle=$('#storyTextRotateHandle');
-storyRotateHandle?.addEventListener('pointerdown',event=>{
-  event.preventDefault();event.stopPropagation();
-  const box=activeStoryTextBox();
-  const overlay=storyTextElementById(activeStoryTextBoxId);
-  if(!box)return;
-  if(overlay?.dataset.editing==='1')finishStoryTextEditing({removeEmpty:false});
-  syncActiveStoryTextState();
-  const stage=$('.story-editor-stage');if(!stage)return;
+  if(!stage||!box)return;
   const rect=stage.getBoundingClientRect();
-  const cx=rect.left+(storyTextCoordinate(pendingStoryTextX,50)/100)*rect.width;
-  const cy=rect.top+(storyTextCoordinate(pendingStoryTextY,50)/100)*rect.height;
-  storyTextRotatePointerId=event.pointerId;
-  storyTextRotateStartAngle=Math.atan2(event.clientY-cy,event.clientX-cx);
-  storyTextRotateStartRotation=pendingStoryTextRotation;
-  try{storyRotateHandle.setPointerCapture(event.pointerId);}catch{}
+  if(!rect.width||!rect.height)return;
+  box.x=storyTextCoordinate(storyTextLongPressBoxX+(dx/rect.width)*100,50);
+  box.y=storyTextCoordinate(storyTextLongPressBoxY+(dy/rect.height)*100,50);
+  pendingStoryTextX=box.x;
+  pendingStoryTextY=box.y;
+  applyStoryTextPosition(storyTextElementById(box.id),box.x,box.y,box.rotation,box.scale);
 });
-storyRotateHandle?.addEventListener('pointermove',event=>{
-  if(storyTextRotatePointerId!==event.pointerId)return;
-  event.preventDefault();
-  const stage=$('.story-editor-stage');if(!stage)return;
-  const rect=stage.getBoundingClientRect();
-  const cx=rect.left+(storyTextCoordinate(pendingStoryTextX,50)/100)*rect.width;
-  const cy=rect.top+(storyTextCoordinate(pendingStoryTextY,50)/100)*rect.height;
-  const angle=Math.atan2(event.clientY-cy,event.clientX-cx);
-  pendingStoryTextRotation=storyTextRotation(storyTextRotateStartRotation+((angle-storyTextRotateStartAngle)*180/Math.PI));
-  const box=activeStoryTextBox();
-  if(box)box.rotation=pendingStoryTextRotation;
-  syncMyDayComposerText();
+function finishStoryTextPointer(event){
+  const wasTransform=Boolean(storyTextTransformGesture?.pointerIds?.includes(event.pointerId));
+  storyTextGesturePointers.delete(event.pointerId);
+  cancelStoryTextLongPress();
+  if(storyTextLongPressPointerId===event.pointerId){
+    if(storyTextLongPressDragging){
+      event.preventDefault();
+      suppressStoryTextClick=true;
+      storyTextElementById(activeStoryTextBoxId)?.classList.remove('is-dragging');
+      renderStoryTextBoxes();
+    }
+    storyTextLongPressPointerId=null;
+    storyTextLongPressDragging=false;
+  }
+  if(wasTransform){
+    event.preventDefault();
+    suppressStoryTextClick=true;
+    endStoryTwoFingerTransform(event.pointerId);
+  }
+}
+storyTextLayer?.addEventListener('pointerup',finishStoryTextPointer);
+storyTextLayer?.addEventListener('pointercancel',finishStoryTextPointer);
+storyTextLayer?.addEventListener('contextmenu',event=>{
+  if(event.target?.closest?.('[data-story-text-id]'))event.preventDefault();
 });
-const endStoryTextRotate=event=>{
-  if(storyTextRotatePointerId!==event.pointerId)return;
-  try{storyRotateHandle?.releasePointerCapture(event.pointerId);}catch{}
-  storyTextRotatePointerId=null;
-  syncMyDayComposerText();
-};
-storyRotateHandle?.addEventListener('pointerup',endStoryTextRotate);
-storyRotateHandle?.addEventListener('pointercancel',endStoryTextRotate);
 $('#storyEditorDoneBtn')?.addEventListener('click',()=>{
+  endStoryTwoFingerTransform();
   finishStoryTextEditing();
   closeStoryToolPanels();
 });
