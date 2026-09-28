@@ -10218,6 +10218,39 @@ function wireCanvasItems() {
       .forEach((entry,index)=>{entry.z=index+1;});
   };
 
+  const snapCanvasRotation=(raw,tolerance=4)=>{
+    const normalized=((Number(raw)||0)%360+360)%360;
+    const nearest=Math.round(normalized/45)*45;
+    const snapAngle=((nearest%360)+360)%360;
+    const delta=Math.abs((((normalized-snapAngle)+540)%360)-180);
+    return {
+      rotation:delta<=tolerance?snapAngle:normalized,
+      snapped:delta<=tolerance,
+      snapAngle
+    };
+  };
+  const ensureCanvasRotationGuide=()=>{
+    let guide=canvas.querySelector('.canvas-rotation-guide');
+    if(guide)return guide;
+    guide=document.createElement('div');
+    guide.className='canvas-rotation-guide';
+    guide.innerHTML='<span class="canvas-rotation-guide-line"></span><b class="canvas-rotation-guide-label">0°</b>';
+    canvas.appendChild(guide);
+    return guide;
+  };
+  const showCanvasRotationGuide=(item,angle)=>{
+    const guide=ensureCanvasRotationGuide();
+    guide.style.setProperty('--guide-x',`${item.x+item.w/2}%`);
+    guide.style.setProperty('--guide-y',`${item.y+item.h/2}%`);
+    guide.style.setProperty('--guide-angle',`${angle}deg`);
+    const label=guide.querySelector('.canvas-rotation-guide-label');
+    if(label)label.textContent=`${Math.round(angle)}°`;
+    guide.classList.add('show');
+  };
+  const hideCanvasRotationGuide=()=>{
+    canvas.querySelector('.canvas-rotation-guide')?.classList.remove('show');
+  };
+
   canvas.querySelectorAll('.canvas-item').forEach(el=>{
     const id=el.dataset.canvasId;
     const item=editingCanvasItems.find(x=>x.id===id);
@@ -10300,32 +10333,31 @@ function wireCanvasItems() {
       const cx=box.left+box.width/2,cy=box.top+box.height/2;
       const startAngle=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI;
       const startRotation=Number(item.rotation)||0;
-      let straightGuide=canvas.querySelector('.canvas-straight-guide');
-      if(!straightGuide){
-        straightGuide=document.createElement('div');
-        straightGuide.className='canvas-straight-guide';
-        straightGuide.innerHTML='<span class="canvas-guide-vertical"></span><span class="canvas-guide-horizontal"></span>';
-        canvas.appendChild(straightGuide);
-      }
+      let lastSnapAngle=null;
       try{rotateHandle.setPointerCapture(e.pointerId);}catch{}
       el.classList.add('rotating');
       const move=ev=>{
         const angle=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI;
         const raw=((startRotation+(angle-startAngle))%360+360)%360;
-        const nearest=Math.round(raw/90)*90;
-        const delta=Math.abs((((raw-nearest)+540)%360)-180);
-        const snapped=delta<=4;
-        item.rotation=snapped ? ((nearest%360)+360)%360 : raw;
+        const snapped=snapCanvasRotation(raw);
+        item.rotation=snapped.rotation;
         el.style.setProperty('--item-rotation',`${item.rotation}deg`);
-        straightGuide.style.setProperty('--guide-x',`${item.x+item.w/2}%`);
-        straightGuide.style.setProperty('--guide-y',`${item.y+item.h/2}%`);
-        straightGuide.classList.toggle('show',snapped);
+        if(snapped.snapped){
+          showCanvasRotationGuide(item,snapped.snapAngle);
+          if(lastSnapAngle!==snapped.snapAngle){
+            try{navigator.vibrate?.(6);}catch{}
+            lastSnapAngle=snapped.snapAngle;
+          }
+        }else{
+          hideCanvasRotationGuide();
+          lastSnapAngle=null;
+        }
       };
       const up=()=>{
         rotateHandle.removeEventListener('pointermove',move);
         rotateHandle.removeEventListener('pointerup',up);
         rotateHandle.removeEventListener('pointercancel',up);
-        straightGuide.classList.remove('show');
+        hideCanvasRotationGuide();
         el.classList.remove('rotating');
       };
       rotateHandle.addEventListener('pointermove',move);
@@ -10440,7 +10472,8 @@ function wireCanvasItems() {
           startItemCenterY:centerY,
           startW:item.w,
           startH:item.h,
-          startRotation:Number(item.rotation)||0
+          startRotation:Number(item.rotation)||0,
+          lastSnapAngle:null
         };
         suppressTextClick=true;
         content.dataset.gestureHandled='1';
@@ -10451,6 +10484,7 @@ function wireCanvasItems() {
       };
       const endTransform=()=>{
         if(!transformGesture)return;
+        hideCanvasRotationGuide();
         transformGesture=null;
         el.classList.remove('transforming');
         content.classList.remove('transform-armed');
@@ -10483,13 +10517,25 @@ function wireCanvasItems() {
         item.h=nextH;
         item.x=nextX;
         item.y=nextY;
-        item.rotation=((transformGesture.startRotation+((angle-transformGesture.startAngle)*180/Math.PI))%360+360)%360;
+        const rawRotation=((transformGesture.startRotation+((angle-transformGesture.startAngle)*180/Math.PI))%360+360)%360;
+        const snappedRotation=snapCanvasRotation(rawRotation);
+        item.rotation=snappedRotation.rotation;
 
         el.style.left=`${item.x}%`;
         el.style.top=`${item.y}%`;
         el.style.width=`${item.w}%`;
         el.style.height=`${item.h}%`;
         el.style.setProperty('--item-rotation',`${item.rotation}deg`);
+        if(snappedRotation.snapped){
+          showCanvasRotationGuide(item,snappedRotation.snapAngle);
+          if(transformGesture.lastSnapAngle!==snappedRotation.snapAngle){
+            try{navigator.vibrate?.(6);}catch{}
+            transformGesture.lastSnapAngle=snappedRotation.snapAngle;
+          }
+        }else{
+          hideCanvasRotationGuide();
+          transformGesture.lastSnapAngle=null;
+        }
       };
 
       content.addEventListener('focus',()=>{
