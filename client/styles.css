@@ -13996,6 +13996,54 @@ html[data-theme="night"] .book-sharing-panel{color:var(--ink)!important;backgrou
 .canvas-guide-vertical{left:var(--guide-x);top:0;bottom:0;width:1px}
 .canvas-guide-horizontal{top:var(--guide-y);left:0;right:0;height:1px}
 html[data-theme="night"] .canvas-guide-vertical,html[data-theme="night"] .canvas-guide-horizontal{background:rgba(244,176,197,.82);box-shadow:0 0 0 1px rgba(35,25,29,.58)}
+
+/* Rotation snap guide: 0°, 45°, 90° and every 45° thereafter. */
+.canvas-rotation-guide{
+  --guide-x:50%;
+  --guide-y:50%;
+  --guide-angle:0deg;
+  position:absolute;
+  inset:0;
+  z-index:998;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .08s ease;
+}
+.canvas-rotation-guide.show{opacity:1}
+.canvas-rotation-guide-line{
+  position:absolute;
+  left:var(--guide-x);
+  top:var(--guide-y);
+  width:155%;
+  height:1px;
+  transform:translate(-50%,-50%) rotate(var(--guide-angle));
+  transform-origin:center;
+  background:rgba(151,76,98,.78);
+  box-shadow:0 0 0 1px rgba(255,255,255,.28);
+}
+.canvas-rotation-guide-label{
+  position:absolute;
+  left:var(--guide-x);
+  top:var(--guide-y);
+  transform:translate(12px,-28px);
+  min-width:42px;
+  padding:4px 8px;
+  border-radius:999px;
+  color:#fff8f8;
+  background:rgba(122,66,82,.92);
+  box-shadow:0 2px 8px rgba(54,31,38,.18);
+  font:800 11px/1 ui-sans-serif,system-ui,sans-serif;
+  text-align:center;
+  letter-spacing:.02em;
+}
+html[data-theme="night"] .canvas-rotation-guide-line{
+  background:rgba(244,176,197,.9);
+  box-shadow:0 0 0 1px rgba(35,25,29,.54);
+}
+html[data-theme="night"] .canvas-rotation-guide-label{
+  color:#2a2024;
+  background:rgba(244,190,207,.95);
+}
 .memory-share-capture-card{
   border-radius:28px!important;
   color:#392b2d!important;
