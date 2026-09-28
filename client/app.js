@@ -9809,7 +9809,11 @@ function validateCanvasTextBoxes(){
   selectedCanvasItemId=empty.id;
   renderCanvasEditor();
   const content=$('#scrapCanvas')?.querySelector(`[data-canvas-id="${CSS.escape(empty.id)}"] .canvas-text-content`);
-  content?.focus();
+  if(content){
+    content.contentEditable='true';
+    content.dataset.textEditing='1';
+    content.focus({preventScroll:true});
+  }
   $('#editorError').textContent='Every text box must contain text before you save this memory.';
   showToast('Fill in every text box before saving.');
   return false;
@@ -9850,7 +9854,7 @@ function canvasItemHtml(item) {
   const size=Math.max(7,Math.min(42,Number(item.size)||18));
   return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'};${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
     <button class="canvas-remove-item" type="button" title="Remove text box">×</button>
-    <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here… use @tag to mention" style="text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'}">${String(item.html || '')}</div>
+    <div class="canvas-text-content" contenteditable="false" role="textbox" aria-multiline="true" data-placeholder="Type your memory here… use @tag to mention" style="text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'}">${String(item.html || '')}</div>
     <span class="canvas-resize-handle" aria-hidden="true" title="Resize text box"></span>
   </div>`;
 }
@@ -9926,7 +9930,11 @@ function addCanvasText() {
   renderCanvasEditor();
   requestAnimationFrame(()=>{
     const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
-    el?.focus();
+    if(el){
+      el.contentEditable='true';
+      el.dataset.textEditing='1';
+      el.focus({preventScroll:true});
+    }
   });
 }
 function canvasTextSelection() {
@@ -10485,13 +10493,13 @@ function wireCanvasItems() {
       };
 
       content.addEventListener('focus',()=>{
+        content.contentEditable='true';
         content.dataset.textEditing='1';
-        // Pointerdown naturally focuses a contenteditable. Keep the active
-        // finger's hold timer alive; only clear stale holds from non-pointer focus.
         if(textPointers.size===0)clearSingleHold();
       });
       content.addEventListener('blur',()=>{
         content.dataset.textEditing='0';
+        content.contentEditable='false';
       });
 
       content.addEventListener('pointerdown',e=>{
@@ -10513,9 +10521,13 @@ function wireCanvasItems() {
           return;
         }
 
-        // A single hold arms movement even when the text box is currently being
-        // edited. We only enter drag mode after the user moves while still held,
-        // so a stationary hold remains available for native text selection.
+        const editing=content.dataset.textEditing==='1'||document.activeElement===content;
+        if(editing)return;
+
+        // Resting text boxes are gesture surfaces. Prevent the browser from
+        // focusing the contenteditable on pointerdown; a short tap explicitly
+        // enters typing mode in the click handler below.
+        e.preventDefault();
         clearSingleHold();
         singleHoldTimer=setTimeout(()=>{
           const tracked=textPointers.get(e.pointerId);
@@ -10526,6 +10538,8 @@ function wireCanvasItems() {
             x:tracked.x,
             y:tracked.y
           };
+          suppressTextClick=true;
+          content.dataset.longPressed='1';
           try{navigator.vibrate?.(7);}catch{}
         },280);
       });
@@ -10613,20 +10627,62 @@ function wireCanvasItems() {
           e.preventDefault();
           suppressTextClick=true;
           endTransform();
+          return;
+        }
+
+        if(content.dataset.longPressed==='1'){
+          e.preventDefault();
+          setTimeout(()=>{
+            if(content.dataset.longPressed==='1'){
+              delete content.dataset.longPressed;
+              suppressTextClick=false;
+            }
+          },420);
         }
       };
       content.addEventListener('pointerup',finishTextGesture);
       content.addEventListener('pointercancel',finishTextGesture);
 
       content.addEventListener('click',e=>{
-        if(suppressTextClick||content.dataset.longDragged==='1'||content.dataset.gestureHandled==='1'){
+        if(suppressTextClick||content.dataset.longPressed==='1'||content.dataset.longDragged==='1'||content.dataset.gestureHandled==='1'){
           suppressTextClick=false;
+          delete content.dataset.longPressed;
           delete content.dataset.longDragged;
           delete content.dataset.gestureHandled;
           e.preventDefault();
           e.stopPropagation();
           content.blur();
+          content.contentEditable='false';
+          return;
         }
+
+        if(content.dataset.textEditing==='1'||document.activeElement===content)return;
+
+        // A normal tap is the only way a resting text box enters typing mode.
+        e.preventDefault();
+        e.stopPropagation();
+        content.contentEditable='true';
+        content.dataset.textEditing='1';
+        content.focus({preventScroll:true});
+        try{
+          let range=null;
+          if(document.caretPositionFromPoint){
+            const pos=document.caretPositionFromPoint(e.clientX,e.clientY);
+            if(pos?.offsetNode&&content.contains(pos.offsetNode)){
+              range=document.createRange();
+              range.setStart(pos.offsetNode,pos.offset);
+              range.collapse(true);
+            }
+          }else if(document.caretRangeFromPoint){
+            const candidate=document.caretRangeFromPoint(e.clientX,e.clientY);
+            if(candidate&&content.contains(candidate.startContainer))range=candidate;
+          }
+          if(range){
+            const selection=window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }catch{}
       });
       content.addEventListener('contextmenu',()=>{});
 
