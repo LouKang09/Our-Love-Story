@@ -1561,6 +1561,7 @@ function initCanvasViewportGestures() {
 
   stage.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target?.closest?.('.canvas-text-item')) return;
     canvasGesturePointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
 
     if (canvasGesturePointers.size >= 2) {
@@ -9849,10 +9850,8 @@ function canvasItemHtml(item) {
   const size=Math.max(7,Math.min(42,Number(item.size)||18));
   return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'};${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
     <button class="canvas-remove-item" type="button" title="Remove text box">×</button>
-    <button class="canvas-rotate-handle" type="button" title="Rotate text box" aria-label="Rotate text box">↻</button>
     <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here… use @tag to mention" style="text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'}">${String(item.html || '')}</div>
-    <div class="canvas-drag-handle" title="Drag text box">＋ Move</div>
-    <span class="canvas-resize-handle" aria-hidden="true"></span>
+    <span class="canvas-resize-handle" aria-hidden="true" title="Resize text box"></span>
   </div>`;
 }
 function applyCanvasPageSettings() {
@@ -10223,7 +10222,7 @@ function wireCanvasItems() {
 
     el.addEventListener('pointerdown',e=>{
       if(e.target.closest('.canvas-remove-item,.canvas-resize-handle,.canvas-rotate-handle,.canvas-text-content'))return;
-      if(item.type==='text'&&!e.target.closest('.canvas-drag-handle'))return;
+      if(item.type==='text')return;
       bringItemFront();
       const r=rect();
       const visualScale=Math.max(.01,Number(editingCanvasZoom)||1);
@@ -10320,6 +10319,11 @@ function wireCanvasItems() {
     handle?.addEventListener('pointerdown',e=>{
       e.stopPropagation();
       bringItemFront();
+      if(item.type==='text'){
+        content?.blur?.();
+        savedCanvasTextRange=null;
+        try{window.getSelection()?.removeAllRanges();}catch{}
+      }
       const r=rect(),sx=e.clientX,sy=e.clientY,ow=item.w,oh=item.h;
       if(item.type==='photo' && !item.aspect){
         const img=el.querySelector('img');
@@ -10367,75 +10371,222 @@ function wireCanvasItems() {
     if(content){
       content.addEventListener('focus',bringItemFront);
 
+      const textPointers=new Map();
+      let singleHoldTimer=null;
+      let transformHoldTimer=null;
+      let singleDrag=null;
+      let transformGesture=null;
+      let suppressTextClick=false;
+
+      const clearSingleHold=()=>{
+        clearTimeout(singleHoldTimer);
+        singleHoldTimer=null;
+      };
+      const clearTransformHold=()=>{
+        clearTimeout(transformHoldTimer);
+        transformHoldTimer=null;
+        content.classList.remove('transform-armed');
+      };
+      const pointerList=()=>[...textPointers.values()];
+      const twoPointGeometry=()=>{
+        const points=pointerList();
+        if(points.length<2)return null;
+        const a=points[0],b=points[1];
+        return {
+          a,b,
+          distance:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)),
+          angle:Math.atan2(b.y-a.y,b.x-a.x),
+          x:(a.x+b.x)/2,
+          y:(a.y+b.y)/2
+        };
+      };
+      const startTransform=()=>{
+        const g=twoPointGeometry();
+        if(!g)return;
+        clearSingleHold();
+        clearTransformHold();
+        content.blur();
+        savedCanvasTextRange=null;
+        try{window.getSelection()?.removeAllRanges();}catch{}
+        const centerX=item.x+item.w/2;
+        const centerY=item.y+item.h/2;
+        transformGesture={
+          pointerIds:[g.a.id,g.b.id],
+          startDistance:g.distance,
+          startAngle:g.angle,
+          startPointerCenterX:g.x,
+          startPointerCenterY:g.y,
+          startItemCenterX:centerX,
+          startItemCenterY:centerY,
+          startW:item.w,
+          startH:item.h,
+          startRotation:Number(item.rotation)||0
+        };
+        suppressTextClick=true;
+        content.dataset.gestureHandled='1';
+        el.classList.add('transforming');
+        try{content.setPointerCapture(g.a.id);}catch{}
+        try{content.setPointerCapture(g.b.id);}catch{}
+        try{navigator.vibrate?.(12);}catch{}
+      };
+      const endTransform=()=>{
+        if(!transformGesture)return;
+        transformGesture=null;
+        el.classList.remove('transforming');
+        content.classList.remove('transform-armed');
+        renderCanvasEditor();
+      };
+      const updateTransform=()=>{
+        if(!transformGesture)return;
+        const points=transformGesture.pointerIds.map(pointerId=>textPointers.get(pointerId)).filter(Boolean);
+        if(points.length<2)return;
+        const a=points[0],b=points[1];
+        const distance=Math.max(1,Math.hypot(b.x-a.x,b.y-a.y));
+        const angle=Math.atan2(b.y-a.y,b.x-a.x);
+        const centerX=(a.x+b.x)/2;
+        const centerY=(a.y+b.y)/2;
+        const r=rect();
+        if(!r.width||!r.height)return;
+
+        const ratio=Math.max(.35,Math.min(3,distance/transformGesture.startDistance));
+        let nextW=Math.max(18,Math.min(96,transformGesture.startW*ratio));
+        let nextH=Math.max(8,Math.min(90,transformGesture.startH*ratio));
+
+        const movedCenterX=transformGesture.startItemCenterX+((centerX-transformGesture.startPointerCenterX)/r.width)*100;
+        const movedCenterY=transformGesture.startItemCenterY+((centerY-transformGesture.startPointerCenterY)/r.height)*100;
+        let nextX=movedCenterX-nextW/2;
+        let nextY=movedCenterY-nextH/2;
+        nextX=Math.max(0,Math.min(100-nextW,nextX));
+        nextY=Math.max(0,Math.min(100-nextH,nextY));
+
+        item.w=nextW;
+        item.h=nextH;
+        item.x=nextX;
+        item.y=nextY;
+        item.rotation=((transformGesture.startRotation+((angle-transformGesture.startAngle)*180/Math.PI))%360+360)%360;
+
+        el.style.left=`${item.x}%`;
+        el.style.top=`${item.y}%`;
+        el.style.width=`${item.w}%`;
+        el.style.height=`${item.h}%`;
+        el.style.setProperty('--item-rotation',`${item.rotation}deg`);
+      };
+
+      content.addEventListener('focus',()=>{
+        content.dataset.textEditing='1';
+        clearSingleHold();
+      });
+      content.addEventListener('blur',()=>{
+        content.dataset.textEditing='0';
+      });
+
       content.addEventListener('pointerdown',e=>{
         bringItemFront();
-        const desktopMouseDrag = !isPhoneUI() && e.pointerType === 'mouse' && e.button === 0;
-        if(!desktopMouseDrag)return;
+        if(e.pointerType==='mouse'&&e.button!==0)return;
+        const point={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,type:e.pointerType};
+        textPointers.set(e.pointerId,point);
 
-        const r=rect();
-        const visualScale=Math.max(.01,Number(editingCanvasZoom)||1);
-        const sx=e.clientX,sy=e.clientY,ox=item.x,oy=item.y;
-        const pointerId=e.pointerId;
-        let longDragging=false;
-        let cancelled=false;
+        if(textPointers.size>=2){
+          e.preventDefault();
+          clearSingleHold();
+          content.classList.add('transform-armed');
+          clearTimeout(transformHoldTimer);
+          transformHoldTimer=setTimeout(startTransform,180);
+          return;
+        }
 
-        let nextX=ox,nextY=oy;
-        const timer=setTimeout(()=>{
-          if(cancelled)return;
-          longDragging=true;
-          content.dataset.longDragged='1';
+        const editing=content.dataset.textEditing==='1'||document.activeElement===content;
+        if(editing)return;
+
+        clearSingleHold();
+        singleHoldTimer=setTimeout(()=>{
+          if(textPointers.size!==1||!textPointers.has(e.pointerId)||transformGesture)return;
           content.blur();
           savedCanvasTextRange=null;
           try{window.getSelection()?.removeAllRanges();}catch{}
-          try{content.setPointerCapture(pointerId);}catch{}
+          singleDrag={
+            pointerId:e.pointerId,
+            startX:e.clientX,
+            startY:e.clientY,
+            startItemX:item.x,
+            startItemY:item.y
+          };
+          suppressTextClick=true;
+          content.dataset.longDragged='1';
           el.classList.add('dragging','long-dragging');
-        },160);
-
-        const move=ev=>{
-          const travel=Math.hypot(ev.clientX-sx,ev.clientY-sy);
-          if(!longDragging){
-            if(travel>10){
-              cancelled=true;
-              clearTimeout(timer);
-            }
-            return;
-          }
-          const dx=(ev.clientX-sx)/r.width*100;
-          const dy=(ev.clientY-sy)/r.height*100;
-          nextX=Math.max(0,Math.min(100-item.w,ox+dx));
-          nextY=Math.max(0,Math.min(100-item.h,oy+dy));
-          el.style.setProperty('--drag-x',`${(nextX-ox)/100*(r.width/visualScale)}px`);
-          el.style.setProperty('--drag-y',`${(nextY-oy)/100*(r.height/visualScale)}px`);
-          ev.preventDefault();
-        };
-
-        const finish=()=>{
-          cancelled=true;
-          clearTimeout(timer);
-          content.removeEventListener('pointermove',move);
-          content.removeEventListener('pointerup',finish);
-          content.removeEventListener('pointercancel',finish);
-          if(longDragging){
-            item.x=nextX;item.y=nextY;
-            el.classList.remove('dragging','long-dragging');
-            el.style.setProperty('--drag-x','0px');
-            el.style.setProperty('--drag-y','0px');
-            el.style.left=`${item.x}%`;
-            el.style.top=`${item.y}%`;
-            setTimeout(()=>{
-              const current=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(id)}"] .canvas-text-content`);
-              if(current)delete current.dataset.longDragged;
-            },260);
-          }
-        };
-
-        content.addEventListener('pointermove',move);
-        content.addEventListener('pointerup',finish);
-        content.addEventListener('pointercancel',finish);
+          try{content.setPointerCapture(e.pointerId);}catch{}
+          try{navigator.vibrate?.(10);}catch{}
+        },320);
       });
 
+      content.addEventListener('pointermove',e=>{
+        const tracked=textPointers.get(e.pointerId);
+        if(tracked){
+          tracked.x=e.clientX;
+          tracked.y=e.clientY;
+          textPointers.set(e.pointerId,tracked);
+        }
+
+        if(transformGesture){
+          e.preventDefault();
+          updateTransform();
+          return;
+        }
+
+        if(textPointers.size>=2&&transformHoldTimer){
+          const points=pointerList();
+          const movedTooFar=points.some(point=>Math.hypot(point.x-point.startX,point.y-point.startY)>14);
+          if(movedTooFar)clearTransformHold();
+          return;
+        }
+
+        if(singleDrag?.pointerId===e.pointerId){
+          e.preventDefault();
+          const r=rect();
+          if(!r.width||!r.height)return;
+          const dx=(e.clientX-singleDrag.startX)/r.width*100;
+          const dy=(e.clientY-singleDrag.startY)/r.height*100;
+          item.x=Math.max(0,Math.min(100-item.w,singleDrag.startItemX+dx));
+          item.y=Math.max(0,Math.min(100-item.h,singleDrag.startItemY+dy));
+          el.style.left=`${item.x}%`;
+          el.style.top=`${item.y}%`;
+          return;
+        }
+
+        if(tracked&&Math.hypot(e.clientX-tracked.startX,e.clientY-tracked.startY)>10){
+          clearSingleHold();
+        }
+      });
+
+      const finishTextGesture=e=>{
+        const wasTransform=Boolean(transformGesture?.pointerIds?.includes(e.pointerId));
+        textPointers.delete(e.pointerId);
+        clearSingleHold();
+        if(transformHoldTimer&&textPointers.size<2)clearTransformHold();
+
+        if(singleDrag?.pointerId===e.pointerId){
+          e.preventDefault();
+          singleDrag=null;
+          suppressTextClick=true;
+          el.classList.remove('dragging','long-dragging');
+          renderCanvasEditor();
+          return;
+        }
+
+        if(wasTransform){
+          e.preventDefault();
+          suppressTextClick=true;
+          endTransform();
+        }
+      };
+      content.addEventListener('pointerup',finishTextGesture);
+      content.addEventListener('pointercancel',finishTextGesture);
+
       content.addEventListener('click',e=>{
-        if(content.dataset.longDragged==='1'){
+        if(suppressTextClick||content.dataset.longDragged==='1'||content.dataset.gestureHandled==='1'){
+          suppressTextClick=false;
+          delete content.dataset.longDragged;
+          delete content.dataset.gestureHandled;
           e.preventDefault();
           e.stopPropagation();
           content.blur();

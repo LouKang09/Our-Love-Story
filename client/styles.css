@@ -16726,3 +16726,52 @@ textarea,
   -webkit-touch-callout:default!important;
   touch-action:manipulation!important;
 }
+
+
+/* ===== 2026-09-28 SCRAPBOOK TEXT STORY-LIKE GESTURES ===== */
+.canvas-text-item .canvas-rotate-handle,
+.canvas-text-item .canvas-drag-handle{
+  display:none!important;
+}
+
+/* Bottom-right manual resize remains available. */
+.canvas-text-item .canvas-resize-handle{
+  display:block!important;
+  right:-9px!important;
+  bottom:-9px!important;
+  width:24px!important;
+  height:24px!important;
+  z-index:12!important;
+}
+
+/* A selected text box behaves like Story text:
+   long press to move; two-finger hold then move/pinch/rotate. */
+.canvas-text-item.selected{
+  touch-action:none;
+}
+.canvas-text-item .canvas-text-content{
+  padding-bottom:8px!important;
+}
+.canvas-text-item .canvas-text-content.transform-armed,
+.canvas-text-item.transforming .canvas-text-content,
+.canvas-text-item.long-dragging .canvas-text-content{
+  touch-action:none!important;
+  -webkit-user-select:none!important;
+  user-select:none!important;
+  -webkit-touch-callout:none!important;
+}
+.canvas-text-item.transforming,
+.canvas-text-item.long-dragging{
+  border-color:rgba(146,86,97,.95)!important;
+  box-shadow:0 0 0 4px rgba(146,86,97,.16)!important;
+}
+.canvas-text-item.transforming .canvas-text-content,
+.canvas-text-item.long-dragging .canvas-text-content{
+  cursor:grabbing!important;
+}
+.canvas-text-item:not(.transforming):not(.long-dragging) .canvas-text-content:focus{
+  -webkit-user-select:text!important;
+  user-select:text!important;
+  -webkit-touch-callout:default!important;
+  touch-action:manipulation!important;
+}
