@@ -55,6 +55,11 @@ let storyTextGesturePointers = new Map();
 let storyTextTransformGesture = null;
 let suppressStoryTextClick = false;
 let storyDuplicateMentionToastAt = 0;
+let storyCollageItems = [];
+let storyCollageSelectedId = '';
+let storyCollagePointers = new Map();
+let storyCollageGesture = null;
+let storyCollageDragging = null;
 let pendingStoryAudience = 'followers';
 let myDayAudienceSettings = { closeFriends:[], partner:null };
 let storyCloseFriendsDraft = new Set();
@@ -3787,38 +3792,174 @@ function storyFileImage(file){
     image.src=url;
   });
 }
-function drawStoryCover(ctx,image,x,y,w,h){
-  const scale=Math.max(w/image.naturalWidth,h/image.naturalHeight);
-  const dw=image.naturalWidth*scale,dh=image.naturalHeight*scale;
-  ctx.drawImage(image,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
+function drawStoryCover(ctx,image,x,y,w,h,{scale=1,offsetX=0,offsetY=0}={}){
+  const cover=Math.max(w/image.naturalWidth,h/image.naturalHeight);
+  const finalScale=cover*Math.max(1,Number(scale)||1);
+  const dw=image.naturalWidth*finalScale,dh=image.naturalHeight*finalScale;
+  const dx=x+(w-dw)/2+(Number(offsetX)||0)*w;
+  const dy=y+(h-dh)/2+(Number(offsetY)||0)*h;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x,y,w,h);
+  ctx.clip();
+  ctx.drawImage(image,dx,dy,dw,dh);
+  ctx.restore();
 }
 async function canvasStoryFile(canvas,name='story.jpg'){
   const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('Could not prepare the story image.')),'image/jpeg',.9));
   return new File([blob],name,{type:'image/jpeg',lastModified:Date.now()});
 }
-async function buildStoryCollage(files){
-  const selected=files.filter(Boolean).slice(0,6);
+function storyCollageCells(count){
+  if(count<=1)return [[0,0,1080,1920]];
+  if(count===2)return [[0,0,540,1920],[540,0,540,1920]];
+  if(count===3)return [[0,0,1080,960],[0,960,540,960],[540,960,540,960]];
+  if(count===4)return [[0,0,540,960],[540,0,540,960],[0,960,540,960],[540,960,540,960]];
+  if(count===5)return [[0,0,540,640],[540,0,540,640],[0,640,540,640],[540,640,540,640],[0,1280,1080,640]];
+  return [[0,0,540,640],[540,0,540,640],[0,640,540,640],[540,640,540,640],[0,1280,540,640],[540,1280,540,640]];
+}
+function setStoryCreateProgress(label='',current=0,total=0,visible=true){
+  const host=$('#storyCreateProgress');
+  const labelEl=$('#storyCreateProgressLabel');
+  const countEl=$('#storyCreateProgressCount');
+  if(labelEl)labelEl.textContent=label||'Preparing photos…';
+  if(countEl)countEl.textContent=total?Math.min(current,total)+' of '+total:'Please wait…';
+  host?.classList.toggle('hidden',!visible);
+}
+function setStoryCollageProgress(label='',fraction=0,visible=true){
+  const host=$('#storyCollageProgress');
+  const labelEl=$('#storyCollageProgressLabel');
+  const fill=$('#storyCollageProgressFill');
+  if(labelEl)labelEl.textContent=label||'Preparing collage…';
+  if(fill)fill.style.width=(Math.max(0,Math.min(1,Number(fraction)||0))*100)+'%';
+  host?.classList.toggle('hidden',!visible);
+}
+function cleanupStoryCollageItems(){
+  storyCollageItems.forEach(item=>{try{URL.revokeObjectURL(item.url);}catch{}});
+  storyCollageItems=[];
+  storyCollageSelectedId='';
+  storyCollagePointers.clear();
+  storyCollageGesture=null;
+  storyCollageDragging=null;
+  const grid=$('#storyCollageGrid');
+  if(grid)grid.innerHTML='';
+}
+function closeStoryCollageEditor({keepBodyLock=false}={}){
+  cleanupStoryCollageItems();
+  $('#storyCollageEditor')?.classList.add('hidden');
+  setStoryCollageProgress('',0,false);
+  if(!keepBodyLock && $('#storyCreateHub')?.classList.contains('hidden') && $('#myDayComposer')?.classList.contains('hidden')){
+    document.body.classList.remove('my-day-open');
+  }
+}
+function selectedStoryCollageItem(){
+  return storyCollageItems.find(item=>item.id===storyCollageSelectedId)||null;
+}
+function storyCollageItemStyle(item,cell){
+  const [x,y,w,h]=cell;
+  return 'left:'+(x/10.8)+'%;top:'+(y/19.2)+'%;width:'+(w/10.8)+'%;height:'+(h/19.2)+'%;';
+}
+function updateStoryCollagePhotoTransform(item,element){
+  if(!item||!element)return;
+  const tx=(Number(item.offsetX)||0)*100;
+  const ty=(Number(item.offsetY)||0)*100;
+  const scale=Math.max(1,Math.min(3,Number(item.scale)||1));
+  element.style.transform='translate(calc(-50% + '+tx+'%),calc(-50% + '+ty+'%)) scale('+scale+')';
+}
+function syncStoryCollageControls(){
+  const item=selectedStoryCollageItem();
+  const zoom=$('#storyCollageZoom');
+  const label=$('#storyCollageSelectedLabel');
+  if(zoom){
+    zoom.disabled=!item;
+    zoom.value=String(Math.round((item?.scale||1)*100));
+  }
+  $('#storyCollageZoomOut')?.toggleAttribute('disabled',!item);
+  $('#storyCollageZoomIn')?.toggleAttribute('disabled',!item);
+  $('#storyCollageResetBtn')?.toggleAttribute('disabled',!item);
+  if(label){
+    const index=item?storyCollageItems.findIndex(entry=>entry.id===item.id):-1;
+    label.textContent=item?'Photo '+(index+1)+' selected · '+Math.round(item.scale*100)+'%':'Tap a photo to adjust it';
+  }
+  $('#storyCollageGrid')?.querySelectorAll('[data-collage-id]').forEach(cell=>{
+    cell.classList.toggle('selected',cell.dataset.collageId===storyCollageSelectedId);
+  });
+}
+function renderStoryCollageEditor(){
+  const grid=$('#storyCollageGrid');
+  if(!grid)return;
+  const cells=storyCollageCells(storyCollageItems.length);
+  grid.innerHTML=storyCollageItems.map((item,index)=>{
+    const cell=cells[index]||cells[cells.length-1];
+    return '<button type="button" class="story-collage-cell'+(item.id===storyCollageSelectedId?' selected':'')+'" data-collage-id="'+escapeHtml(item.id)+'" style="'+storyCollageItemStyle(item,cell)+'" aria-label="Adjust collage photo '+(index+1)+'">'+
+      '<img src="'+escapeHtml(item.url)+'" alt="Collage photo '+(index+1)+'" draggable="false" />'+
+      '<span class="story-collage-number">'+(index+1)+'</span>'+
+      '</button>';
+  }).join('');
+  grid.querySelectorAll('[data-collage-id]').forEach(cell=>{
+    const item=storyCollageItems.find(entry=>entry.id===cell.dataset.collageId);
+    updateStoryCollagePhotoTransform(item,cell.querySelector('img'));
+  });
+  const count=$('#storyCollageCountLabel');
+  if(count)count.textContent=storyCollageItems.length+' photo'+(storyCollageItems.length===1?'':'s')+' · maximum 6';
+  syncStoryCollageControls();
+}
+async function openStoryCollageEditor(files){
+  const selected=[...(files||[])].filter(Boolean).slice(0,6);
   if(!selected.length)throw new Error('Choose at least one photo.');
-  if(selected.length===1)return selected[0];
+  cleanupStoryCollageItems();
+  $('#storyCollageEditor')?.classList.remove('hidden');
+  document.body.classList.add('my-day-open');
+  setStoryCollageProgress('Loading photo 1 of '+selected.length+'…',0,true);
+  try{
+    for(let index=0;index<selected.length;index++){
+      setStoryCollageProgress('Loading photo '+(index+1)+' of '+selected.length+'…',index/selected.length,true);
+      const loaded=await storyFileImage(selected[index]);
+      storyCollageItems.push({
+        id:'collage-'+Date.now()+'-'+index+'-'+Math.random().toString(36).slice(2,7),
+        file:selected[index],
+        image:loaded.image,
+        url:loaded.url,
+        scale:1,
+        offsetX:0,
+        offsetY:0
+      });
+    }
+    storyCollageSelectedId=storyCollageItems[0]?.id||'';
+    renderStoryCollageEditor();
+    setStoryCollageProgress('',1,false);
+  }catch(err){
+    closeStoryCollageEditor();
+    throw err;
+  }
+}
+async function buildStoryCollageFromEditor(){
+  if(!storyCollageItems.length)throw new Error('Choose at least one photo.');
+  setStoryCollageProgress('Creating collage…',.08,true);
   const canvas=document.createElement('canvas');
   canvas.width=1080;canvas.height=1920;
   const ctx=canvas.getContext('2d');
   ctx.fillStyle='#111';ctx.fillRect(0,0,canvas.width,canvas.height);
-  const loaded=await Promise.all(selected.map(storyFileImage));
-  let cells=[];
-  if(selected.length===2)cells=[[0,0,540,1920],[540,0,540,1920]];
-  else if(selected.length===3)cells=[[0,0,1080,960],[0,960,540,960],[540,960,540,960]];
-  else{
-    const rows=Math.ceil(selected.length/2);
-    const h=1920/rows;
-    cells=selected.map((_,index)=>[(index%2)*540,Math.floor(index/2)*h,540,h]);
-  }
-  loaded.forEach((entry,index)=>{
+  const cells=storyCollageCells(storyCollageItems.length);
+  storyCollageItems.forEach((item,index)=>{
     const [x,y,w,h]=cells[index];
-    drawStoryCover(ctx,entry.image,x+3,y+3,w-6,h-6);
-    URL.revokeObjectURL(entry.url);
+    setStoryCollageProgress('Creating collage · '+(index+1)+' of '+storyCollageItems.length,(index+.4)/storyCollageItems.length,true);
+    drawStoryCover(ctx,item.image,x+3,y+3,w-6,h-6,{scale:item.scale,offsetX:item.offsetX,offsetY:item.offsetY});
   });
-  return canvasStoryFile(canvas,'story-collage-'+Date.now()+'.jpg');
+  setStoryCollageProgress('Finishing collage…',.94,true);
+  const file=await canvasStoryFile(canvas,'story-collage-'+Date.now()+'.jpg');
+  setStoryCollageProgress('Collage ready',1,true);
+  return file;
+}
+function storyCollageClampOffset(value){
+  return Math.max(-.45,Math.min(.45,Number(value)||0));
+}
+function setSelectedStoryCollageScale(value){
+  const item=selectedStoryCollageItem();
+  if(!item)return;
+  item.scale=Math.max(1,Math.min(3,Number(value)||1));
+  const cell=$('#storyCollageGrid')?.querySelector('[data-collage-id="'+CSS.escape(item.id)+'"]');
+  updateStoryCollagePhotoTransform(item,cell?.querySelector('img'));
+  syncStoryCollageControls();
 }
 async function createStoryTextBackground(){
   const canvas=document.createElement('canvas');
@@ -3840,16 +3981,24 @@ async function chooseStoryGallery({multiple=false,collage=false}={}){
         const result=await camera.pickImages({quality:90,limit:multiple?6:1});
         const photos=Array.isArray(result?.photos)?result.photos:[];
         if(!photos.length)return;
+        const limited=photos.slice(0,multiple?6:1);
+        if(photos.length>6)showToast('A Story collage can contain a maximum of 6 photos.');
         const files=[];
-        for(const photo of photos.slice(0,multiple?6:1))files.push(await nativeCameraPhotoToFile(photo));
-        const file=(collage||files.length>1)?await buildStoryCollage(files):files[0];
+        if(collage||limited.length>1)setStoryCreateProgress('Loading selected photos…',0,limited.length,true);
+        for(let index=0;index<limited.length;index++){
+          if(collage||limited.length>1)setStoryCreateProgress('Loading photo '+(index+1)+' of '+limited.length+'…',index+1,limited.length,true);
+          files.push(await nativeCameraPhotoToFile(limited[index]));
+        }
+        setStoryCreateProgress('',0,0,false);
         closeStoryCreateHub();
-        prepareMyDayFile(file);
+        if(collage||files.length>1)await openStoryCollageEditor(files);
+        else prepareMyDayFile(files[0]);
         return;
       }
     }
     (multiple?$('#storyMultiInput'):$('#storyGalleryInput'))?.click();
   }catch(err){
+    setStoryCreateProgress('',0,0,false);
     const message=String(err?.message||'');
     if(!/cancel/i.test(message))showToast(message||'Could not open Gallery.');
   }
@@ -5008,15 +5157,125 @@ $('#storyGalleryInput')?.addEventListener('change',e=>{
   e.target.value='';
 });
 $('#storyMultiInput')?.addEventListener('change',async e=>{
-  const files=[...(e.target.files||[])].slice(0,6);
+  const chosen=[...(e.target.files||[])];
+  const files=chosen.slice(0,6);
   e.target.value='';
   if(!files.length)return;
+  if(chosen.length>6)showToast('A Story collage can contain a maximum of 6 photos. Only the first 6 were selected.');
   try{
-    const file=await buildStoryCollage(files);
     closeStoryCreateHub();
-    prepareMyDayFile(file);
-  }catch(err){showToast(err.message||'Could not build the collage.');}
+    await openStoryCollageEditor(files);
+  }catch(err){showToast(err.message||'Could not open the collage editor.');}
 });
+$('#storyCollageCancelBtn')?.addEventListener('click',()=>{
+  closeStoryCollageEditor({keepBodyLock:true});
+  openStoryCreateHub();
+});
+$('#storyCollageDoneBtn')?.addEventListener('click',async()=>{
+  const button=$('#storyCollageDoneBtn');
+  if(button)button.disabled=true;
+  try{
+    const file=await buildStoryCollageFromEditor();
+    closeStoryCollageEditor({keepBodyLock:true});
+    prepareMyDayFile(file);
+  }catch(err){
+    showToast(err?.message||'Could not create the collage.');
+    setStoryCollageProgress('',0,false);
+  }finally{
+    if(button)button.disabled=false;
+  }
+});
+$('#storyCollageZoom')?.addEventListener('input',event=>setSelectedStoryCollageScale(Number(event.target.value)/100));
+$('#storyCollageZoomOut')?.addEventListener('click',()=>{
+  const item=selectedStoryCollageItem();if(item)setSelectedStoryCollageScale(item.scale-.1);
+});
+$('#storyCollageZoomIn')?.addEventListener('click',()=>{
+  const item=selectedStoryCollageItem();if(item)setSelectedStoryCollageScale(item.scale+.1);
+});
+$('#storyCollageResetBtn')?.addEventListener('click',()=>{
+  const item=selectedStoryCollageItem();if(!item)return;
+  item.scale=1;item.offsetX=0;item.offsetY=0;
+  renderStoryCollageEditor();
+});
+const storyCollageGrid=$('#storyCollageGrid');
+function collagePointerInfo(event,cell){
+  const rect=cell.getBoundingClientRect();
+  return {id:event.pointerId,x:event.clientX,y:event.clientY,cellId:cell.dataset.collageId,rect};
+}
+function beginCollageGestureIfReady(cellId){
+  const points=[...storyCollagePointers.values()].filter(point=>point.cellId===cellId);
+  if(points.length<2)return;
+  const item=storyCollageItems.find(entry=>entry.id===cellId);
+  if(!item)return;
+  const a=points[0],b=points[1];
+  storyCollageGesture={
+    cellId,
+    ids:[a.id,b.id],
+    startDistance:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)),
+    startScale:item.scale
+  };
+  storyCollageDragging=null;
+}
+storyCollageGrid?.addEventListener('pointerdown',event=>{
+  const cell=event.target?.closest?.('[data-collage-id]');
+  if(!cell)return;
+  event.preventDefault();
+  const id=cell.dataset.collageId;
+  storyCollageSelectedId=id;
+  const point=collagePointerInfo(event,cell);
+  storyCollagePointers.set(event.pointerId,point);
+  const item=storyCollageItems.find(entry=>entry.id===id);
+  if(!item)return;
+  storyCollageDragging={
+    pointerId:event.pointerId,
+    cellId:id,
+    startX:event.clientX,
+    startY:event.clientY,
+    startOffsetX:item.offsetX,
+    startOffsetY:item.offsetY,
+    rect:cell.getBoundingClientRect()
+  };
+  try{cell.setPointerCapture(event.pointerId);}catch{}
+  beginCollageGestureIfReady(id);
+  syncStoryCollageControls();
+});
+storyCollageGrid?.addEventListener('pointermove',event=>{
+  const tracked=storyCollagePointers.get(event.pointerId);
+  if(tracked){tracked.x=event.clientX;tracked.y=event.clientY;storyCollagePointers.set(event.pointerId,tracked);}
+  if(storyCollageGesture){
+    const points=storyCollageGesture.ids.map(id=>storyCollagePointers.get(id)).filter(Boolean);
+    if(points.length===2){
+      event.preventDefault();
+      const distance=Math.max(1,Math.hypot(points[1].x-points[0].x,points[1].y-points[0].y));
+      const item=storyCollageItems.find(entry=>entry.id===storyCollageGesture.cellId);
+      if(item){
+        item.scale=Math.max(1,Math.min(3,storyCollageGesture.startScale*(distance/storyCollageGesture.startDistance)));
+        const cell=storyCollageGrid.querySelector('[data-collage-id="'+CSS.escape(item.id)+'"]');
+        updateStoryCollagePhotoTransform(item,cell?.querySelector('img'));
+        syncStoryCollageControls();
+      }
+    }
+    return;
+  }
+  const drag=storyCollageDragging;
+  if(!drag||drag.pointerId!==event.pointerId)return;
+  const item=storyCollageItems.find(entry=>entry.id===drag.cellId);
+  if(!item||!drag.rect.width||!drag.rect.height)return;
+  event.preventDefault();
+  item.offsetX=storyCollageClampOffset(drag.startOffsetX+(event.clientX-drag.startX)/drag.rect.width);
+  item.offsetY=storyCollageClampOffset(drag.startOffsetY+(event.clientY-drag.startY)/drag.rect.height);
+  const cell=storyCollageGrid.querySelector('[data-collage-id="'+CSS.escape(item.id)+'"]');
+  updateStoryCollagePhotoTransform(item,cell?.querySelector('img'));
+});
+function finishCollagePointer(event){
+  storyCollagePointers.delete(event.pointerId);
+  if(storyCollageDragging?.pointerId===event.pointerId)storyCollageDragging=null;
+  if(storyCollageGesture?.ids?.includes(event.pointerId))storyCollageGesture=null;
+}
+storyCollageGrid?.addEventListener('pointerup',finishCollagePointer);
+storyCollageGrid?.addEventListener('pointercancel',finishCollagePointer);
+storyCollageGrid?.addEventListener('contextmenu',event=>event.preventDefault());
+
 $('#storyMusicInput')?.addEventListener('change',e=>{
   const file=e.target.files?.[0];
   if(file)setStoryMusic(file);

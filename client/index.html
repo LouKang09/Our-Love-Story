@@ -842,7 +842,41 @@
           <span>🖼️</span><strong>Choose photo from Gallery</strong><small>Select any photo already saved on your phone.</small>
         </button>
       </section>
+      <div id="storyCreateProgress" class="story-create-progress hidden" role="status" aria-live="polite">
+        <div class="story-create-progress-card">
+          <span class="story-create-progress-spinner" aria-hidden="true"></span>
+          <div><strong id="storyCreateProgressLabel">Preparing photos…</strong><small id="storyCreateProgressCount">0 of 6</small></div>
+        </div>
+      </div>
       <button id="storyCameraFab" class="story-camera-fab" type="button" aria-label="Open camera">📷</button>
+    </div>
+
+    <div id="storyCollageEditor" class="story-collage-editor hidden" role="dialog" aria-modal="true" aria-label="Edit collage">
+      <header class="story-collage-head">
+        <button id="storyCollageCancelBtn" type="button" aria-label="Cancel collage">×</button>
+        <div><h2>Collage</h2><small id="storyCollageCountLabel">Up to 6 photos</small></div>
+        <button id="storyCollageDoneBtn" class="primary" type="button">Done</button>
+      </header>
+      <div class="story-collage-body">
+        <div id="storyCollageStage" class="story-collage-stage">
+          <div id="storyCollageGrid" class="story-collage-grid" aria-label="Collage photos"></div>
+          <div id="storyCollageProgress" class="story-collage-progress hidden" role="status" aria-live="polite">
+            <span class="story-collage-spinner" aria-hidden="true"></span>
+            <strong id="storyCollageProgressLabel">Loading photo 1 of 6…</strong>
+            <div class="story-collage-progress-track"><i id="storyCollageProgressFill"></i></div>
+          </div>
+        </div>
+        <div class="story-collage-instructions">
+          <strong id="storyCollageSelectedLabel">Tap a photo to adjust it</strong>
+          <small>Drag a photo to reposition it. Pinch to resize. You can use up to 6 photos.</small>
+        </div>
+        <div class="story-collage-zoom-row">
+          <button id="storyCollageZoomOut" type="button" aria-label="Zoom out selected photo">−</button>
+          <input id="storyCollageZoom" type="range" min="100" max="300" value="100" step="1" aria-label="Resize selected collage photo" />
+          <button id="storyCollageZoomIn" type="button" aria-label="Zoom in selected photo">＋</button>
+          <button id="storyCollageResetBtn" type="button">Reset</button>
+        </div>
+      </div>
     </div>
 
     <div id="myDayComposer" class="my-day-overlay hidden" role="dialog" aria-modal="true" aria-label="Edit story">
@@ -983,6 +1017,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
-  <script src="/app.js?v=20260926-story-gestures-mentions1" defer></script>
+  <script src="/app.js?v=20260928-story-collage-editor1" defer></script>
 </body>
 </html>
