@@ -148,6 +148,8 @@ const canvasGesturePointers = new Map();
 let canvasPinchState = null;
 let selectedCanvasItemId = null;
 let savedCanvasTextRange = null;
+let canvasMentionSuggestSeq = 0;
+let canvasMentionDuplicateToastAt = 0;
 let me = null;
 let pendingProfileAvatar = '';
 let profileViewerScale = 1;
@@ -1657,6 +1659,36 @@ function canvasItemStyle(item) {
   const rotation=((Number(item.rotation)||0)%360+360)%360;
   return `left:${x}%;top:${y}%;width:${w}%;height:${h}%;z-index:${z};--item-rotation:${rotation}deg;--drag-x:0px;--drag-y:0px;transform:translate3d(var(--drag-x),var(--drag-y),0) rotate(var(--item-rotation))`;
 }
+function linkifyCanvasMentionHtml(html='') {
+  const host=document.createElement('div');
+  host.innerHTML=String(html||'');
+  const walker=document.createTreeWalker(host,NodeFilter.SHOW_TEXT);
+  const nodes=[];
+  while(walker.nextNode())nodes.push(walker.currentNode);
+  nodes.forEach(node=>{
+    if(node.parentElement?.closest?.('button,a'))return;
+    const text=String(node.nodeValue||'');
+    const regex=/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi;
+    let match,last=0,changed=false;
+    const frag=document.createDocumentFragment();
+    while((match=regex.exec(text))){
+      changed=true;
+      const tokenStart=match.index+(match[1]?.length||0);
+      if(tokenStart>last)frag.appendChild(document.createTextNode(text.slice(last,tokenStart)));
+      const button=document.createElement('button');
+      button.type='button';
+      button.className='inline-mention';
+      button.dataset.profileTag=String(match[2]||'').toLowerCase();
+      button.textContent='@'+match[2];
+      frag.appendChild(button);
+      last=tokenStart+1+String(match[2]||'').length;
+    }
+    if(!changed)return;
+    if(last<text.length)frag.appendChild(document.createTextNode(text.slice(last)));
+    node.replaceWith(frag);
+  });
+  return host.innerHTML;
+}
 function savedCanvasHtml(entry) {
   const items = Array.isArray(entry?.canvasItems) ? [...entry.canvasItems].sort((a,b)=>(a.z||0)-(b.z||0)) : [];
   if (!items.length) return '';
@@ -1680,7 +1712,7 @@ function savedCanvasHtml(entry) {
     const padYCqw = (8 / meta.width * 100).toFixed(4);
     const padXCqw = (10 / meta.width * 100).toFixed(4);
     const align=['left','center','right','justify'].includes(item.align)?item.align:'left';
-    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${sizeCqw}cqw;--saved-text-top:${topCqw}cqw;--saved-text-pad-y:${padYCqw}cqw;--saved-text-pad-x:${padXCqw}cqw;text-align:${align};${weight}${style}"><div class="saved-text-content" style="text-align:${align}">${String(item.html || '')}</div></div>`;
+    return `<div class="saved-canvas-item saved-text-item ${fontClass}" style="${canvasItemStyle(item)};--canvas-text-size:${size}px;--canvas-text-cqw:${sizeCqw}cqw;--saved-text-top:${topCqw}cqw;--saved-text-pad-y:${padYCqw}cqw;--saved-text-pad-x:${padXCqw}cqw;text-align:${align};${weight}${style}"><div class="saved-text-content" style="text-align:${align}">${linkifyCanvasMentionHtml(item.html || '')}</div></div>`;
   }).join('')}</div>`;
 }
 function entryContentHtml(entry) {
@@ -2423,6 +2455,17 @@ function renderNotificationHub() {
         <div class="notification-actor">
           ${avatarHtml(actor,'notification-avatar')}
           <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>mentioned you in a message</small></span>
+        </div>
+        <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
+        ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
+      </article>`;
+    }
+
+    if (item.type === 'entry_mention') {
+      return `<article class="notification-item mention-notification notification-route-memory ${item.unread ? 'unread' : ''}" data-scrapbook-id="${escapeHtml(item.scrapbookId || '')}" data-entry-id="${escapeHtml(item.entryId || '')}">
+        <div class="notification-actor">
+          ${avatarHtml(actor,'notification-avatar')}
+          <span><strong>${escapeHtml(actor.displayName || actor.tag || 'Someone')}</strong><small>mentioned you in a scrapbook memory</small></span>
         </div>
         <time>${escapeHtml(notificationWhen(item.createdAt))}</time>
         ${item.excerpt ? `<p class="notification-mention-excerpt">${mentionTextHtml(item.excerpt)}</p>` : ''}
@@ -9699,7 +9742,43 @@ function closeEditor() {
   savedCanvasTextRange = null;
   if (editorDialog.open) editorDialog.close();
 }
+function canvasMentionTags(text=''){
+  const matches=String(text||'').matchAll(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi);
+  return [...matches].map(match=>String(match[2]||'').toLowerCase()).filter(Boolean);
+}
+function dedupeCanvasMentionBoxes({notify=false}={}){
+  const seen=new Set();
+  const removed=[];
+  editingCanvasItems.forEach(item=>{
+    if(item?.type!=='text')return;
+    const host=document.createElement('div');
+    host.innerHTML=String(item.html||'');
+    const walker=document.createTreeWalker(host,NodeFilter.SHOW_TEXT);
+    const nodes=[];
+    while(walker.nextNode())nodes.push(walker.currentNode);
+    nodes.forEach(node=>{
+      const original=String(node.nodeValue||'');
+      node.nodeValue=original.replace(/(^|\s)@([a-z0-9][a-z0-9_.-]{2,23})\b/gi,(match,lead,rawTag)=>{
+        const tag=String(rawTag||'').toLowerCase();
+        if(!tag)return match;
+        if(seen.has(tag)){removed.push(tag);return lead;}
+        seen.add(tag);
+        return lead+'@'+rawTag;
+      }).replace(/[ \t]{2,}/g,' ');
+    });
+    item.html=host.innerHTML.slice(0,50000);
+    const live=$('#scrapCanvas')?.querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
+    if(live && live.innerHTML!==item.html)live.innerHTML=item.html;
+  });
+  if(notify&&removed.length&&Date.now()-canvasMentionDuplicateToastAt>1200){
+    canvasMentionDuplicateToastAt=Date.now();
+    const tag=removed[0];
+    showToast('@'+tag+' can only be mentioned once in this scrapbook memory.');
+  }
+  return removed;
+}
 function canvasPlainText() {
+  dedupeCanvasMentionBoxes();
   return editingCanvasItems
     .filter(item=>item.type==='text')
     .map(item => {
@@ -9718,6 +9797,7 @@ function canvasTextItemPlainValue(item){
   return String(div.innerText || div.textContent || '').replace(/\u00a0/g,' ').trim();
 }
 function validateCanvasTextBoxes(){
+  dedupeCanvasMentionBoxes({notify:true});
   const empty=editingCanvasItems.find(item=>item.type==='text' && !canvasTextItemPlainValue(item));
   if(!empty)return true;
   selectedCanvasItemId=empty.id;
@@ -9765,7 +9845,7 @@ function canvasItemHtml(item) {
   return `<div class="canvas-item canvas-text-item${selected} ${canvasFontClass(item.font)}" data-canvas-id="${escapeHtml(item.id)}" style="${canvasItemStyle(item)};--edit-text-size:${size}px;text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'};${item.bold?'font-weight:700;':''}${item.italic?'font-style:italic;':''}">
     <button class="canvas-remove-item" type="button" title="Remove text box">×</button>
     <button class="canvas-rotate-handle" type="button" title="Rotate text box" aria-label="Rotate text box">↻</button>
-    <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here…" style="text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'}">${String(item.html || '')}</div>
+    <div class="canvas-text-content" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Type your memory here… use @tag to mention" style="text-align:${['left','center','right','justify'].includes(item.align)?item.align:'left'}">${String(item.html || '')}</div>
     <div class="canvas-drag-handle" title="Drag text box">＋ Move</div>
     <span class="canvas-resize-handle" aria-hidden="true"></span>
   </div>`;
@@ -9975,6 +10055,135 @@ function syncCanvasTextHeight(content,itemEl,item) {
     item.h=Math.min(96-item.y,Math.max(item.h,neededPct));
     itemEl.style.height=`${item.h}%`;
   }
+}
+function canvasMentionContext(content){
+  if(!content)return null;
+  const selection=window.getSelection();
+  if(!selection||!selection.rangeCount||!selection.isCollapsed)return null;
+  const node=selection.focusNode;
+  const offset=selection.focusOffset;
+  if(!node||node.nodeType!==Node.TEXT_NODE||!content.contains(node))return null;
+  const before=String(node.nodeValue||'').slice(0,offset);
+  const match=before.match(/(^|\s)@([a-z0-9_.-]{0,23})$/i);
+  if(!match)return null;
+  const start=before.lastIndexOf('@');
+  return {node,start,end:offset,query:String(match[2]||'').toLowerCase()};
+}
+function closeCanvasMentionSuggestions(content){
+  const popup=content?._canvasMentionPopup;
+  if(popup)popup.remove();
+  if(content)content._canvasMentionPopup=null;
+}
+function canvasMentionUsedTags(currentItemId='',content=null,context=null){
+  const used=new Set();
+  editingCanvasItems.forEach(item=>{
+    if(item?.type!=='text'||item.id===currentItemId)return;
+    canvasMentionTags(canvasTextItemPlainValue(item)).forEach(tag=>used.add(tag));
+  });
+  if(content){
+    let current=String(content.innerText||content.textContent||'');
+    if(context?.node&&content.contains(context.node)){
+      const nodeText=String(context.node.nodeValue||'');
+      const before=nodeText.slice(0,context.start);
+      const after=nodeText.slice(context.end);
+      const clone=content.cloneNode(true);
+      const liveNodes=[];
+      const walker=document.createTreeWalker(content,NodeFilter.SHOW_TEXT);
+      while(walker.nextNode())liveNodes.push(walker.currentNode);
+      const cloneNodes=[];
+      const cloneWalker=document.createTreeWalker(clone,NodeFilter.SHOW_TEXT);
+      while(cloneWalker.nextNode())cloneNodes.push(cloneWalker.currentNode);
+      const index=liveNodes.indexOf(context.node);
+      if(index>=0&&cloneNodes[index])cloneNodes[index].nodeValue=before+after;
+      current=String(clone.innerText||clone.textContent||'');
+    }
+    canvasMentionTags(current).forEach(tag=>used.add(tag));
+  }
+  return used;
+}
+function canvasMentionPeople(query=''){
+  const q=String(query||'').toLowerCase();
+  const pool=[
+    ...(following||[]),
+    ...(followers||[]),
+    ...((activeScrapbook?.profiles||[]))
+  ];
+  const seen=new Set();
+  return pool.filter(person=>{
+    const tag=String(person?.tag||'').toLowerCase();
+    if(!tag||tag===me?.tag||seen.has(tag))return false;
+    seen.add(tag);
+    return !q||tag.includes(q)||String(person.displayName||'').toLowerCase().includes(q);
+  });
+}
+function positionCanvasMentionSuggestions(content,popup){
+  const rect=content.getBoundingClientRect();
+  const width=Math.min(340,Math.max(220,rect.width));
+  popup.style.width=width+'px';
+  popup.style.left=Math.max(8,Math.min(window.innerWidth-width-8,rect.left))+'px';
+  const height=Math.min(260,popup.scrollHeight||220);
+  const below=rect.bottom+6;
+  popup.style.top=(below+height<=window.innerHeight-8?below:Math.max(8,rect.top-height-6))+'px';
+}
+function insertCanvasMention(content,item,tag,context){
+  if(!content||!item||!tag||!context?.node)return;
+  const used=canvasMentionUsedTags(item.id,content,context);
+  const key=String(tag||'').toLowerCase();
+  if(used.has(key)){
+    showToast('@'+tag+' is already mentioned in this scrapbook memory.');
+    closeCanvasMentionSuggestions(content);
+    return;
+  }
+  const node=context.node;
+  const value=String(node.nodeValue||'');
+  const insertion='@'+tag+' ';
+  node.nodeValue=value.slice(0,context.start)+insertion+value.slice(context.end);
+  const caret=context.start+insertion.length;
+  const range=document.createRange();
+  range.setStart(node,Math.min(caret,node.nodeValue.length));
+  range.collapse(true);
+  const selection=window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  item.html=content.innerHTML.slice(0,50000);
+  content.focus({preventScroll:true});
+  content.dispatchEvent(new Event('input',{bubbles:true}));
+  closeCanvasMentionSuggestions(content);
+}
+async function updateCanvasMentionSuggestions(content,item){
+  const context=canvasMentionContext(content);
+  if(!context){closeCanvasMentionSuggestions(content);return;}
+  const seq=++canvasMentionSuggestSeq;
+  let people=canvasMentionPeople(context.query);
+  try{
+    const data=await api(`/api/people?q=${encodeURIComponent(context.query)}`);
+    if(seq!==canvasMentionSuggestSeq||document.activeElement!==content)return;
+    const merged=new Map();
+    [...people,...(data.people||[])].forEach(person=>{
+      if(person?.tag&&person.tag!==me?.tag)merged.set(String(person.tag).toLowerCase(),person);
+    });
+    people=[...merged.values()];
+  }catch{}
+  if(seq!==canvasMentionSuggestSeq||document.activeElement!==content)return;
+  const latest=canvasMentionContext(content);
+  if(!latest){closeCanvasMentionSuggestions(content);return;}
+  const used=canvasMentionUsedTags(item.id,content,latest);
+  people=people.filter(person=>!used.has(String(person?.tag||'').toLowerCase())).slice(0,8);
+  closeCanvasMentionSuggestions(content);
+  if(!people.length)return;
+  const popup=document.createElement('div');
+  popup.className='mention-suggestions';
+  popup.setAttribute('role','listbox');
+  popup.innerHTML=people.map(person=>`<button class="mention-suggestion" type="button" data-tag="${escapeHtml(person.tag||'')}">${avatarHtml(person,'mention-suggestion-avatar')}<span><strong>${escapeHtml(person.displayName||person.tag||'User')}</strong><small>@${escapeHtml(person.tag||'')}</small></span></button>`).join('');
+  (content.closest('dialog[open]')||document.body).appendChild(popup);
+  content._canvasMentionPopup=popup;
+  positionCanvasMentionSuggestions(content,popup);
+  popup.querySelectorAll('[data-tag]').forEach(button=>button.addEventListener('pointerdown',event=>{
+    event.preventDefault();
+    event.stopPropagation();
+    const current=canvasMentionContext(content)||latest;
+    insertCanvasMention(content,item,button.dataset.tag,current);
+  }));
 }
 function wireCanvasItems() {
   const canvas=$('#scrapCanvas');
@@ -10231,13 +10440,26 @@ function wireCanvasItems() {
       content.addEventListener('contextmenu',e=>{
         if(isPhoneUI())e.preventDefault();
       });
+      let canvasMentionTimer=null;
       content.addEventListener('input',()=>{
         item.html=content.innerHTML.slice(0,50000);
         syncCanvasTextHeight(content,el,item);
+        clearTimeout(canvasMentionTimer);
+        canvasMentionTimer=setTimeout(()=>updateCanvasMentionSuggestions(content,item),90);
       });
+      content.addEventListener('click',()=>updateCanvasMentionSuggestions(content,item));
       content.addEventListener('selectionchange',rememberCanvasTextSelection);
-      content.addEventListener('keyup',rememberCanvasTextSelection);
-      content.addEventListener('touchend',()=>setTimeout(rememberCanvasTextSelection,80));
+      content.addEventListener('keyup',event=>{
+        rememberCanvasTextSelection();
+        if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key))updateCanvasMentionSuggestions(content,item);
+        if(event.key==='Escape')closeCanvasMentionSuggestions(content);
+      });
+      content.addEventListener('touchend',()=>setTimeout(()=>{rememberCanvasTextSelection();updateCanvasMentionSuggestions(content,item);},80));
+      content.addEventListener('blur',()=>setTimeout(()=>{
+        closeCanvasMentionSuggestions(content);
+        item.html=content.innerHTML.slice(0,50000);
+        dedupeCanvasMentionBoxes({notify:true});
+      },130));
       content.addEventListener('paste',ev=>{
         ev.preventDefault();
         document.execCommand('insertText',false,ev.clipboardData?.getData('text/plain') || '');

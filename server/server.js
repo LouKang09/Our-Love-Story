@@ -828,11 +828,34 @@ function cleanCanvasItem(item) {
   };
 }
 
+function dedupeEntryCanvasMentionHtml(html, seen) {
+  const safe=sanitizeRichText(html || '');
+  return safe.replace(/(^|[\s>])@([a-z0-9][a-z0-9_.-]{2,23})\b/gi,(match,lead,rawTag)=>{
+    const tag=slugTag(rawTag);
+    if(!tag)return match;
+    if(seen.has(tag))return lead;
+    seen.add(tag);
+    return lead+'@'+rawTag;
+  }).replace(/[ \t]{2,}/g,' ');
+}
 function cleanEntry(input, author, existing = {}) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(input.date || '')) ? input.date : new Date().toISOString().slice(0, 10);
   const hasRichText = input.richText !== undefined;
-  const richText = hasRichText ? sanitizeRichText(input.richText) : String(existing.richText || '');
-  const plain = String(input.text ?? (richText ? plainTextFromRichHtml(richText) : existing.text || '')).slice(0, 20000);
+  let richText = hasRichText ? sanitizeRichText(input.richText) : String(existing.richText || '');
+  let plain = String(input.text ?? (richText ? plainTextFromRichHtml(richText) : existing.text || '')).slice(0, 20000);
+  let canvasItems = Array.isArray(input.canvasItems)
+    ? input.canvasItems.map(cleanCanvasItem).filter(Boolean).slice(0, 40)
+    : (Array.isArray(existing.canvasItems) ? existing.canvasItems : []);
+  if(canvasItems.some(item=>item?.type==='text')){
+    const seenMentions=new Set();
+    canvasItems=canvasItems.map(item=>{
+      if(item?.type!=='text')return item;
+      return {...item,html:dedupeEntryCanvasMentionHtml(item.html,seenMentions)};
+    });
+    const textItems=canvasItems.filter(item=>item?.type==='text');
+    richText=textItems.map(item=>item.html || '').join('<div><br></div>').slice(0,50000);
+    plain=textItems.map(item=>plainTextFromRichHtml(item.html || '').trim()).filter(Boolean).join('\n\n').slice(0,20000);
+  }
   return {
     id: existing.id || crypto.randomUUID(),
     scrapbookId: existing.scrapbookId || String(input.scrapbookId || ''),
@@ -841,9 +864,7 @@ function cleanEntry(input, author, existing = {}) {
     text: plain,
     richText,
     photos: Array.isArray(input.photos) ? input.photos.map(cleanPhoto).filter(Boolean).slice(0, 12) : [],
-    canvasItems: Array.isArray(input.canvasItems)
-      ? input.canvasItems.map(cleanCanvasItem).filter(Boolean).slice(0, 40)
-      : (Array.isArray(existing.canvasItems) ? existing.canvasItems : []),
+    canvasItems,
     canvasSize: ['small','medium','large','wide'].includes(input.canvasSize)
       ? input.canvasSize
       : (['small','medium','large','wide'].includes(existing.canvasSize) ? existing.canvasSize : 'medium'),
@@ -1373,12 +1394,19 @@ async function sendMentionPush(social, { to, from, kind, excerpt = '', chatId = 
   const name = actor.displayName || displayTag(from);
   const profileMention = kind === 'profile';
   const chatMention = kind === 'chat';
+  const entryMention = kind === 'entry';
   await sendUserPush(social, {
     to,
     title:profileMention
       ? `${name} mentioned you in their profile`
-      : (chatMention ? `${name} mentioned you in a message` : `${name} mentioned you in a scrapbook comment`),
-    body:excerpt || (profileMention ? 'Open the scrapbook to see the mention.' : (chatMention ? 'Open Messages to see the mention.' : 'Open the memory to see the comment.')),
+      : (chatMention
+          ? `${name} mentioned you in a message`
+          : (entryMention ? `${name} mentioned you in a scrapbook memory` : `${name} mentioned you in a scrapbook comment`)),
+    body:excerpt || (profileMention
+      ? 'Open the scrapbook to see the mention.'
+      : (chatMention
+          ? 'Open Messages to see the mention.'
+          : (entryMention ? 'Open the scrapbook memory to see the mention.' : 'Open the memory to see the comment.'))),
     tag:`mention-${kind}-${from}-${to}`,
     url:chatMention && chatId ? `/?messages=${encodeURIComponent(chatId)}` : '/?notifications=1'
   });
@@ -1404,7 +1432,7 @@ async function appendMentionNotifications(social, { from, text, kind, scrapbookI
     };
     social.mentions.push(mention);
     await sendMentionPush(social, { to:target, from, kind, excerpt, chatId });
-    const type = kind === 'profile' ? 'profile_mention' : (kind === 'chat' ? 'chat_mention' : 'comment_mention');
+    const type = kind === 'profile' ? 'profile_mention' : (kind === 'chat' ? 'chat_mention' : (kind === 'entry' ? 'entry_mention' : 'comment_mention'));
     emitLiveEvent(target, 'notification', {
       type,
       notificationId:`mention:${mention.id}`,
@@ -1499,7 +1527,7 @@ function notificationSnapshot(social, user) {
     .filter(item => item.to === user)
     .map(item => ({
       id: `mention:${item.id}`,
-      type: item.kind === 'profile' ? 'profile_mention' : (item.kind === 'chat' ? 'chat_mention' : 'comment_mention'),
+      type: item.kind === 'profile' ? 'profile_mention' : (item.kind === 'chat' ? 'chat_mention' : (item.kind === 'entry' ? 'entry_mention' : 'comment_mention')),
       createdAt: item.createdAt || '',
       unread: (Date.parse(item.createdAt || '') || 0) > seenMs,
       actor: publicProfileFor(social, item.from),
@@ -3701,7 +3729,18 @@ async function handleApi(req, res, url) {
     if (!book || !canWriteBook(book, user)) return forbidden(res, 'This scrapbook is read-only for you.');
     const entries = await readEntries();
     const entry = cleanEntry(body, user);
-    entries.push(entry); await writeEntries(entries);
+    const allowedMentionTargets = new Set(mentionTags(entry.text).filter(target => canViewBook(social, book, target)));
+    await appendMentionNotifications(social, {
+      from:user,
+      text:entry.text,
+      kind:'entry',
+      scrapbookId:book.id,
+      entryId:entry.id,
+      allowedTargets:allowedMentionTargets
+    });
+    entries.push(entry);
+    await writeEntries(entries);
+    await writeSocial(social);
     emitLiveMany(realtimeBookViewers(social, book), 'entries', { type:'entry_added', scrapbookId:book.id, entryId:entry.id, from:user });
     return json(res, 201, { entry });
   }
@@ -3853,8 +3892,20 @@ async function handleApi(req, res, url) {
       return json(res, 200, { ok:true });
     }
     const body = await readBody(req);
+    const previousText=String(entry.text || '');
     entries[idx] = cleanEntry(body, user, entry);
+    const allowedMentionTargets = new Set(mentionTags(entries[idx].text).filter(target => canViewBook(social, entryBook, target)));
+    await appendMentionNotifications(social, {
+      from:user,
+      text:entries[idx].text,
+      previousText,
+      kind:'entry',
+      scrapbookId:entryBook.id,
+      entryId:entry.id,
+      allowedTargets:allowedMentionTargets
+    });
     await writeEntries(entries);
+    await writeSocial(social);
     emitLiveMany(realtimeBookViewers(social, entryBook), 'entries', { type:'entry_updated', scrapbookId:entryBook.id, entryId:entry.id, from:user });
     return json(res, 200, { entry: entries[idx] });
   }
