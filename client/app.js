@@ -10182,12 +10182,22 @@ async function updateCanvasMentionSuggestions(content,item){
   (content.closest('dialog[open]')||document.body).appendChild(popup);
   content._canvasMentionPopup=popup;
   positionCanvasMentionSuggestions(content,popup);
-  popup.querySelectorAll('[data-tag]').forEach(button=>button.addEventListener('pointerdown',event=>{
-    event.preventDefault();
-    event.stopPropagation();
-    const current=canvasMentionContext(content)||latest;
-    insertCanvasMention(content,item,button.dataset.tag,current);
-  }));
+  popup.querySelectorAll('[data-tag]').forEach(button=>{
+    button.addEventListener('pointerdown',event=>{
+      // Keep the contenteditable caret/selection alive while the suggestion is pressed.
+      // Do not remove the popup on pointerdown: on touch devices that can create a
+      // ghost click on whatever sits underneath (including editor close/cancel).
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.addEventListener('pointerup',event=>event.stopPropagation());
+    button.addEventListener('click',event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      const current=canvasMentionContext(content)||latest;
+      insertCanvasMention(content,item,button.dataset.tag,current);
+    });
+  });
 }
 function wireCanvasItems() {
   const canvas=$('#scrapCanvas');
@@ -10373,6 +10383,7 @@ function wireCanvasItems() {
 
       const textPointers=new Map();
       let singleHoldTimer=null;
+      let singleHoldReady=null;
       let transformHoldTimer=null;
       let singleDrag=null;
       let transformGesture=null;
@@ -10381,6 +10392,7 @@ function wireCanvasItems() {
       const clearSingleHold=()=>{
         clearTimeout(singleHoldTimer);
         singleHoldTimer=null;
+        singleHoldReady=null;
       };
       const clearTransformHold=()=>{
         clearTimeout(transformHoldTimer);
@@ -10489,34 +10501,31 @@ function wireCanvasItems() {
         if(textPointers.size>=2){
           e.preventDefault();
           clearSingleHold();
+          if(singleDrag){
+            singleDrag=null;
+            el.classList.remove('dragging','long-dragging');
+          }
           content.classList.add('transform-armed');
           clearTimeout(transformHoldTimer);
           transformHoldTimer=setTimeout(startTransform,180);
           return;
         }
 
-        const editing=content.dataset.textEditing==='1'||document.activeElement===content;
-        if(editing)return;
-
+        // A single hold arms movement even when the text box is currently being
+        // edited. We only enter drag mode after the user moves while still held,
+        // so a stationary hold remains available for native text selection.
         clearSingleHold();
         singleHoldTimer=setTimeout(()=>{
-          if(textPointers.size!==1||!textPointers.has(e.pointerId)||transformGesture)return;
-          content.blur();
-          savedCanvasTextRange=null;
-          try{window.getSelection()?.removeAllRanges();}catch{}
-          singleDrag={
+          const tracked=textPointers.get(e.pointerId);
+          if(textPointers.size!==1||!tracked||transformGesture)return;
+          singleHoldTimer=null;
+          singleHoldReady={
             pointerId:e.pointerId,
-            startX:e.clientX,
-            startY:e.clientY,
-            startItemX:item.x,
-            startItemY:item.y
+            x:tracked.x,
+            y:tracked.y
           };
-          suppressTextClick=true;
-          content.dataset.longDragged='1';
-          el.classList.add('dragging','long-dragging');
-          try{content.setPointerCapture(e.pointerId);}catch{}
-          try{navigator.vibrate?.(10);}catch{}
-        },320);
+          try{navigator.vibrate?.(7);}catch{}
+        },280);
       });
 
       content.addEventListener('pointermove',e=>{
@@ -10540,6 +10549,29 @@ function wireCanvasItems() {
           return;
         }
 
+        if(singleHoldReady?.pointerId===e.pointerId && !singleDrag){
+          const armedDx=e.clientX-singleHoldReady.x;
+          const armedDy=e.clientY-singleHoldReady.y;
+          if(Math.hypot(armedDx,armedDy)>=3){
+            e.preventDefault();
+            content.blur();
+            savedCanvasTextRange=null;
+            try{window.getSelection()?.removeAllRanges();}catch{}
+            singleDrag={
+              pointerId:e.pointerId,
+              startX:singleHoldReady.x,
+              startY:singleHoldReady.y,
+              startItemX:item.x,
+              startItemY:item.y
+            };
+            singleHoldReady=null;
+            suppressTextClick=true;
+            content.dataset.longDragged='1';
+            el.classList.add('dragging','long-dragging');
+            try{content.setPointerCapture(e.pointerId);}catch{}
+          }
+        }
+
         if(singleDrag?.pointerId===e.pointerId){
           e.preventDefault();
           const r=rect();
@@ -10553,7 +10585,9 @@ function wireCanvasItems() {
           return;
         }
 
-        if(tracked&&Math.hypot(e.clientX-tracked.startX,e.clientY-tracked.startY)>10){
+        // Allow normal finger drift while waiting for the long-press. A real
+        // swipe still cancels the hold so page/text scrolling remains natural.
+        if(tracked&&singleHoldTimer&&Math.hypot(e.clientX-tracked.startX,e.clientY-tracked.startY)>18){
           clearSingleHold();
         }
       });
