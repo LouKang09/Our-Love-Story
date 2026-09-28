@@ -9740,7 +9740,10 @@ function openEditor(id = null) {
   setTimeout(() => {
     initCanvasViewportGestures();
     fitCanvasToStage({ resetScroll:true });
-    $('#entryTitle').focus();
+    // Do not autofocus Title. Opening the scrapbook editor must not summon
+    // the keyboard; Title only receives focus when the user taps it.
+    const active=document.activeElement;
+    if(active && active!==document.body && editorDialog.contains(active)) active.blur();
   }, 80);
 }
 function closeEditor() {
@@ -9809,11 +9812,7 @@ function validateCanvasTextBoxes(){
   selectedCanvasItemId=empty.id;
   renderCanvasEditor();
   const content=$('#scrapCanvas')?.querySelector(`[data-canvas-id="${CSS.escape(empty.id)}"] .canvas-text-content`);
-  if(content){
-    content.contentEditable='true';
-    content.dataset.textEditing='1';
-    content.focus({preventScroll:true});
-  }
+  content?.closest('.canvas-text-item')?.classList.add('selected');
   $('#editorError').textContent='Every text box must contain text before you save this memory.';
   showToast('Fill in every text box before saving.');
   return false;
@@ -9928,14 +9927,8 @@ function addCanvasText() {
   editingCanvasItems.push(item);
   selectedCanvasItemId=item.id;
   renderCanvasEditor();
-  requestAnimationFrame(()=>{
-    const el=$('#scrapCanvas').querySelector(`[data-canvas-id="${CSS.escape(item.id)}"] .canvas-text-content`);
-    if(el){
-      el.contentEditable='true';
-      el.dataset.textEditing='1';
-      el.focus({preventScroll:true});
-    }
-  });
+  // Adding a text box only creates/selects it. Typing mode starts only after
+  // the user taps the text box itself.
 }
 function canvasTextSelection() {
   const item=activeCanvasTextItem();
@@ -10570,9 +10563,12 @@ function wireCanvasItems() {
         const editing=content.dataset.textEditing==='1'||document.activeElement===content;
         if(editing)return;
 
-        // Resting text boxes are gesture surfaces. Prevent the browser from
-        // focusing the contenteditable on pointerdown; a short tap explicitly
-        // enters typing mode in the click handler below.
+        // Resting text boxes are gesture surfaces. A pointer-down here must
+        // never transfer focus to Title (or leave another editor field keeping
+        // the keyboard open). A short tap will explicitly focus this text box
+        // from the click handler; a hold remains drag-only.
+        const active=document.activeElement;
+        if(active && active!==content && editorDialog.contains(active)) active.blur();
         e.preventDefault();
         clearSingleHold();
         singleHoldTimer=setTimeout(()=>{
