@@ -16775,3 +16775,17 @@ textarea,
   -webkit-touch-callout:default!important;
   touch-action:manipulation!important;
 }
+
+/* Scrapbook text has two deliberate modes:
+   resting = gesture surface, editable = normal typing/selection. */
+.canvas-text-item .canvas-text-content[contenteditable="false"]{
+  -webkit-user-select:none!important;
+  user-select:none!important;
+  -webkit-touch-callout:none!important;
+  touch-action:none!important;
+  cursor:grab!important;
+}
+.canvas-text-item.long-dragging .canvas-text-content[contenteditable="false"],
+.canvas-text-item.transforming .canvas-text-content[contenteditable="false"]{
+  cursor:grabbing!important;
+}
