@@ -5445,6 +5445,10 @@ storyTextLayer?.addEventListener('pointerdown',event=>{
     beginStoryTwoFingerTransform(id);
     return;
   }
+  if(overlay.dataset.editing==='1'){
+    cancelStoryTextLongPress();
+    return;
+  }
   cancelStoryTextLongPress();
   storyTextLongPressPointerId=event.pointerId;
   storyTextLongPressStartX=event.clientX;
@@ -5519,7 +5523,8 @@ function finishStoryTextPointer(event){
 storyTextLayer?.addEventListener('pointerup',finishStoryTextPointer);
 storyTextLayer?.addEventListener('pointercancel',finishStoryTextPointer);
 storyTextLayer?.addEventListener('contextmenu',event=>{
-  if(event.target?.closest?.('[data-story-text-id]'))event.preventDefault();
+  const overlay=event.target?.closest?.('[data-story-text-id]');
+  if(overlay && overlay.dataset.editing!=='1')event.preventDefault();
 });
 $('#storyEditorDoneBtn')?.addEventListener('click',()=>{
   endStoryTwoFingerTransform();
@@ -10365,8 +10370,7 @@ function wireCanvasItems() {
       content.addEventListener('pointerdown',e=>{
         bringItemFront();
         const desktopMouseDrag = !isPhoneUI() && e.pointerType === 'mouse' && e.button === 0;
-        const phoneTouchDrag = isPhoneUI() && e.pointerType !== 'mouse';
-        if(!desktopMouseDrag && !phoneTouchDrag)return;
+        if(!desktopMouseDrag)return;
 
         const r=rect();
         const visualScale=Math.max(.01,Number(editingCanvasZoom)||1);
@@ -10437,9 +10441,8 @@ function wireCanvasItems() {
           content.blur();
         }
       });
-      content.addEventListener('contextmenu',e=>{
-        if(isPhoneUI())e.preventDefault();
-      });
+      content.addEventListener('contextmenu',()=>{});
+
       let canvasMentionTimer=null;
       content.addEventListener('input',()=>{
         item.html=content.innerHTML.slice(0,50000);
@@ -11696,6 +11699,7 @@ document.addEventListener('pointerdown',e=>{
 });
 document.addEventListener('contextmenu',e=>{
   if(!isPhoneUI())return;
+  if(e.target?.closest?.('input,textarea,[contenteditable="true"],.canvas-text-content'))return;
   e.preventDefault();
 },{capture:true});
 document.addEventListener('dragstart',e=>{

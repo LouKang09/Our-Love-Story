@@ -16693,3 +16693,36 @@ html[data-theme="night"] .my-day-create-visual>b{
   }
   .story-collage-grid{height:min(62dvh,660px)}
 }
+
+
+/* ===== 2026-09-28 NATIVE TEXT SELECTION / CLIPBOARD ===== */
+/* Text-editing fields should always use the OS/browser selection handles and
+   native Select all / Copy / Cut / Paste menu. Gesture surfaces keep their
+   custom long-press behavior outside actual editable text. */
+input,
+textarea,
+[contenteditable="true"],
+.canvas-text-content,
+.rich-editor{
+  -webkit-user-select:text!important;
+  user-select:text!important;
+  -webkit-touch-callout:default!important;
+}
+
+.canvas-text-content{
+  touch-action:manipulation!important;
+}
+
+.canvas-text-item.long-dragging .canvas-text-content{
+  -webkit-user-select:text!important;
+  user-select:text!important;
+}
+
+/* Story text supports native selection while editing; after editing is closed,
+   its existing one-finger drag and two-finger transform gestures resume. */
+.story-editor-stage .my-day-overlay-text[data-editing="1"]{
+  -webkit-user-select:text!important;
+  user-select:text!important;
+  -webkit-touch-callout:default!important;
+  touch-action:manipulation!important;
+}
