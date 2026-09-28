@@ -10486,7 +10486,9 @@ function wireCanvasItems() {
 
       content.addEventListener('focus',()=>{
         content.dataset.textEditing='1';
-        clearSingleHold();
+        // Pointerdown naturally focuses a contenteditable. Keep the active
+        // finger's hold timer alive; only clear stale holds from non-pointer focus.
+        if(textPointers.size===0)clearSingleHold();
       });
       content.addEventListener('blur',()=>{
         content.dataset.textEditing='0';
