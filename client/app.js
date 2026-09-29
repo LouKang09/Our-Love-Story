@@ -97,6 +97,9 @@ let chatImageViewerSrc = '';
 let pendingChatReply = null;
 let chatReactionPicker = null;
 let chatThreadActionMenu = null;
+let chatSeenViewer = null;
+let chatUserScrolledAway = false;
+let chatScrollProgrammatic = false;
 let commentReactionPicker = null;
 let pendingChatAudioFile = null;
 let pendingChatAudioUrl = '';
@@ -5930,6 +5933,52 @@ function chatMessageSeenLabel(message) {
   if (chat?.type === 'group') return `Seen by ${count}`;
   return 'Seen';
 }
+function chatMessageSeenProfiles(message) {
+  if (!message || message.author !== me?.tag || message.deleted) return [];
+  const profiles=Array.isArray(message.seenBy)?message.seenBy.filter(Boolean):[];
+  const seen=new Set();
+  return profiles.filter(profile=>{
+    const tag=String(profile?.tag||'').toLowerCase();
+    if(!tag||tag===String(me?.tag||'').toLowerCase()||seen.has(tag))return false;
+    seen.add(tag);
+    return true;
+  });
+}
+function chatSeenSummaryHtml(message) {
+  const label=chatMessageSeenLabel(message);
+  if(!label)return '';
+  const profiles=chatMessageSeenProfiles(message);
+  const avatars=profiles.slice(0,3).map(profile=>avatarHtml(profile,'chat-seen-avatar')).join('');
+  return `<button class="chat-seen-summary" type="button" data-chat-seen-message="${escapeHtml(message.id||'')}" aria-label="${escapeHtml(label)}. Tap to see who has seen this message.">${avatars?`<span class="chat-seen-avatars">${avatars}</span>`:''}<span>${escapeHtml(label)}</span></button>`;
+}
+function closeChatSeenViewer() {
+  if(!chatSeenViewer)return;
+  chatSeenViewer.remove();
+  chatSeenViewer=null;
+}
+function openChatSeenViewer(message) {
+  if(!message)return;
+  const profiles=chatMessageSeenProfiles(message);
+  const count=Math.max(profiles.length,Number(message.seenByCount)||0);
+  if(count<1)return;
+  closeChatSeenViewer();
+  const viewer=document.createElement('div');
+  viewer.className='chat-seen-viewer';
+  viewer.setAttribute('role','presentation');
+  viewer.innerHTML=`<section class="chat-seen-sheet" role="dialog" aria-modal="true" aria-label="Seen by">
+    <header class="chat-seen-head"><div><strong>Seen by</strong><span>${count} ${count===1?'person':'people'}</span></div><button class="chat-seen-close" type="button" aria-label="Close">×</button></header>
+    <div class="chat-seen-list">${profiles.length?profiles.map(profile=>`<button class="chat-seen-person" type="button" data-profile-tag="${escapeHtml(profile.tag||'')}">${avatarHtml(profile,'chat-seen-list-avatar')}<span><strong>${escapeHtml(profile.displayName||profile.tag||'Scrapella user')}</strong><small>@${escapeHtml(profile.tag||'')}</small></span></button>`).join(''):'<p class="chat-seen-empty">Seen receipt is available, but profile details are not available yet.</p>'}</div>
+  </section>`;
+  document.body.appendChild(viewer);
+  chatSeenViewer=viewer;
+  viewer.querySelector('.chat-seen-close')?.addEventListener('click',closeChatSeenViewer);
+  viewer.addEventListener('click',e=>{if(e.target===viewer)closeChatSeenViewer();});
+  viewer.querySelectorAll('.chat-seen-person[data-profile-tag]').forEach(button=>button.addEventListener('click',()=>{
+    const tag=button.dataset.profileTag;
+    closeChatSeenViewer();
+    if(tag)openPersonProfile(tag);
+  }));
+}
 function activeChat() {
   return chats.find(chat => chat.id === activeChatId) || null;
 }
@@ -7080,11 +7129,45 @@ function wireChatMessageGestures(host) {
     bubble.addEventListener('contextmenu',e=>e.preventDefault());
   });
 }
-function renderChatMessages({stickBottom=true}={}) {
+function chatDistanceFromBottom(host) {
+  if(!host)return Infinity;
+  return Math.max(0,host.scrollHeight-host.clientHeight-host.scrollTop);
+}
+function bindChatScrollTracking(host) {
+  if(!host||host.dataset.bottomTracking==='1')return;
+  host.dataset.bottomTracking='1';
+  host.addEventListener('scroll',()=>{
+    if(chatScrollProgrammatic)return;
+    chatUserScrolledAway=chatDistanceFromBottom(host)>110;
+  },{passive:true});
+}
+function scrollChatToBottom(host,{force=false}={}) {
+  if(!host||(!force&&chatUserScrolledAway))return;
+  const apply=()=>{
+    if(!force&&chatUserScrolledAway)return;
+    chatScrollProgrammatic=true;
+    host.scrollTop=Math.max(0,host.scrollHeight-host.clientHeight);
+    requestAnimationFrame(()=>{chatScrollProgrammatic=false;});
+  };
+  requestAnimationFrame(()=>{
+    apply();
+    requestAnimationFrame(apply);
+  });
+  host.querySelectorAll('img').forEach(img=>{
+    if(img.complete)return;
+    img.addEventListener('load',()=>{
+      if(force||!chatUserScrolledAway)apply();
+    },{once:true});
+  });
+}
+function renderChatMessages({stickBottom='auto'}={}) {
   const host = $('#chatMessages');
   if (!host) return;
+  bindChatScrollTracking(host);
   const previousTop=host.scrollTop;
   const previousHeight=host.scrollHeight;
+  const wasNearBottom=previousHeight<=host.clientHeight+4 || chatDistanceFromBottom(host)<=110;
+  const shouldStick=stickBottom===true || (stickBottom==='auto' && !chatUserScrolledAway && wasNearBottom);
   if (!activeChatMessages.length) {
     host.innerHTML = '<div class="chat-messages-empty"><span>♡</span><p>This conversation is just getting started.</p></div>';
     return;
@@ -7105,12 +7188,11 @@ function renderChatMessages({stickBottom=true}={}) {
     const messageMs=Date.parse(message.createdAt||'')||0;
     const showLastSeen = !lastSeenInserted && boundaryMs > 0 && messageMs > boundaryMs;
     if (showLastSeen) lastSeenInserted = true;
-    const seenLabel=chatMessageSeenLabel(message);
     const metaParts=[
       chatMessageTimestamp(message.createdAt),
-      message.editedAt ? 'Edited' : '',
-      seenLabel
+      message.editedAt ? 'Edited' : ''
     ].filter(Boolean);
+    const seenSummary=chatSeenSummaryHtml(message);
     return `${showLastSeen ? '<div class="chat-last-seen-divider" role="separator"><span>Last seen</span></div>' : ''}<article class="chat-message ${mine ? 'mine' : 'theirs'}" data-message-id="${escapeHtml(message.id || '')}">
       ${mine ? '' : `<button class="chat-message-author" type="button" data-profile-tag="${escapeHtml(message.author || '')}"><span class="chat-message-avatar-wrap">${avatarHtml(liveProfile,'chat-message-avatar')}${chat?.type === 'group' ? chatMiniPresenceBadgeHtml(liveProfile) : ''}</span></button>`}
       <span class="chat-swipe-reply-indicator" aria-hidden="true">↪</span>
@@ -7125,6 +7207,7 @@ function renderChatMessages({stickBottom=true}={}) {
              ${message.text ? `<p>${mentionTextHtml(message.text).replace(/\n/g,'<br>')}</p>` : ''}
              ${message.pinnedAt ? '<span class="chat-message-pinned">📌 Pinned</span>' : ''}`}
         <time class="chat-message-meta">${escapeHtml(metaParts.join(' · '))}</time>
+        ${seenSummary}
         ${!message.deleted && reactions.length ? `<div class="chat-reactions">${reactions.map(reaction=>`<button class="chat-reaction-chip ${reaction.reactedByMe?'mine':''}" type="button" data-message-id="${escapeHtml(message.id || '')}" data-emoji="${escapeHtml(reaction.emoji)}"><span>${escapeHtml(reaction.emoji)}</span><b>${reaction.count}</b></button>`).join('')}</div>` : ''}
       </div>
     </article>`;
@@ -7143,11 +7226,23 @@ function renderChatMessages({stickBottom=true}={}) {
     const messageId=button.closest('.chat-message')?.dataset.messageId || '';
     await openMyDayStoryById(button.dataset.storyId,button.dataset.storyAuthor,{returnContext:{mode:'messages',chatId:activeChatId,messageId}});
   }));
+  host.querySelectorAll('.chat-seen-summary[data-chat-seen-message]').forEach(button=>button.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    const message=activeChatMessages.find(item=>item.id===button.dataset.chatSeenMessage);
+    if(message)openChatSeenViewer(message);
+  }));
   wireChatVoicePlayers(host);
   wireChatMessageGestures(host);
   requestAnimationFrame(() => {
-    if(stickBottom) host.scrollTop=host.scrollHeight;
-    else host.scrollTop=Math.max(0,previousTop+(host.scrollHeight-previousHeight));
+    if(shouldStick){
+      chatUserScrolledAway=false;
+      scrollChatToBottom(host,{force:stickBottom===true});
+    }else{
+      chatScrollProgrammatic=true;
+      host.scrollTop=Math.max(0,previousTop+(host.scrollHeight-previousHeight));
+      requestAnimationFrame(()=>{chatScrollProgrammatic=false;});
+    }
   });
 }
 function renderPendingChatImage() {
@@ -7398,7 +7493,7 @@ async function sendChatVoiceFile(file) {
       body:JSON.stringify({text:'',image:'',audio:uploaded.src || '',replyTo:replyId})
     });
     clearPendingChatReply();
-    await loadChatMessages(activeChatId);
+    await loadChatMessages(activeChatId,{stickBottom:true});
     await loadChats();
   }catch(err){
     pendingChatAudioFile=file;
@@ -7577,7 +7672,7 @@ async function loadChats({ preserveActive = true } = {}) {
   renderChatList();
   return chats;
 }
-async function loadChatMessages(chatId = activeChatId) {
+async function loadChatMessages(chatId = activeChatId,{stickBottom='auto'}={}) {
   if (!chatId) return;
   const data = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`);
   activeChatId = chatId;
@@ -7601,7 +7696,7 @@ async function loadChatMessages(chatId = activeChatId) {
   renderMessagesBadge();
   renderChatList();
   renderChatHeader(latest || activeChat());
-  renderChatMessages();
+  renderChatMessages({stickBottom});
   $('#chatEmptyState')?.classList.add('hidden');
   $('#activeChat')?.classList.remove('hidden');
 }
@@ -7614,11 +7709,13 @@ async function openChat(chatId) {
     activeChatBoundaryChatId = null;
   }
   activeChatId = chatId;
+  chatUserScrolledAway=false;
+  closeChatSeenViewer();
   if (currentMode !== 'messages') showView('messages');
   messagesView?.classList.add('chat-open');
   syncMobileChatViewport();
   try {
-    await loadChatMessages(chatId);
+    await loadChatMessages(chatId,{stickBottom:true});
     recordPhoneHistory('messages',{chatId});
   }
   catch (err) { showToast(err.message || 'Could not open that conversation.'); }
@@ -11953,7 +12050,7 @@ $('#chatComposer').addEventListener('submit', async e => {
     if(chatMediaRecorder?.state==='recording')chatMediaRecorder.stop();
     stopChatMediaStream();
     clearPendingChatReply();
-    await Promise.all([loadChatMessages(activeChatId),loadChats()]);
+    await Promise.all([loadChatMessages(activeChatId,{stickBottom:true}),loadChats()]);
   } catch (err) {
     showToast(err.message || 'Could not send that message.');
   } finally {
