@@ -7240,7 +7240,9 @@ function renderChatMessages({stickBottom='auto'}={}) {
       scrollChatToBottom(host,{force:stickBottom===true});
     }else{
       chatScrollProgrammatic=true;
-      host.scrollTop=Math.max(0,previousTop+(host.scrollHeight-previousHeight));
+      // The user intentionally scrolled upward. Keep the exact reading
+      // position even if a realtime message is appended below.
+      host.scrollTop=Math.max(0,previousTop);
       requestAnimationFrame(()=>{chatScrollProgrammatic=false;});
     }
   });
